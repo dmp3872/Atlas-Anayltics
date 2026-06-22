@@ -1,3 +1,4 @@
+import { buildCOAInsertPayload } from '../coaBuilder';
 import { supabase } from '../supabase';
 import {
   Submission,
@@ -100,57 +101,130 @@ export function splitTestPanels(panels: TestPanel[]) {
   };
 }
 
-export async function createSubmission(
-  userId: string,
-  draft: SubmissionDraft,
-): Promise<Submission> {
-  const submissionNumber = generateSubmissionNumber();
-  const initialStatus: SubmissionStatus = 'submitted';
+async function replaceSubmissionSamples(
+  submissionId: string,
+  samples: SampleDraft[],
+  status: SubmissionStatus,
+) {
+  await supabase.from('submission_samples').delete().eq('submission_id', submissionId);
 
-  const { data: submission, error: subError } = await supabase
-    .from('submissions')
-    .insert({
-      submission_number: submissionNumber,
-      user_id: userId,
-      company_name: draft.company_name,
-      contact_name: draft.contact_name,
-      email: draft.email,
-      phone: draft.phone,
-      urgency: draft.urgency,
-      notes: draft.notes,
-      status: initialStatus,
-    })
-    .select()
-    .single();
+  if (samples.length === 0) return;
 
-  if (subError || !submission) throw subError ?? new Error('Failed to create submission');
-
-  const sampleRows = draft.samples.map((s) => ({
-    submission_id: submission.id,
+  const sampleRows = samples.map((s) => ({
+    submission_id: submissionId,
     sample_number: generateSampleNumber(),
     product_name: s.product_name,
     batch_lot_number: s.batch_lot_number,
     sample_count: s.sample_count,
     panel_id: s.panel_id || null,
     panel_ids: s.panel_id ? [s.panel_id] : [],
-    status: initialStatus,
+    status,
   }));
 
   const { error: samplesError } = await supabase.from('submission_samples').insert(sampleRows);
   if (samplesError) throw samplesError;
+}
+
+async function upsertSubmissionRecord(
+  userId: string,
+  draft: SubmissionDraft,
+  status: SubmissionStatus,
+  existingId?: string,
+): Promise<Submission> {
+  const payload = {
+    company_name: draft.company_name,
+    contact_name: draft.contact_name,
+    email: draft.email,
+    phone: draft.phone,
+    urgency: draft.urgency,
+    notes: draft.notes,
+    status,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (existingId) {
+    const { data: existing } = await supabase
+      .from('submissions')
+      .select('id, status, user_id')
+      .eq('id', existingId)
+      .maybeSingle();
+
+    if (!existing || existing.user_id !== userId) {
+      throw new Error('Draft not found');
+    }
+    if (existing.status !== 'draft' && status === 'draft') {
+      throw new Error('Only draft submissions can be saved as a draft');
+    }
+
+    const { error } = await supabase.from('submissions').update(payload).eq('id', existingId);
+    if (error) throw error;
+    await replaceSubmissionSamples(existingId, draft.samples, status);
+    const full = await fetchSubmission(existingId);
+    if (!full) throw new Error('Failed to load submission');
+    return full;
+  }
+
+  const submissionNumber = generateSubmissionNumber();
+  const { data: submission, error: subError } = await supabase
+    .from('submissions')
+    .insert({
+      submission_number: submissionNumber,
+      user_id: userId,
+      ...payload,
+    })
+    .select()
+    .single();
+
+  if (subError || !submission) throw subError ?? new Error('Failed to create submission');
+  await replaceSubmissionSamples(submission.id, draft.samples, status);
+  const full = await fetchSubmission(submission.id);
+  if (!full) throw new Error('Failed to load submission');
+  return full;
+}
+
+export async function saveDraftSubmission(
+  userId: string,
+  draft: SubmissionDraft,
+  existingId?: string,
+): Promise<Submission> {
+  const saved = await upsertSubmissionRecord(userId, draft, 'draft', existingId);
+
+  if (!existingId) {
+    await logStatusChange(saved.id, null, 'draft', 'Draft saved by client', null, userId);
+  }
+
+  return saved;
+}
+
+export async function submitDraftSubmission(
+  userId: string,
+  draft: SubmissionDraft,
+  existingId?: string,
+): Promise<Submission> {
+  const previousStatus: SubmissionStatus | null = existingId
+    ? ((await supabase.from('submissions').select('status').eq('id', existingId).maybeSingle()).data
+        ?.status as SubmissionStatus) ?? 'draft'
+    : null;
+
+  const submission = await upsertSubmissionRecord(userId, draft, 'submitted', existingId);
 
   await logStatusChange(
     submission.id,
-    null,
+    previousStatus,
     'submitted',
-    'Submission created by client',
+    existingId ? 'Draft submitted by client' : 'Submission created by client',
     null,
     userId,
   );
 
-  const full = await fetchSubmission(submission.id);
-  if (!full) throw new Error('Failed to load submission');
-  return full;
+  return submission;
+}
+
+export async function createSubmission(
+  userId: string,
+  draft: SubmissionDraft,
+): Promise<Submission> {
+  return submitDraftSubmission(userId, draft);
 }
 
 export async function fetchAllSubmissions(): Promise<Submission[]> {
@@ -233,6 +307,10 @@ export async function upsertSampleResult(
   enteredBy: string,
   submissionId: string,
 ): Promise<SubmissionResult> {
+  const payload = {
+    ...resultData,
+    overall_pass: overallPass,
+  };
   const { data: existing } = await supabase
     .from('submission_results')
     .select('id')
@@ -242,7 +320,7 @@ export async function upsertSampleResult(
   if (existing) {
     const { data, error } = await supabase
       .from('submission_results')
-      .update({ result_data: resultData, overall_pass: overallPass, entered_by: enteredBy })
+      .update({ result_data: payload, overall_pass: overallPass, entered_by: enteredBy })
       .eq('id', existing.id)
       .select()
       .single();
@@ -256,7 +334,7 @@ export async function upsertSampleResult(
     .insert({
       sample_id: sampleId,
       panel_id: panelId,
-      result_data: resultData,
+      result_data: payload,
       overall_pass: overallPass,
       entered_by: enteredBy,
     })
@@ -272,23 +350,19 @@ export async function releaseCOA(
   submission: Submission,
   sample: SubmissionSample,
   changedBy: string,
+  panels: TestPanel[] = [],
 ): Promise<string> {
-  const slug = Math.random().toString(36).slice(2, 14);
+  const existing = await fetchCOAForSample(sample.id);
+  if (existing?.slug) return existing.slug as string;
+
+  const result = sample.submission_results?.[0];
+  const panel = panels.find((p) => p.id === sample.panel_id);
+  const slug = `${submission.submission_number.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${sample.sample_number.slice(-4)}-${Math.random().toString(36).slice(2, 6)}`;
+  const insertPayload = buildCOAInsertPayload(submission, sample, panel, result, slug);
+
   const { data: coa, error } = await supabase
     .from('coas')
-    .insert({
-      user_id: submission.user_id,
-      submission_sample_id: sample.id,
-      sample_name: sample.product_name,
-      display_name: sample.product_name,
-      company_name: submission.company_name,
-      batch_number: sample.batch_lot_number,
-      slug,
-      overall_result: 'pass',
-      is_public: false,
-      pdf_url: '',
-      panel_results: [],
-    })
+    .insert(insertPayload)
     .select('slug')
     .single();
 

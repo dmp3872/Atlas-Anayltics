@@ -19,6 +19,7 @@ import {
   updateSubmissionStatus,
   upsertSampleResult,
 } from '../../lib/services/submissions';
+import { parseResultFormData } from '../../lib/coaBuilder';
 import { ADMIN_NEXT_STATUS, SUBMISSION_STATUS_LABELS } from '../../lib/submissionUtils';
 
 export default function AdminSubmissionDetail() {
@@ -31,6 +32,7 @@ export default function AdminSubmissionDetail() {
   const [actionLoading, setActionLoading] = useState(false);
   const [note, setNote] = useState('');
   const [resultNotes, setResultNotes] = useState<Record<string, string>>({});
+  const [resultPurity, setResultPurity] = useState<Record<string, string>>({});
   const [resultPass, setResultPass] = useState<Record<string, boolean>>({});
   const [coaSlugs, setCoaSlugs] = useState<Record<string, string>>({});
 
@@ -47,11 +49,23 @@ export default function AdminSubmissionDetail() {
     setPanels(pnl);
     if (sub?.submission_samples) {
       const slugs: Record<string, string> = {};
+      const notes: Record<string, string> = {};
+      const purity: Record<string, string> = {};
+      const pass: Record<string, boolean> = {};
       for (const s of sub.submission_samples) {
         const coa = await fetchCOAForSample(s.id);
         if (coa?.slug) slugs[s.id] = coa.slug;
+        const result = s.submission_results?.[0];
+        const parsed = parseResultFormData(result?.result_data);
+        if (parsed.notes) notes[s.id] = parsed.notes;
+        if (parsed.purity_percent != null) purity[s.id] = String(parsed.purity_percent);
+        if (parsed.overall_pass != null) pass[s.id] = parsed.overall_pass;
+        else if (result?.overall_pass != null) pass[s.id] = result.overall_pass;
       }
       setCoaSlugs(slugs);
+      setResultNotes(notes);
+      setResultPurity(purity);
+      setResultPass(pass);
     }
   }
 
@@ -93,10 +107,16 @@ export default function AdminSubmissionDetail() {
     if (!submission || !user) return;
     setActionLoading(true);
     try {
+      const purityValue = resultPurity[sampleId]?.trim();
+      const purity = purityValue ? parseFloat(purityValue) : null;
       await upsertSampleResult(
         sampleId,
         panelId,
-        { notes: resultNotes[sampleId] ?? '', placeholder: true },
+        {
+          notes: resultNotes[sampleId] ?? '',
+          purity_percent: Number.isFinite(purity) ? purity : null,
+          overall_pass: resultPass[sampleId] ?? null,
+        },
         resultPass[sampleId] ?? null,
         user.id,
         submission.id,
@@ -113,7 +133,7 @@ export default function AdminSubmissionDetail() {
     if (!sample) return;
     setActionLoading(true);
     try {
-      const slug = await releaseCOA(submission, sample, user.id);
+      const slug = await releaseCOA(submission, sample, user.id, panels);
       setCoaSlugs((prev) => ({ ...prev, [sampleId]: slug }));
       await reload();
     } finally {
@@ -232,14 +252,30 @@ export default function AdminSubmissionDetail() {
                 </select>
               </div>
 
-              <div className="bg-slate-50 rounded-lg p-3 space-y-2">
-                <p className="text-xs font-semibold text-slate-500 uppercase">Result placeholder</p>
-                <textarea
-                  className="input-field min-h-[60px] text-sm"
-                  placeholder="Enter preliminary results, purity %, notes…"
-                  value={resultNotes[sample.id] ?? ''}
-                  onChange={(e) => setResultNotes((prev) => ({ ...prev, [sample.id]: e.target.value }))}
-                />
+              <div className="bg-slate-50 rounded-lg p-3 space-y-3">
+                <p className="text-xs font-semibold text-slate-500 uppercase">Result entry</p>
+                <div>
+                  <label className="label">HPLC purity (%)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    min={0}
+                    max={100}
+                    className="input-field text-sm"
+                    placeholder="e.g. 98.4"
+                    value={resultPurity[sample.id] ?? ''}
+                    onChange={(e) => setResultPurity((prev) => ({ ...prev, [sample.id]: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label className="label">Analyst notes</label>
+                  <textarea
+                    className="input-field min-h-[60px] text-sm"
+                    placeholder="Preliminary observations, impurity peaks, etc."
+                    value={resultNotes[sample.id] ?? ''}
+                    onChange={(e) => setResultNotes((prev) => ({ ...prev, [sample.id]: e.target.value }))}
+                  />
+                </div>
                 <div className="flex items-center gap-4">
                   <label className="flex items-center gap-2 text-sm">
                     <input

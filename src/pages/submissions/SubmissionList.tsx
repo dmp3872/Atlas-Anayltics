@@ -29,7 +29,7 @@ export default function SubmissionList() {
       : submissions.filter((s) => s.status === statusFilter);
 
   const filterOptions: (SubmissionStatus | 'all')[] = [
-    'all', 'submitted', 'awaiting_sample', 'sample_received',
+    'all', 'draft', 'submitted', 'awaiting_sample', 'sample_received',
     'in_testing', 'qa_review', 'complete', 'archived',
   ];
 
@@ -83,7 +83,11 @@ export default function SubmissionList() {
             {filtered.map((sub) => (
               <Link
                 key={sub.id}
-                to={`/dashboard/submissions/${sub.id}`}
+                to={
+                  sub.status === 'draft'
+                    ? `/dashboard/submissions/new?draft=${sub.id}`
+                    : `/dashboard/submissions/${sub.id}`
+                }
                 className="card p-5 flex items-center justify-between gap-4 hover:border-brand-300 transition-colors group"
               >
                 <div>
@@ -98,6 +102,7 @@ export default function SubmissionList() {
                   <p className="text-xs text-slate-500">
                     {formatDateTime(sub.created_at)} · {sub.submission_samples?.length ?? 0} sample
                     {(sub.submission_samples?.length ?? 0) !== 1 ? 's' : ''} · {sub.company_name}
+                    {sub.status === 'draft' && ' · Continue editing'}
                   </p>
                 </div>
                 <div className="flex items-center gap-3 flex-shrink-0">

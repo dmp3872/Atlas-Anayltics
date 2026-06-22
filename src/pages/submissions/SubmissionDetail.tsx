@@ -74,6 +74,27 @@ export default function SubmissionDetail() {
     );
   }
 
+  if (submission.status === 'draft') {
+    return (
+      <DashboardLayout>
+        <div className="max-w-3xl">
+          <Link to="/dashboard/submissions" className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-slate-800 mb-4">
+            <ArrowLeft size={14} /> All submissions
+          </Link>
+          <div className="card p-8 text-center">
+            <h1 className="text-xl font-bold text-slate-900 mb-2">Draft submission</h1>
+            <p className="text-slate-500 text-sm mb-6">
+              This submission has not been submitted yet. Continue editing to add samples and submit.
+            </p>
+            <Link to={`/dashboard/submissions/new?draft=${submission.id}`} className="btn-primary text-sm inline-flex gap-1.5">
+              Continue editing
+            </Link>
+          </div>
+        </div>
+      </DashboardLayout>
+    );
+  }
+
   const showShipping = ['submitted', 'awaiting_sample'].includes(submission.status);
 
   return (
