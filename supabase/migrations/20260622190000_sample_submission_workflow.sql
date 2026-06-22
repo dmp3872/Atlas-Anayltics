@@ -183,7 +183,7 @@ CREATE POLICY "Users can view own submission history"
 
 CREATE POLICY "Admins can insert submission history"
   ON submission_status_history FOR INSERT TO authenticated
-  WITH CHECK (is_admin_or_reviewer() OR auth.uid() IS NOT NULL);
+  WITH CHECK (is_admin_or_reviewer());
 
 CREATE POLICY "Users can insert history on own submit"
   ON submission_status_history FOR INSERT TO authenticated

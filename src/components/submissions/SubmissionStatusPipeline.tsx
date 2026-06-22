@@ -2,12 +2,12 @@ import { CheckCircle } from 'lucide-react';
 import { SubmissionStatus } from '../../lib/types';
 import {
   SUBMISSION_STATUS_LABELS,
-  SUBMISSION_STATUS_STEPS,
+  SUBMISSION_PIPELINE_STEPS,
   getSubmissionStepIndex,
 } from '../../lib/submissionUtils';
 
 export default function SubmissionStatusPipeline({ status }: { status: SubmissionStatus }) {
-  const steps = SUBMISSION_STATUS_STEPS.filter((s) => s !== 'draft');
+  const steps = SUBMISSION_PIPELINE_STEPS;
   const currentIdx = getSubmissionStepIndex(status);
   const labels = SUBMISSION_STATUS_LABELS;
 

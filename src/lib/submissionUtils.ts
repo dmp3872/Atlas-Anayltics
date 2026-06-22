@@ -44,9 +44,13 @@ export function generateSampleNumber(): string {
   return `SMP-${dateStr}-${rand}`;
 }
 
+export const SUBMISSION_PIPELINE_STEPS: SubmissionStatus[] = [
+  ...SUBMISSION_STATUS_STEPS.filter((s) => s !== 'draft'),
+  'archived',
+];
+
 export function getSubmissionStepIndex(status: SubmissionStatus): number {
-  if (status === 'archived') return SUBMISSION_STATUS_STEPS.length - 1;
-  const idx = SUBMISSION_STATUS_STEPS.indexOf(status);
+  const idx = SUBMISSION_PIPELINE_STEPS.indexOf(status);
   return idx >= 0 ? idx : 0;
 }
 

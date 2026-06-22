@@ -174,15 +174,17 @@ export async function updateSubmissionStatus(
   if (error) throw error;
 
   if (sampleId) {
-    await supabase
+    const { error: sampleError } = await supabase
       .from('submission_samples')
       .update({ status: newStatus })
       .eq('id', sampleId);
+    if (sampleError) throw sampleError;
   } else {
-    await supabase
+    const { error: sampleError } = await supabase
       .from('submission_samples')
       .update({ status: newStatus })
       .eq('submission_id', submissionId);
+    if (sampleError) throw sampleError;
   }
 
   await logStatusChange(submissionId, fromStatus, newStatus, note, sampleId, changedBy);
