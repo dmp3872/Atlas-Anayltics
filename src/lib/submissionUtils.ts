@@ -71,3 +71,16 @@ export const SHIPPING_ADDRESS = {
   zip: '80203',
   country: 'US',
 };
+
+export const ATLAS_SAFETY_PRO_INCLUDES = [
+  'HPLC Purity',
+  'Net Content',
+  'Identity (ID)',
+  'Heavy Metals',
+  'Endotoxin (LAL)',
+  'Sterility (PCR)',
+  'Fentanyl Detection',
+  '3 Conformity Vials',
+] as const;
+
+export const ATLAS_SAFETY_PRO_PRICE = 700;

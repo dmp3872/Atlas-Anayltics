@@ -43,7 +43,7 @@ export default function Order() {
 
   useEffect(() => {
     supabase.from('test_panels').select('*').eq('is_active', true).neq('category', 'base').order('sort_order').then(({ data }) => {
-      if (data) setAddOnPanels(data);
+      if (data) setAddOnPanels(data.filter((p) => p.category !== 'package'));
       setPanelsLoading(false);
     });
   }, []);

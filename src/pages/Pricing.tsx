@@ -13,6 +13,7 @@ import {
   BLEND_SURCHARGE_PER_COMPOUND,
   CONFORMITY_VIAL_PRICE,
 } from '../lib/utils';
+import { ATLAS_SAFETY_PRO_INCLUDES, ATLAS_SAFETY_PRO_PRICE } from '../lib/submissionUtils';
 
 interface BlendSample {
   id: number;
@@ -21,6 +22,7 @@ interface BlendSample {
 
 export default function Pricing() {
   const [addOnPanels, setAddOnPanels] = useState<TestPanel[]>([]);
+  const [packagePanels, setPackagePanels] = useState<TestPanel[]>([]);
   const [selectedAddOns, setSelectedAddOns] = useState<string[]>([]);
   const [sampleCount, setSampleCount] = useState(1);
   const [blendSamples, setBlendSamples] = useState<BlendSample[]>([]);
@@ -37,7 +39,10 @@ export default function Pricing() {
       .neq('category', 'base')
       .order('sort_order')
       .then(({ data }) => {
-        if (data) setAddOnPanels(data);
+        if (data) {
+          setPackagePanels(data.filter((p) => p.category === 'package'));
+          setAddOnPanels(data.filter((p) => p.category !== 'package'));
+        }
         setLoading(false);
       });
   }, []);
@@ -97,6 +102,42 @@ export default function Pricing() {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+        {packagePanels.length > 0 && (
+          <div className="mb-8">
+            {packagePanels.map((pkg) => (
+              <div key={pkg.id} className="card p-6 border-brand-200 bg-gradient-to-br from-brand-50/80 to-white">
+                <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
+                  <div className="flex-1">
+                    <p className="text-xs font-semibold text-brand-700 uppercase tracking-wider mb-1">All-in-one testing</p>
+                    <h2 className="text-2xl font-bold text-slate-900">{pkg.name}</h2>
+                    <p className="text-sm text-slate-600 mt-2 max-w-2xl">{pkg.description}</p>
+                    <div className="mt-4 grid sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                      {ATLAS_SAFETY_PRO_INCLUDES.map((item) => (
+                        <div key={item} className="flex items-center gap-2 text-sm text-slate-700">
+                          <CheckCircle size={14} className="text-brand-600 flex-shrink-0" />
+                          {item}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="lg:text-right flex-shrink-0">
+                    <p className="text-3xl font-bold text-brand-700">
+                      {formatCurrency(pkg.price_per_sample ?? ATLAS_SAFETY_PRO_PRICE)}
+                    </p>
+                    <p className="text-sm text-slate-500 mt-1">per sample · {pkg.turnaround_days} business days</p>
+                    <Link
+                      to="/dashboard/submissions/new"
+                      className="inline-flex items-center gap-2 mt-4 btn-primary text-sm"
+                    >
+                      Submit with this package <ArrowRight size={14} />
+                    </Link>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-6">
 

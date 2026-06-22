@@ -82,10 +82,18 @@ export async function fetchTestPanels(): Promise<TestPanel[]> {
     .from('test_panels')
     .select('*')
     .eq('is_active', true)
+    .neq('category', 'base')
     .order('sort_order');
 
   if (error) throw error;
   return data ?? [];
+}
+
+export function splitTestPanels(panels: TestPanel[]) {
+  return {
+    packages: panels.filter((p) => p.category === 'package'),
+    individual: panels.filter((p) => p.category !== 'package'),
+  };
 }
 
 export async function createSubmission(

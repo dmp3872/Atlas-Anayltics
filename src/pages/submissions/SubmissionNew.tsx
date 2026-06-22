@@ -5,7 +5,9 @@ import DashboardLayout from '../../components/layout/DashboardLayout';
 import DocumentUploadPlaceholder from '../../components/submissions/DocumentUploadPlaceholder';
 import { useAuth } from '../../context/AuthContext';
 import { TestPanel } from '../../lib/types';
-import { createSubmission, fetchTestPanels, SampleDraft } from '../../lib/services/submissions';
+import { createSubmission, fetchTestPanels, SampleDraft, splitTestPanels } from '../../lib/services/submissions';
+import { ATLAS_SAFETY_PRO_INCLUDES } from '../../lib/submissionUtils';
+import { formatCurrency } from '../../lib/utils';
 
 function uid() {
   return Math.random().toString(36).slice(2);
@@ -33,7 +35,17 @@ export default function SubmissionNew() {
   ]);
 
   useEffect(() => {
-    fetchTestPanels().then(setPanels).catch(console.error);
+    fetchTestPanels()
+      .then((data) => {
+        setPanels(data);
+        const safetyPro = data.find((p) => p.category === 'package');
+        if (safetyPro) {
+          setSamples((prev) =>
+            prev.map((s, i) => (i === 0 && !s.panel_id ? { ...s, panel_id: safetyPro.id } : s)),
+          );
+        }
+      })
+      .catch(console.error);
   }, []);
 
   useEffect(() => {
@@ -104,6 +116,9 @@ export default function SubmissionNew() {
     }
   }
 
+  const { packages, individual } = splitTestPanels(panels);
+  const safetyPro = packages.find((p) => p.name.includes('Safety Pro'));
+
   return (
     <DashboardLayout>
       <div className="max-w-3xl">
@@ -113,6 +128,30 @@ export default function SubmissionNew() {
             Submit one or more samples for testing. You must be logged in to submit.
           </p>
         </div>
+
+        {safetyPro && (
+          <div className="card p-5 mb-6 border-brand-200 bg-brand-50/50">
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold text-brand-700 uppercase tracking-wider mb-1">Featured package</p>
+                <h2 className="text-lg font-bold text-slate-900">{safetyPro.name}</h2>
+                <p className="text-sm text-slate-600 mt-1">{safetyPro.description}</p>
+                <ul className="mt-3 grid sm:grid-cols-2 gap-x-4 gap-y-1">
+                  {ATLAS_SAFETY_PRO_INCLUDES.map((item) => (
+                    <li key={item} className="text-xs text-slate-600 flex items-center gap-1.5">
+                      <span className="w-1 h-1 rounded-full bg-brand-500 flex-shrink-0" />
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className="text-right flex-shrink-0">
+                <p className="text-2xl font-bold text-brand-700">{formatCurrency(safetyPro.price_per_sample)}</p>
+                <p className="text-xs text-slate-500">per sample · {safetyPro.turnaround_days} day TAT</p>
+              </div>
+            </div>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
           {error && (
@@ -203,11 +242,24 @@ export default function SubmissionNew() {
                       required
                     >
                       <option value="">Select panel…</option>
-                      {panels.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name} ({p.turnaround_days}d)
-                        </option>
-                      ))}
+                      {packages.length > 0 && (
+                        <optgroup label="Packages">
+                          {packages.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.name} — {formatCurrency(p.price_per_sample)} ({p.turnaround_days}d)
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                      {individual.length > 0 && (
+                        <optgroup label="Individual panels">
+                          {individual.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.name} ({p.turnaround_days}d)
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
                     </select>
                   </div>
                 </div>
