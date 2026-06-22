@@ -93,9 +93,22 @@ export function createEmptySample(partial?: Partial<WizardSample>): WizardSample
     conformity_extra: 0,
     brand_names: [],
     rush: false,
-    catalog_mode: true,
+    catalog_mode: false,
     ...partial,
   };
+}
+
+export function sampleTestCount(sample: WizardSample): number {
+  if (sample.test_mode === 'full_qc') return 1;
+  return sample.individual_tests.length;
+}
+
+export function sampleChipLabel(sample: WizardSample, index: number): string {
+  const parts = [`${index + 1} ${sample.sample_name || 'New sample'}`];
+  if (sample.batch_number) parts.push(`Batch: ${sample.batch_number}`);
+  const tests = sampleTestCount(sample);
+  if (tests > 0 && sample.sample_name) parts.push(`${tests} test${tests === 1 ? '' : 's'}`);
+  return parts.join(' ');
 }
 
 export function sampleTestPrice(sample: WizardSample): number {
