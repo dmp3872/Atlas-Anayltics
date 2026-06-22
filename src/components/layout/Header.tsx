@@ -90,7 +90,7 @@ export default function Header() {
             ) : (
               <>
                 <Link to="/auth" className="btn-ghost text-sm">Sign In</Link>
-                <Link to="/order" className="btn-primary text-sm">Submit Samples</Link>
+                <Link to="/order-new" className="btn-primary text-sm">Submit Samples</Link>
               </>
             )}
           </div>
@@ -129,7 +129,7 @@ export default function Header() {
             ) : (
               <>
                 <Link to="/auth" onClick={() => setMobileOpen(false)} className="btn-outline w-full text-sm">Sign In</Link>
-                <Link to="/order" onClick={() => setMobileOpen(false)} className="btn-primary w-full text-sm">Submit Samples</Link>
+                <Link to="/order-new" onClick={() => setMobileOpen(false)} className="btn-primary w-full text-sm">Submit Samples</Link>
               </>
             )}
           </div>

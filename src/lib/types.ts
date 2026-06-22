@@ -44,6 +44,8 @@ export interface OrderSample {
   vial_count: number;
   panel_ids: string[];
   status: SampleStatus;
+  metadata?: Record<string, unknown> | null;
+  analysis_results?: Record<string, unknown>[] | null;
   created_at: string;
 }
 
@@ -111,6 +113,7 @@ export interface UserProfile {
   country: string;
   prepaid_balance: number;
   is_first_order: boolean;
+  website?: string;
   created_at: string;
   updated_at: string;
 }

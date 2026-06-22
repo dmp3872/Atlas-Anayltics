@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Navigate, Link } from 'react-router-dom';
-import { Mail, Lock, User, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, AlertCircle, Shield, FileText, Package, LogIn, UserPlus } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { supabase } from '../lib/supabase';
 import AtlasLogo from '../components/brand/AtlasLogo';
 
 type Mode = 'signin' | 'signup';
@@ -15,6 +16,7 @@ export default function Auth() {
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [resetSent, setResetSent] = useState(false);
 
   if (user) return <Navigate to="/dashboard" replace />;
 
@@ -36,143 +38,104 @@ export default function Auth() {
     }
   }
 
-  return (
-    <div className="min-h-screen bg-slate-50 flex">
-      <div className="hidden lg:flex flex-1 flex-col justify-between bg-slate-950 p-12">
-        <Link to="/" className="inline-block">
-          <AtlasLogo variant="light" size="md" />
-        </Link>
-        <div>
-          <blockquote className="text-2xl font-medium text-white leading-relaxed mb-6">
-            "Flat pricing, digital COAs with permanent URLs, and 50% off the first order made this a clear choice."
-          </blockquote>
-          <p className="text-slate-400 text-sm">— Independent Peptide Vendor</p>
-        </div>
-        <div className="grid grid-cols-3 gap-4">
-          {[
-            { label: '12,400+', sub: 'Samples tested' },
-            { label: '4,800+', sub: 'COAs issued' },
-            { label: '3–5 days', sub: 'Avg. turnaround' },
-          ].map((s) => (
-            <div key={s.label} className="border border-slate-800 rounded-xl p-4">
-              <p className="text-xl font-bold text-white">{s.label}</p>
-              <p className="text-xs text-slate-500 mt-1">{s.sub}</p>
-            </div>
-          ))}
-        </div>
-      </div>
+  async function forgotPassword() {
+    if (!email) { setError('Enter your email first.'); return; }
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/auth`,
+    });
+    if (error) setError(error.message);
+    else setResetSent(true);
+  }
 
-      <div className="flex-1 flex items-center justify-center px-6 py-12">
+  return (
+    <div className="min-h-screen bg-neutral-100 flex flex-col">
+      <header className="bg-white border-b border-atlas-border px-6 py-4">
+        <Link to="/"><AtlasLogo size="sm" /></Link>
+      </header>
+
+      <div className="flex-1 flex items-center justify-center px-4 py-12">
         <div className="w-full max-w-md">
-          <div className="lg:hidden mb-8">
-            <Link to="/" className="inline-block">
-              <AtlasLogo size="sm" />
-            </Link>
+          <div className="text-center mb-8">
+            <div className="w-14 h-14 bg-brand-50 border border-brand-200 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <Shield size={28} className="text-brand-600" />
+            </div>
+            <h1 className="text-2xl font-bold text-black">Client Portal</h1>
+            <p className="text-sm text-neutral-500 mt-2">Access your certificates of analysis, track orders, and manage your account.</p>
           </div>
 
-          <h1 className="text-2xl font-bold text-slate-900 mb-1">
-            {mode === 'signin' ? 'Welcome back' : 'Create your account'}
-          </h1>
-          <p className="text-slate-500 text-sm mb-8">
-            {mode === 'signin'
-              ? 'Sign in to access your dashboard and order history.'
-              : 'Start submitting samples today. Your first order is 50% off.'}
-          </p>
+          <div className="flex bg-neutral-200 p-1 rounded-xl mb-6">
+            <button onClick={() => { setMode('signin'); setError(''); }} className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition-colors ${mode === 'signin' ? 'bg-white shadow-sm text-black' : 'text-neutral-600'}`}>
+              <LogIn size={15} /> Sign In
+            </button>
+            <button onClick={() => { setMode('signup'); setError(''); }} className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition-colors ${mode === 'signup' ? 'bg-white shadow-sm text-black' : 'text-neutral-600'}`}>
+              <UserPlus size={15} /> Create Account
+            </button>
+          </div>
 
-          {error && (
-            <div className="flex items-start gap-3 p-3.5 bg-red-50 border border-red-200 rounded-lg mb-5">
-              <AlertCircle size={16} className="text-red-500 flex-shrink-0 mt-0.5" />
-              <p className="text-sm text-red-700">{error}</p>
-            </div>
-          )}
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {mode === 'signup' && (
-              <div>
-                <label className="label">Full Name</label>
-                <div className="relative">
-                  <User size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input
-                    type="text"
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    className="input-field pl-10"
-                    placeholder="Jane Smith"
-                    required
-                  />
-                </div>
+          <div className="card p-6">
+            {error && (
+              <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg mb-4 text-sm text-red-700">
+                <AlertCircle size={15} className="flex-shrink-0 mt-0.5" /> {error}
+              </div>
+            )}
+            {resetSent && (
+              <div className="p-3 bg-brand-50 border border-brand-200 rounded-lg mb-4 text-sm text-brand-800">
+                Password reset email sent. Check your inbox.
               </div>
             )}
 
-            <div>
-              <label className="label">Email</label>
-              <div className="relative">
-                <Mail size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="input-field pl-10"
-                  placeholder="you@example.com"
-                  required
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="label">Password</label>
-              <div className="relative">
-                <Lock size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  type={showPw ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="input-field pl-10 pr-10"
-                  placeholder={mode === 'signup' ? 'Minimum 8 characters' : '••••••••'}
-                  minLength={mode === 'signup' ? 8 : undefined}
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPw(!showPw)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                >
-                  {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
-                </button>
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="btn-primary w-full py-3 mt-2"
-            >
-              {loading ? (
-                <span className="flex items-center gap-2">
-                  <span className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                  {mode === 'signin' ? 'Signing in...' : 'Creating account...'}
-                </span>
-              ) : (
-                mode === 'signin' ? 'Sign In' : 'Create Account'
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {mode === 'signup' && (
+                <div>
+                  <label className="label">Full Name</label>
+                  <input value={fullName} onChange={e => setFullName(e.target.value)} className="input-field" placeholder="Jane Smith" required />
+                </div>
               )}
-            </button>
-          </form>
+              <div>
+                <label className="label">Email</label>
+                <input type="email" value={email} onChange={e => setEmail(e.target.value)} className="input-field" placeholder="you@company.com" required />
+              </div>
+              <div>
+                <label className="label">Password</label>
+                <div className="relative">
+                  <input
+                    type={showPw ? 'text' : 'password'}
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    className="input-field pr-10"
+                    placeholder="Enter your password"
+                    minLength={mode === 'signup' ? 8 : undefined}
+                    required
+                  />
+                  <button type="button" onClick={() => setShowPw(!showPw)} className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400">
+                    {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+              </div>
+              {mode === 'signin' && (
+                <div className="text-right">
+                  <button type="button" onClick={forgotPassword} className="text-sm text-brand-700 hover:text-brand-600 font-medium">Forgot password?</button>
+                </div>
+              )}
+              <button type="submit" disabled={loading} className="btn-primary w-full py-3 gap-2">
+                <LogIn size={16} />
+                {loading ? 'Please wait...' : mode === 'signin' ? 'Sign In' : 'Create Account'}
+              </button>
+            </form>
+          </div>
 
-          <p className="text-center text-sm text-slate-500 mt-6">
-            {mode === 'signin' ? "Don't have an account? " : "Already have an account? "}
-            <button
-              onClick={() => { setMode(mode === 'signin' ? 'signup' : 'signin'); setError(''); }}
-              className="text-brand-600 font-medium hover:text-brand-700"
-            >
-              {mode === 'signin' ? 'Sign up free' : 'Sign in'}
-            </button>
-          </p>
-
-          {mode === 'signup' && (
-            <p className="text-center text-xs text-slate-400 mt-4">
-              Your first order is automatically 50% off. No code needed.
-            </p>
-          )}
+          <div className="grid grid-cols-3 gap-4 mt-8 text-center">
+            {[
+              { icon: FileText, label: 'View Certificates' },
+              { icon: Package, label: 'Track Orders' },
+              { icon: Shield, label: 'Secure Access' },
+            ].map(f => (
+              <div key={f.label} className="text-xs text-neutral-500">
+                <f.icon size={18} className="mx-auto mb-1.5 text-brand-500" />
+                {f.label}
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>
