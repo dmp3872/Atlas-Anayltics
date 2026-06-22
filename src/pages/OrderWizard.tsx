@@ -3,6 +3,7 @@ import { Link, Navigate, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, ArrowRight, Plus, Trash2, CheckCircle, Zap,
   Package, Beaker, ShoppingCart, Copy, Minus, AlertCircle, X, Search,
+  ChevronDown, ChevronUp, Pencil, Check,
 } from 'lucide-react';
 import AtlasLogo from '../components/brand/AtlasLogo';
 import OrderSummarySidebar from '../components/order/OrderSummarySidebar';
@@ -13,7 +14,7 @@ import {
   WizardSample, createEmptySample, validateStep1, sampleMetadataPayload,
   INDIVIDUAL_TESTS, FULL_QC_PANEL, SAMPLE_MATRICES, CONFORMITY_PRICE,
   MULTI_BRAND_PRICE, RUSH_PRICE_PER_SAMPLE, MAX_BRANDS_PER_SAMPLE,
-  orderTotals, sampleLineTotal,
+  orderTotals, sampleChipLabel,
 } from '../lib/orderCatalog';
 import { clearOrderDraft, loadOrderDraft, saveOrderDraft } from '../lib/orderDraft';
 import { formatCurrency, generateOrderNumber } from '../lib/utils';
@@ -24,15 +25,17 @@ const STEPS = [
   { id: 3, label: 'Review', sub: 'Confirm & submit', icon: ShoppingCart },
 ];
 
+const SUPPORT_EMAIL = 'info@atlas-analytics.com';
+
 export default function OrderWizard() {
   const { user, profile } = useAuth();
   const navigate = useNavigate();
 
   const [step, setStep] = useState(1);
   const [samples, setSamples] = useState<WizardSample[]>([createEmptySample()]);
-  const [activeSampleId, setActiveSampleId] = useState<string | null>(null);
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [productSearch, setProductSearch] = useState('');
-  const [showIndividualTests, setShowIndividualTests] = useState<Record<string, boolean>>({});
+  const [editingPeptideId, setEditingPeptideId] = useState<string | null>(null);
 
   const [notes, setNotes] = useState('');
   const [promoCode, setPromoCode] = useState('');
@@ -48,10 +51,12 @@ export default function OrderWizard() {
   const [error, setError] = useState('');
   const [validationError, setValidationError] = useState('');
 
-  const activeId = activeSampleId ?? samples[0]?.id ?? null;
   const { subtotal } = orderTotals(samples);
   const promoDiscount = promoApplied ? subtotal * 0.1 : 0;
   const total = subtotal - promoDiscount;
+
+  const displayName = profile?.full_name || user?.email?.split('@')[0] || 'Account';
+  const userInitial = displayName.charAt(0).toUpperCase();
 
   const persistDraft = useCallback(() => {
     if (!user) return;
@@ -74,7 +79,6 @@ export default function OrderWizard() {
       setCompanyName(draft.companyName || profile?.company_name || '');
       setCardholderName(draft.cardholderName || profile?.full_name || '');
       setPaymentAuthorized(draft.paymentAuthorized);
-      setActiveSampleId(draft.samples[0]?.id ?? null);
     }
   }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -114,7 +118,7 @@ export default function OrderWizard() {
   function addSample() {
     const s = createEmptySample();
     setSamples(prev => [...prev, s]);
-    setActiveSampleId(s.id);
+    setCollapsed(prev => ({ ...prev, [s.id]: false }));
   }
 
   function duplicateSample(id: string) {
@@ -123,13 +127,11 @@ export default function OrderWizard() {
     const { id: _omit, batch_number: _batch, ...rest } = src;
     const copy = createEmptySample({ ...rest, batch_number: '' });
     setSamples(prev => [...prev, copy]);
-    setActiveSampleId(copy.id);
   }
 
   function removeSample(id: string) {
     if (samples.length <= 1) return;
     setSamples(prev => prev.filter(s => s.id !== id));
-    if (activeId === id) setActiveSampleId(samples.find(s => s.id !== id)?.id ?? null);
   }
 
   function selectProduct(id: string, name: string) {
@@ -138,6 +140,7 @@ export default function OrderWizard() {
       display_name: name,
       peptide_identification: name,
       catalog_mode: false,
+      is_peptide: true,
     });
     setProductSearch('');
   }
@@ -174,11 +177,16 @@ export default function OrderWizard() {
     }
     setValidationError('');
     setStep(s => s + 1);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   function applyPromo() {
-    if (promoCode.trim().toUpperCase() === 'ATLAS10') setPromoApplied(true);
-    else setValidationError('Invalid promo code.');
+    if (promoCode.trim().toUpperCase() === 'ATLAS10') {
+      setPromoApplied(true);
+      setValidationError('');
+    } else {
+      setValidationError('Invalid promo code.');
+    }
   }
 
   async function submitOrder() {
@@ -239,42 +247,56 @@ export default function OrderWizard() {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-100">
-      <header className="bg-white border-b border-atlas-border sticky top-0 z-20">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-          <Link to="/dashboard" className="flex items-center gap-2 text-sm text-neutral-600 hover:text-black">
-            <ArrowLeft size={16} /> Back to Dashboard
-          </Link>
-          <div className="text-center">
-            <p className="font-bold text-black">New Testing Order</p>
-            <p className="text-xs text-neutral-500">Client Portal</p>
+    <div className="min-h-screen bg-neutral-100 flex flex-col">
+      {/* ILS-style header: logo | title | actions + user */}
+      <header className="bg-white border-b border-atlas-border sticky top-0 z-30">
+        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
+          <AtlasLogo size="sm" />
+          <div className="absolute left-1/2 -translate-x-1/2 text-center hidden sm:block">
+            <p className="font-bold text-black leading-tight">New Testing Order</p>
+            <p className="text-[11px] text-neutral-500">Client Portal</p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-4 ml-auto">
             <button onClick={discardDraft} className="text-sm text-red-600 hover:text-red-700 flex items-center gap-1">
-              <X size={14} /> Discard
+              <X size={14} /> <span className="hidden sm:inline">Discard</span>
             </button>
-            <AtlasLogo size="sm" showWordmark={false} />
+            <Link to="/dashboard" className="text-sm text-neutral-600 hover:text-black flex items-center gap-1">
+              <ArrowLeft size={14} /> <span className="hidden sm:inline">Back to Dashboard</span>
+            </Link>
+            <div className="flex items-center gap-2 pl-2 border-l border-atlas-border">
+              <span className="w-8 h-8 rounded-full bg-brand-500 text-black text-sm font-bold flex items-center justify-center">{userInitial}</span>
+              <span className="text-sm font-medium text-black hidden md:inline max-w-[120px] truncate">{displayName}</span>
+            </div>
           </div>
         </div>
       </header>
 
-      <div className="max-w-6xl mx-auto px-4 py-8">
-        {/* Stepper */}
+      <div className="flex-1 max-w-6xl mx-auto w-full px-4 py-6 pb-28">
+        {/* Stepper with checkmarks on completed steps */}
         <div className="flex items-center justify-center gap-0 mb-8">
-          {STEPS.map((s, i) => (
-            <div key={s.id} className="flex items-center">
-              <div className={`flex flex-col items-center min-w-[88px] ${step >= s.id ? 'text-brand-700' : 'text-neutral-400'}`}>
-                <div className={`w-11 h-11 rounded-full flex items-center justify-center border-2 ${step >= s.id ? 'border-brand-500 bg-brand-50' : 'border-neutral-300 bg-white'}`}>
-                  <s.icon size={18} />
+          {STEPS.map((s, i) => {
+            const done = step > s.id;
+            const active = step === s.id;
+            const Icon = done ? Check : s.icon;
+            return (
+              <div key={s.id} className="flex items-center">
+                <div className={`flex flex-col items-center min-w-[80px] sm:min-w-[96px] ${active || done ? 'text-brand-700' : 'text-neutral-400'}`}>
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center border-2 transition-colors ${
+                    done ? 'border-brand-500 bg-brand-500 text-black' :
+                    active ? 'border-brand-500 bg-brand-50 text-brand-800' :
+                    'border-neutral-300 bg-white'
+                  }`}>
+                    <Icon size={18} />
+                  </div>
+                  <span className="text-xs font-semibold mt-1.5">{s.label}</span>
+                  <span className="text-[10px] text-neutral-400 hidden sm:block">{s.sub}</span>
                 </div>
-                <span className="text-xs font-semibold mt-1">{s.label}</span>
-                <span className="text-[10px] text-neutral-400">{s.sub}</span>
+                {i < STEPS.length - 1 && (
+                  <div className={`w-10 sm:w-16 h-0.5 mx-1 mb-5 ${step > s.id ? 'bg-brand-500' : 'bg-neutral-200'}`} />
+                )}
               </div>
-              {i < STEPS.length - 1 && (
-                <div className={`w-12 sm:w-20 h-0.5 mx-1 mb-5 ${step > s.id ? 'bg-brand-500' : 'bg-neutral-200'}`} />
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         {(error || validationError) && (
@@ -287,7 +309,7 @@ export default function OrderWizard() {
         <div className="grid lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-4">
 
-            {/* ── STEP 1: Products + Tests ── */}
+            {/* ── STEP 1 ── */}
             {step === 1 && (
               <>
                 <div>
@@ -297,205 +319,213 @@ export default function OrderWizard() {
                   </p>
                 </div>
 
-                {/* Sample tabs */}
-                <div className="flex flex-wrap gap-2">
-                  {samples.map((s, idx) => (
-                    <button
-                      key={s.id}
-                      onClick={() => setActiveSampleId(s.id)}
-                      className={`px-3 py-1.5 rounded-full text-sm border transition-colors ${activeId === s.id ? 'border-brand-500 bg-brand-50 text-brand-900 font-semibold' : 'border-neutral-300 hover:border-brand-300'}`}
-                    >
-                      {idx + 1} {s.sample_name || 'New sample'}
-                      {s.batch_number ? ` · ${s.batch_number}` : ''}
-                    </button>
-                  ))}
-                  <button onClick={addSample} className="px-3 py-1.5 rounded-full text-sm border border-dashed border-neutral-400 hover:border-brand-400 text-neutral-600">
-                    + Add
-                  </button>
-                </div>
-
-                {samples.filter(s => s.id === activeId).map((sample, idx) => (
-                  <div key={sample.id} className="card p-5 border-brand-200 space-y-5">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="w-8 h-8 rounded-full bg-brand-500 text-black text-sm font-bold flex items-center justify-center">{samples.findIndex(s => s.id === sample.id) + 1}</span>
-                        <span className="font-bold text-lg">{sample.sample_name || 'Select a product'}</span>
-                      </div>
-                      <div className="flex gap-1">
-                        <button onClick={() => duplicateSample(sample.id)} className="p-2 hover:bg-neutral-100 rounded-lg" title="Duplicate"><Copy size={15} /></button>
-                        {samples.length > 1 && (
-                          <button onClick={() => removeSample(sample.id)} className="p-2 hover:bg-red-50 text-red-500 rounded-lg"><Trash2 size={15} /></button>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* 1. Select Product */}
-                    <div>
-                      <p className="text-xs font-bold uppercase tracking-wider text-neutral-400 mb-3">1. Select Product</p>
-
-                      {sample.sample_name && !sample.catalog_mode ? (
-                        <div className="flex items-center justify-between p-3 bg-neutral-50 rounded-lg mb-3">
-                          <span className="font-semibold">{sample.sample_name}</span>
-                          <button onClick={() => updateSample(sample.id, { catalog_mode: true })} className="text-sm text-brand-700 font-medium">Change</button>
-                        </div>
-                      ) : (
-                        <div className="mb-3">
-                          <div className="relative">
-                            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
-                            <input
-                              value={productSearch}
-                              onChange={e => setProductSearch(e.target.value)}
-                              placeholder="Search catalog (e.g. BPC-157, ION-3RT, KLOW)..."
-                              className="input-field pl-9"
-                            />
-                          </div>
-                          {productSearch && catalogResults.length > 0 && (
-                            <div className="mt-1 border border-atlas-border rounded-lg bg-white shadow-sm max-h-40 overflow-y-auto">
-                              {catalogResults.map(name => (
-                                <button key={name} onClick={() => selectProduct(sample.id, name)} className="w-full text-left px-3 py-2 text-sm hover:bg-brand-50">{name}</button>
-                              ))}
-                            </div>
+                {samples.map((sample, idx) => {
+                  const isCollapsed = collapsed[sample.id];
+                  return (
+                    <div key={sample.id} className="card border-brand-200 overflow-hidden">
+                      <div className="flex items-center justify-between px-4 py-3 bg-brand-50/60 border-b border-brand-100">
+                        <button
+                          type="button"
+                          onClick={() => setCollapsed(prev => ({ ...prev, [sample.id]: !prev[sample.id] }))}
+                          className="flex items-center gap-2 flex-wrap min-w-0 flex-1 text-left hover:opacity-80"
+                        >
+                          <span className="w-7 h-7 rounded-full bg-brand-500 text-black text-sm font-bold flex items-center justify-center flex-shrink-0">{idx + 1}</span>
+                          <span className="font-semibold text-sm sm:text-base truncate">{sampleChipLabel(sample, idx)}</span>
+                        </button>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <button type="button" onClick={() => duplicateSample(sample.id)} className="p-1.5 hover:bg-white rounded-lg" title="Duplicate sample"><Copy size={14} /></button>
+                          {samples.length > 1 && (
+                            <button type="button" onClick={() => removeSample(sample.id)} className="p-1.5 hover:bg-red-50 text-red-500 rounded-lg" title="Remove sample"><Trash2 size={14} /></button>
                           )}
-                        </div>
-                      )}
-
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-400 mb-2">Your Recent Products</p>
-                      <div className="flex flex-wrap gap-2 mb-4">
-                        {recentProducts.map(p => (
-                          <button
-                            key={p}
-                            onClick={() => selectProduct(sample.id, p)}
-                            className={`px-3 py-1.5 rounded-full text-sm border ${sample.sample_name === p ? 'border-brand-500 bg-brand-50 text-brand-800 font-semibold' : 'border-neutral-300 hover:border-brand-400'}`}
-                          >
-                            {p}
+                          <button type="button" onClick={() => setCollapsed(prev => ({ ...prev, [sample.id]: !prev[sample.id] }))} className="p-1.5">
+                            {isCollapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
                           </button>
-                        ))}
-                      </div>
-
-                      <label className="flex items-center gap-2 text-sm mb-4 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={sample.is_peptide}
-                          onChange={e => updateSample(sample.id, { is_peptide: e.target.checked })}
-                          className="rounded border-neutral-300 text-brand-600"
-                        />
-                        This is a peptide product
-                      </label>
-
-                      <div className="grid sm:grid-cols-2 gap-3">
-                        <div>
-                          <label className="label">Product Name</label>
-                          <input value={sample.sample_name} onChange={e => updateSample(sample.id, { sample_name: e.target.value, peptide_identification: sample.peptide_identification || e.target.value })} placeholder="e.g. BPC-157 5mg" className="input-field" />
-                        </div>
-                        <div>
-                          <label className="label">Batch / Lot # *</label>
-                          <input value={sample.batch_number} onChange={e => updateSample(sample.id, { batch_number: e.target.value })} placeholder="e.g. LOT-2026-001" className="input-field" />
-                        </div>
-                        <div>
-                          <label className="label">Labeled Content *</label>
-                          <input value={sample.labeled_content} onChange={e => updateSample(sample.id, { labeled_content: e.target.value })} placeholder="e.g. 5mg" className="input-field" />
-                        </div>
-                        <div>
-                          <label className="label">Vial Size</label>
-                          <input value={sample.vial_size} onChange={e => updateSample(sample.id, { vial_size: e.target.value })} placeholder="e.g. 3mL" className="input-field" />
-                        </div>
-                        <div>
-                          <label className="label">Sample Matrix *</label>
-                          <select value={sample.sample_matrix} onChange={e => updateSample(sample.id, { sample_matrix: e.target.value as WizardSample['sample_matrix'] })} className="input-field">
-                            {SAMPLE_MATRICES.map(m => <option key={m} value={m}>{m}</option>)}
-                          </select>
-                        </div>
-                        <div>
-                          <label className="label">Quantity</label>
-                          <input type="number" min={1} max={99} value={sample.quantity} onChange={e => updateSample(sample.id, { quantity: Math.max(1, parseInt(e.target.value) || 1) })} className="input-field" />
                         </div>
                       </div>
 
-                      {sample.is_peptide && (
-                        <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="flex-1">
-                              <p className="text-sm font-semibold text-amber-900">Peptide Identification *</p>
-                              <p className="text-xs text-amber-800 mt-1">Enter the actual peptide name (e.g. &quot;Thymosin Beta-4 Acetate&quot;), not the marketing name.</p>
-                              <input
-                                value={sample.peptide_identification}
-                                onChange={e => updateSample(sample.id, { peptide_identification: e.target.value })}
-                                placeholder="e.g. Thymosin Beta-4 Acetate"
-                                className="input-field mt-2 bg-white"
-                              />
+                      {!isCollapsed && (
+                        <div className="p-5 space-y-5">
+                          <div>
+                            <div className="flex items-center justify-between mb-3">
+                              <p className="text-xs font-bold uppercase tracking-wider text-neutral-400">1. Select Product</p>
+                              {sample.sample_name && !sample.catalog_mode && (
+                                <button onClick={() => updateSample(sample.id, { catalog_mode: true })} className="text-sm text-brand-700 font-medium">Change</button>
+                              )}
                             </div>
-                            <label className="flex items-center gap-1.5 text-sm whitespace-nowrap mt-1 cursor-pointer">
+
+                            {sample.sample_name && !sample.catalog_mode ? (
+                              <div className="border-2 border-brand-500 bg-brand-50 rounded-lg p-3 flex items-center gap-2 mb-4">
+                                <CheckCircle size={18} className="text-brand-600 flex-shrink-0" />
+                                <span className="font-semibold">{sample.sample_name}</span>
+                                {sample.is_peptide && (
+                                  <span className="text-sm text-neutral-600">· This is a peptide product</span>
+                                )}
+                              </div>
+                            ) : (
+                              <>
+                                <div className="relative mb-3">
+                                  <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
+                                  <input
+                                    value={productSearch}
+                                    onChange={e => setProductSearch(e.target.value)}
+                                    placeholder="Search catalog..."
+                                    className="input-field pl-9"
+                                  />
+                                  {productSearch && catalogResults.length > 0 && (
+                                    <div className="absolute z-10 w-full mt-1 border border-atlas-border rounded-lg bg-white shadow-lg max-h-40 overflow-y-auto">
+                                      {catalogResults.map(name => (
+                                        <button key={name} type="button" onClick={() => selectProduct(sample.id, name)} className="w-full text-left px-3 py-2 text-sm hover:bg-brand-50">{name}</button>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-400 mb-2">Your Recent Products</p>
+                                <div className="flex flex-wrap gap-2 mb-4">
+                                  {recentProducts.map(p => (
+                                    <button
+                                      key={p}
+                                      type="button"
+                                      onClick={() => selectProduct(sample.id, p)}
+                                      className={`px-3 py-1.5 rounded-full text-sm border transition-colors ${sample.sample_name === p ? 'border-brand-500 bg-brand-50 text-brand-800 font-semibold' : 'border-neutral-300 hover:border-brand-400'}`}
+                                    >
+                                      {p}
+                                    </button>
+                                  ))}
+                                </div>
+                              </>
+                            )}
+
+                            <div className="grid sm:grid-cols-2 gap-3">
+                              <div>
+                                <label className="label">Product Name</label>
+                                <input value={sample.sample_name} onChange={e => updateSample(sample.id, { sample_name: e.target.value, peptide_identification: sample.peptide_identification || e.target.value })} placeholder="e.g. BPC-157 5mg" className="input-field" />
+                              </div>
+                              <div>
+                                <label className="label">Batch / Lot # *</label>
+                                <input value={sample.batch_number} onChange={e => updateSample(sample.id, { batch_number: e.target.value })} placeholder="e.g. LOT-2026-001" className="input-field" />
+                              </div>
+                              <div>
+                                <label className="label">Labeled Content *</label>
+                                <input value={sample.labeled_content} onChange={e => updateSample(sample.id, { labeled_content: e.target.value })} placeholder="e.g. 5mg" className="input-field" />
+                              </div>
+                              <div>
+                                <label className="label">Vial Size</label>
+                                <input value={sample.vial_size} onChange={e => updateSample(sample.id, { vial_size: e.target.value })} placeholder="e.g. 3mL" className="input-field" />
+                              </div>
+                              <div>
+                                <label className="label">Sample Matrix *</label>
+                                <select value={sample.sample_matrix} onChange={e => updateSample(sample.id, { sample_matrix: e.target.value as WizardSample['sample_matrix'] })} className="input-field">
+                                  {SAMPLE_MATRICES.map(m => <option key={m} value={m}>{m}</option>)}
+                                </select>
+                              </div>
+                              <div>
+                                <label className="label">Quantity</label>
+                                <input type="number" min={1} max={99} value={sample.quantity} onChange={e => updateSample(sample.id, { quantity: Math.max(1, parseInt(e.target.value) || 1) })} className="input-field" placeholder="1" />
+                              </div>
+                            </div>
+
+                            {sample.is_peptide && (
+                              <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="flex-1">
+                                    <p className="text-sm font-semibold text-amber-900">Peptide Identification *</p>
+                                    <p className="text-xs text-amber-800 mt-1">Enter the actual peptide name (e.g. &quot;Thymosin Beta-4 Acetate&quot;), not the marketing name.</p>
+                                    <input
+                                      value={sample.peptide_identification}
+                                      onChange={e => updateSample(sample.id, { peptide_identification: e.target.value })}
+                                      placeholder="e.g. Thymosin Beta-4 Acetate"
+                                      className="input-field mt-2 bg-white"
+                                    />
+                                  </div>
+                                  <label className="flex items-center gap-1.5 text-sm whitespace-nowrap mt-1 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={sample.sample_type === 'blend'}
+                                      onChange={e => updateSample(sample.id, { sample_type: e.target.checked ? 'blend' : 'single' })}
+                                      className="rounded"
+                                    />
+                                    Blend
+                                  </label>
+                                </div>
+                              </div>
+                            )}
+
+                            <label className="flex items-center gap-2 text-sm mt-3 cursor-pointer">
                               <input
                                 type="checkbox"
-                                checked={sample.sample_type === 'blend'}
-                                onChange={e => updateSample(sample.id, { sample_type: e.target.checked ? 'blend' : 'single' })}
-                                className="rounded"
+                                checked={sample.is_peptide}
+                                onChange={e => updateSample(sample.id, { is_peptide: e.target.checked })}
+                                className="rounded border-neutral-300 text-brand-600"
                               />
-                              Blend
+                              This is a peptide product
                             </label>
                           </div>
-                        </div>
-                      )}
-                    </div>
 
-                    {/* 2. Select Tests */}
-                    <div>
-                      <p className="text-xs font-bold uppercase tracking-wider text-neutral-400 mb-3">2. Select Tests</p>
-
-                      <button
-                        onClick={() => updateSample(sample.id, { test_mode: 'full_qc', individual_tests: [] })}
-                        className={`w-full p-4 rounded-xl border-2 text-left mb-2 transition-colors ${sample.test_mode === 'full_qc' ? 'border-brand-500 bg-brand-50' : 'border-neutral-200 hover:border-brand-300'}`}
-                      >
-                        <div className="flex justify-between items-start">
                           <div>
-                            <p className="font-bold">{FULL_QC_PANEL.name} <span className="text-xs font-normal text-brand-700 bg-brand-100 px-2 py-0.5 rounded-full ml-1">Recommended</span></p>
-                            <p className="text-sm text-neutral-600 mt-1">{FULL_QC_PANEL.description}</p>
+                            <p className="text-xs font-bold uppercase tracking-wider text-neutral-400 mb-3">2. Select Tests</p>
+
+                            <button
+                              type="button"
+                              onClick={() => updateSample(sample.id, { test_mode: 'full_qc', individual_tests: [] })}
+                              className={`w-full p-4 rounded-xl border-2 text-left mb-2 transition-colors flex gap-3 ${sample.test_mode === 'full_qc' ? 'border-brand-500 bg-brand-50' : 'border-neutral-200 hover:border-brand-300'}`}
+                            >
+                              {sample.test_mode === 'full_qc' && <CheckCircle size={20} className="text-brand-600 flex-shrink-0 mt-0.5" />}
+                              <div className="flex-1 flex justify-between items-start gap-3">
+                                <div>
+                                  <p className="font-bold">
+                                    {FULL_QC_PANEL.name}
+                                    <span className="text-xs font-normal text-brand-800 bg-brand-100 px-2 py-0.5 rounded-full ml-2">Recommended</span>
+                                  </p>
+                                  <p className="text-sm text-neutral-600 mt-1">{FULL_QC_PANEL.description}</p>
+                                </div>
+                                <span className="font-bold text-brand-800 whitespace-nowrap">{formatCurrency(FULL_QC_PANEL.price)}</span>
+                              </div>
+                            </button>
+
+                            <p className="text-sm text-brand-700 font-medium mb-3">Or select individual tests</p>
+
+                            <div className="space-y-2">
+                              {INDIVIDUAL_TESTS.map(test => {
+                                const sel = sample.test_mode === 'individual' && sample.individual_tests.includes(test.id);
+                                return (
+                                  <button
+                                    key={test.id}
+                                    type="button"
+                                    onClick={() => toggleIndividualTest(sample.id, test.id)}
+                                    className={`w-full p-3 rounded-lg border-2 text-left flex justify-between items-center gap-3 ${sel ? 'border-brand-500 bg-brand-50' : 'border-neutral-200 hover:border-brand-300'}`}
+                                  >
+                                    <div className="flex items-center gap-2">
+                                      {sel && <CheckCircle size={16} className="text-brand-600" />}
+                                      <span className="text-sm font-medium">{test.name}</span>
+                                    </div>
+                                    <span className="text-sm font-semibold">{formatCurrency(test.price)}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+
+                            <ul className="text-xs text-neutral-500 space-y-1 list-disc pl-4 mt-4">
+                              <li>Full QC Panel: Submit 3 vials (minimum 10 mg each)</li>
+                              <li>Individual tests: Submit 1 vial per test (minimum 10 mg each)</li>
+                              <li>
+                                For quantities under 5 mg total, contact us at{' '}
+                                <a href={`mailto:${SUPPORT_EMAIL}`} className="text-brand-700 hover:underline">{SUPPORT_EMAIL}</a>.
+                              </li>
+                            </ul>
                           </div>
-                          <span className="font-bold text-brand-800">{formatCurrency(FULL_QC_PANEL.price)}</span>
-                        </div>
-                      </button>
-
-                      <button
-                        onClick={() => setShowIndividualTests(prev => ({ ...prev, [sample.id]: !prev[sample.id] }))}
-                        className="text-sm text-brand-700 font-medium mb-3 hover:underline"
-                      >
-                        {showIndividualTests[sample.id] ? 'Hide individual tests' : 'Or select individual tests'}
-                      </button>
-
-                      {(showIndividualTests[sample.id] || sample.test_mode === 'individual') && (
-                        <div className="space-y-2">
-                          {INDIVIDUAL_TESTS.map(test => {
-                            const sel = sample.individual_tests.includes(test.id);
-                            return (
-                              <button
-                                key={test.id}
-                                onClick={() => toggleIndividualTest(sample.id, test.id)}
-                                className={`w-full p-3 rounded-lg border-2 text-left flex justify-between items-center ${sel ? 'border-brand-500 bg-brand-50' : 'border-neutral-200 hover:border-brand-300'}`}
-                              >
-                                <span className="text-sm font-medium">{test.name}</span>
-                                <span className="text-sm font-semibold">{formatCurrency(test.price)}</span>
-                              </button>
-                            );
-                          })}
                         </div>
                       )}
-
-                      <ul className="text-xs text-neutral-500 space-y-1 list-disc pl-4 mt-4">
-                        <li>Full QC Panel: Submit 3 vials (minimum 10 mg each)</li>
-                        <li>Individual tests: Submit 1 vial per test (minimum 10 mg each)</li>
-                        <li>For quantities under 5 mg total, contact us at info@atlas-analytics.com</li>
-                      </ul>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
 
-                <button onClick={addSample} className="w-full py-3 border-2 border-dashed border-neutral-300 rounded-xl text-sm font-medium hover:border-brand-400 hover:bg-brand-50 flex items-center justify-center gap-2">
+                <button type="button" onClick={addSample} className="w-full py-3 border-2 border-dashed border-neutral-300 rounded-xl text-sm font-medium hover:border-brand-400 hover:bg-brand-50 flex items-center justify-center gap-2">
                   <Plus size={16} /> Add Another Sample
                 </button>
               </>
             )}
 
-            {/* ── STEP 2: Add-ons & Shipping ── */}
+            {/* ── STEP 2: ILS-style option sections ── */}
             {step === 2 && (
               <>
                 <div>
@@ -503,36 +533,44 @@ export default function OrderWizard() {
                   <p className="text-sm text-neutral-500 mt-1">Enhance your order with conformity testing, multi-brand COAs, or rush processing.</p>
                 </div>
 
-                <div className="card p-5">
-                  <label className="label">Company Name (on COA)</label>
-                  <input value={companyName} onChange={e => setCompanyName(e.target.value)} className="input-field" />
-                </div>
-
-                {samples.map((sample, idx) => (
-                  <div key={sample.id} className="card p-5 space-y-4">
-                    <p className="font-bold">{idx + 1}. {sample.sample_name} <span className="text-neutral-400 font-normal text-sm">· {sample.batch_number}</span></p>
-
-                    {/* Conformity */}
-                    <div className="flex items-center justify-between py-2 border-b border-atlas-border">
-                      <div>
-                        <p className="font-semibold text-sm">Conformity Testing</p>
-                        <p className="text-xs text-neutral-500">+{formatCurrency(CONFORMITY_PRICE)} per additional conformity sample</p>
-                      </div>
+                <div className="card p-5 space-y-4">
+                  <div>
+                    <h3 className="font-bold text-black">Conformity Testing</h3>
+                    <p className="text-sm text-neutral-600 mt-1">Test additional vials from the same batch to verify sample-to-sample consistency.</p>
+                    <p className="text-sm font-medium text-brand-800 mt-1">+{formatCurrency(CONFORMITY_PRICE)} per additional conformity sample</p>
+                  </div>
+                  {samples.map((sample, idx) => (
+                    <div key={sample.id} className="flex items-center justify-between py-2 border-t border-atlas-border">
+                      <span className="text-sm font-medium">{sample.sample_name || `Sample ${idx + 1}`}</span>
                       <div className="flex items-center gap-2">
-                        <button onClick={() => updateSample(sample.id, { conformity_extra: Math.max(0, sample.conformity_extra - 1) })} className="w-8 h-8 border rounded-lg flex items-center justify-center"><Minus size={14} /></button>
+                        <button type="button" onClick={() => updateSample(sample.id, { conformity_extra: Math.max(0, sample.conformity_extra - 1) })} className="w-8 h-8 border rounded-lg flex items-center justify-center hover:bg-neutral-50"><Minus size={14} /></button>
                         <span className="font-bold w-6 text-center">{sample.conformity_extra}</span>
-                        <button onClick={() => updateSample(sample.id, { conformity_extra: sample.conformity_extra + 1 })} className="w-8 h-8 border rounded-lg flex items-center justify-center"><Plus size={14} /></button>
+                        <button type="button" onClick={() => updateSample(sample.id, { conformity_extra: sample.conformity_extra + 1 })} className="w-8 h-8 border rounded-lg flex items-center justify-center hover:bg-brand-50 text-brand-800 font-medium">Add</button>
                       </div>
                     </div>
+                  ))}
+                </div>
 
-                    {/* Multi-brand COA */}
+                <div className="card p-5 space-y-4">
+                  <div className="flex items-start justify-between gap-3">
                     <div>
+                      <h3 className="font-bold text-black">Multi-Brand COA</h3>
+                      <p className="text-sm text-neutral-600 mt-1">Get additional COAs under different brand names — perfect for white-label products. Up to 5 brands per sample.</p>
+                      <p className="text-sm font-medium text-brand-800 mt-1">+{formatCurrency(MULTI_BRAND_PRICE)} per brand per sample</p>
+                    </div>
+                  </div>
+                  {samples.map((sample, idx) => (
+                    <div key={sample.id} className="border-t border-atlas-border pt-3">
                       <div className="flex items-center justify-between mb-2">
-                        <div>
-                          <p className="font-semibold text-sm">Multi-Brand COA</p>
-                          <p className="text-xs text-neutral-500">+{formatCurrency(MULTI_BRAND_PRICE)} per brand · up to {MAX_BRANDS_PER_SAMPLE}</p>
-                        </div>
-                        <button onClick={() => addBrandName(sample.id)} disabled={sample.brand_names.length >= MAX_BRANDS_PER_SAMPLE} className="text-sm text-brand-700 font-medium disabled:opacity-40">+ Add Brand</button>
+                        <span className="text-sm font-medium">{sample.sample_name || `Sample ${idx + 1}`}</span>
+                        <button
+                          type="button"
+                          onClick={() => addBrandName(sample.id)}
+                          disabled={sample.brand_names.length >= MAX_BRANDS_PER_SAMPLE}
+                          className="text-sm text-brand-700 font-medium disabled:opacity-40"
+                        >
+                          Add Brand
+                        </button>
                       </div>
                       {sample.brand_names.map((brand, bi) => (
                         <input
@@ -548,24 +586,33 @@ export default function OrderWizard() {
                         />
                       ))}
                     </div>
+                  ))}
+                </div>
 
-                    {/* Rush */}
-                    <button
-                      onClick={() => updateSample(sample.id, { rush: !sample.rush })}
-                      className={`w-full p-4 rounded-xl border-2 text-left flex items-center gap-3 ${sample.rush ? 'border-amber-400 bg-amber-50' : 'border-neutral-200'}`}
-                    >
-                      <Zap size={18} className="text-amber-500 flex-shrink-0" />
-                      <div>
-                        <p className="font-semibold text-sm">Rush Processing</p>
-                        <p className="text-xs text-neutral-500">+{formatCurrency(RUSH_PRICE_PER_SAMPLE)}/sample · &lt;3 business days guaranteed or fee credited back</p>
-                      </div>
-                    </button>
+                <div className="card p-5 space-y-4">
+                  <div>
+                    <h3 className="font-bold text-black">Rush Processing</h3>
+                    <p className="text-sm text-neutral-600 mt-1">Get your results faster with priority processing. Select which samples need rush.</p>
+                    <p className="text-sm font-medium text-brand-800 mt-1">+{formatCurrency(RUSH_PRICE_PER_SAMPLE)}/sample · &lt;3 business days guaranteed or fee credited back</p>
                   </div>
-                ))}
+                  <div className="flex flex-wrap gap-2 pt-2 border-t border-atlas-border">
+                    {samples.map((sample, idx) => (
+                      <button
+                        key={sample.id}
+                        type="button"
+                        onClick={() => updateSample(sample.id, { rush: !sample.rush })}
+                        className={`px-3 py-2 rounded-lg text-sm border flex items-center gap-1.5 ${sample.rush ? 'border-amber-400 bg-amber-50 text-amber-900 font-semibold' : 'border-neutral-300 hover:border-amber-300'}`}
+                      >
+                        <Zap size={14} className={sample.rush ? 'text-amber-500' : 'text-neutral-400'} />
+                        {sample.rush ? 'Rush: ' : '+ Add Rush: '}{sample.sample_name || `Sample ${idx + 1}`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
                 <div className="card p-5">
-                  <h3 className="font-bold mb-1">Shipping Information</h3>
-                  <p className="text-xs text-neutral-500 mb-4">Optional — add tracking if you&apos;ve already shipped your samples.</p>
+                  <h3 className="font-bold text-black">Shipping Information</h3>
+                  <p className="text-xs text-neutral-500 mt-1 mb-4">Optional — add tracking details if you&apos;ve already shipped your samples.</p>
                   <div className="grid sm:grid-cols-2 gap-3">
                     <div>
                       <label className="label">Carrier</label>
@@ -576,7 +623,7 @@ export default function OrderWizard() {
                       <input value={shippingTracking} onChange={e => setShippingTracking(e.target.value)} placeholder="Optional" className="input-field" />
                     </div>
                   </div>
-                  <p className="text-xs text-neutral-400 mt-3">You can also add or update tracking later from the Orders tab.</p>
+                  <p className="text-xs text-neutral-400 mt-3">You can also add or update tracking information later from the Orders page in your client portal.</p>
                 </div>
               </>
             )}
@@ -589,24 +636,52 @@ export default function OrderWizard() {
                   <p className="text-sm text-neutral-500 mt-1">Double-check everything before submitting.</p>
                 </div>
 
-                {samples.map((s, i) => (
-                  <div key={s.id} className="card p-5">
-                    <p className="font-bold text-lg">{s.sample_name}</p>
-                    <p className="text-sm text-neutral-500">Batch: {s.batch_number}</p>
+                {samples.map(s => (
+                  <div key={s.id} className="card p-5 relative">
+                    {s.test_mode === 'full_qc' && (
+                      <span className="absolute top-4 right-4 text-xs font-medium bg-neutral-100 text-neutral-700 px-2.5 py-1 rounded-full border border-neutral-200">
+                        Full QC Panel
+                      </span>
+                    )}
+                    <p className="font-bold text-lg pr-28">{s.sample_name}</p>
+                    <p className="text-sm text-neutral-500 mt-1">Batch: {s.batch_number}</p>
                     <p className="text-sm text-neutral-600">{[s.labeled_content, s.vial_size, s.sample_matrix].filter(Boolean).join(' | ')}</p>
-                    <p className="text-sm mt-2">{s.test_mode === 'full_qc' ? FULL_QC_PANEL.name : `${s.individual_tests.length} individual test(s)`}</p>
-                    {s.rush && <p className="text-xs text-amber-600 mt-1">Rush processing</p>}
-                    <p className="text-sm font-semibold text-brand-800 mt-2">{formatCurrency(sampleLineTotal(s))}</p>
+                    <div className="flex items-center gap-2 mt-3 text-sm">
+                      {editingPeptideId === s.id ? (
+                        <>
+                          <input
+                            value={s.peptide_identification}
+                            onChange={e => updateSample(s.id, { peptide_identification: e.target.value })}
+                            className="input-field py-1 text-sm flex-1"
+                            autoFocus
+                          />
+                          <button type="button" onClick={() => setEditingPeptideId(null)} className="p-1.5 text-brand-700"><Check size={16} /></button>
+                        </>
+                      ) : (
+                        <>
+                          <span className="text-neutral-600">Peptide: <strong>{s.peptide_identification || s.sample_name}</strong></span>
+                          <button type="button" onClick={() => setEditingPeptideId(s.id)} className="p-1 text-neutral-400 hover:text-brand-700" title="Edit peptide name"><Pencil size={14} /></button>
+                        </>
+                      )}
+                    </div>
+                    {s.rush && <p className="text-xs text-amber-600 mt-2 flex items-center gap-1"><Zap size={12} /> Rush processing</p>}
                   </div>
                 ))}
 
                 <div className="card p-5">
                   <label className="label">Promo Code (optional)</label>
-                  <div className="flex gap-2">
-                    <input value={promoCode} onChange={e => setPromoCode(e.target.value)} placeholder="Enter promo code" className="input-field flex-1" />
-                    <button onClick={applyPromo} disabled={!promoCode.trim()} className="btn-secondary whitespace-nowrap">Apply</button>
+                  <div className="flex gap-0 rounded-lg overflow-hidden border border-atlas-border">
+                    <input
+                      value={promoCode}
+                      onChange={e => setPromoCode(e.target.value)}
+                      placeholder="ENTER PROMO CODE"
+                      className="input-field flex-1 border-0 rounded-none uppercase placeholder:normal-case"
+                    />
+                    <button type="button" onClick={applyPromo} disabled={!promoCode.trim()} className="px-4 bg-neutral-100 hover:bg-neutral-200 text-sm font-medium border-l border-atlas-border disabled:opacity-40">
+                      Apply
+                    </button>
                   </div>
-                  {promoApplied && <p className="text-xs text-atlas-success mt-2">10% discount applied (ATLAS10)</p>}
+                  {promoApplied && <p className="text-xs text-atlas-success mt-2">10% discount applied</p>}
                 </div>
 
                 <div className="card p-5">
@@ -614,53 +689,53 @@ export default function OrderWizard() {
                   <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Any special instructions or notes for the lab team..." className="input-field resize-none" rows={3} />
                 </div>
 
-                <div className="card p-5 border-brand-200">
-                  <h3 className="font-bold mb-1">Payment Authorization</h3>
-                  <p className="text-xs text-neutral-500 mb-4">Required for credit card payments.</p>
+                <div className="card p-5 bg-sky-50 border-sky-200">
+                  <h3 className="font-bold text-black flex items-center gap-2">
+                    Payment Authorization
+                  </h3>
+                  <p className="text-xs text-neutral-600 mt-1 mb-4">Required for credit card payments processed via Square.</p>
                   <label className="label">Cardholder Name</label>
-                  <input value={cardholderName} onChange={e => setCardholderName(e.target.value)} placeholder="Full name as it appears on card" className="input-field mb-4" />
+                  <input value={cardholderName} onChange={e => setCardholderName(e.target.value)} placeholder="Full name as it appears on card" className="input-field mb-4 bg-white" />
                   <label className="flex items-start gap-2 text-sm cursor-pointer">
                     <input type="checkbox" checked={paymentAuthorized} onChange={e => setPaymentAuthorized(e.target.checked)} className="mt-1 rounded" />
                     <span>
                       I authorize Atlas Analytics to charge my credit card for the total amount shown for analytical testing services.
-                      I agree to the Terms of Service and confirm that I am the authorized cardholder.
+                      I agree to the{' '}
+                      <Link to="/trust" className="text-brand-700 hover:underline">Terms of Service</Link>
+                      {' '}and confirm that I am the authorized cardholder or have permission to use this payment method.
                     </span>
                   </label>
                 </div>
-
-                {promoDiscount > 0 && (
-                  <div className="flex justify-between text-atlas-success text-sm px-1">
-                    <span>Promo discount (10%)</span>
-                    <span>−{formatCurrency(promoDiscount)}</span>
-                  </div>
-                )}
-                <div className="flex justify-between font-bold text-xl px-1">
-                  <span>Order Total</span>
-                  <span>{formatCurrency(total)}</span>
-                </div>
               </>
             )}
-
-            {/* Nav */}
-            <div className="flex justify-between pt-4">
-              <button onClick={() => { setValidationError(''); setStep(s => s - 1); }} disabled={step === 1} className="btn-ghost gap-1 disabled:opacity-30">
-                <ArrowLeft size={16} /> Back
-              </button>
-              {step < 3 ? (
-                <button onClick={goNext} className="btn-primary gap-1">
-                  Continue <ArrowRight size={16} />
-                </button>
-              ) : (
-                <button onClick={submitOrder} disabled={loading || !paymentAuthorized} className="btn-primary gap-1 disabled:opacity-50">
-                  {loading ? 'Submitting...' : <>Submit Order <CheckCircle size={16} /></>}
-                </button>
-              )}
-            </div>
           </div>
 
-          <div className="hidden lg:block">
-            <OrderSummarySidebar samples={samples} step={step} />
+          <div>
+            <OrderSummarySidebar samples={samples} step={step} total={step === 3 ? total : undefined} />
           </div>
+        </div>
+      </div>
+
+      {/* Sticky footer nav — matches ILS */}
+      <div className="fixed bottom-0 inset-x-0 bg-white border-t border-atlas-border z-30">
+        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+          <button
+            type="button"
+            onClick={() => { setValidationError(''); setStep(s => s - 1); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+            disabled={step === 1}
+            className="btn-ghost gap-1 disabled:opacity-30"
+          >
+            <ArrowLeft size={16} /> Back
+          </button>
+          {step < 3 ? (
+            <button type="button" onClick={goNext} className="btn-primary gap-1 px-8">
+              Continue <ArrowRight size={16} />
+            </button>
+          ) : (
+            <button type="button" onClick={submitOrder} disabled={loading || !paymentAuthorized} className="btn-primary gap-1 px-8 disabled:opacity-50">
+              {loading ? 'Submitting...' : <>Submit Order <ShoppingCart size={16} /></>}
+            </button>
+          )}
         </div>
       </div>
     </div>
