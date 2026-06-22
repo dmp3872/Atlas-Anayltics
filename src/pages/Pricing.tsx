@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { CheckCircle, Zap, ArrowRight, Info, Minus, Plus } from 'lucide-react';
-import { supabase } from '../lib/supabase';
 import { TestPanel } from '../lib/types';
+import { fetchTestPanels, splitTestPanels } from '../lib/services/submissions';
 import {
   formatCurrency,
   getVolumeDiscount,
@@ -32,19 +32,14 @@ export default function Pricing() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase
-      .from('test_panels')
-      .select('*')
-      .eq('is_active', true)
-      .neq('category', 'base')
-      .order('sort_order')
-      .then(({ data }) => {
-        if (data) {
-          setPackagePanels(data.filter((p) => p.category === 'package'));
-          setAddOnPanels(data.filter((p) => p.category !== 'package'));
-        }
-        setLoading(false);
-      });
+    fetchTestPanels()
+      .then((panels) => {
+        const { packages, individual } = splitTestPanels(panels);
+        setPackagePanels(packages);
+        setAddOnPanels(individual);
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false));
   }, []);
 
   function toggleAddOn(id: string) {

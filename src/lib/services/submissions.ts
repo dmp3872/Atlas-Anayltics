@@ -8,6 +8,7 @@ import {
   TestPanel,
 } from '../types';
 import { generateSampleNumber, generateSubmissionNumber } from '../submissionUtils';
+import { withAtlasSafetyProPanel } from '../testPanels';
 
 export interface SampleDraft {
   product_name: string;
@@ -85,8 +86,11 @@ export async function fetchTestPanels(): Promise<TestPanel[]> {
     .neq('category', 'base')
     .order('sort_order');
 
-  if (error) throw error;
-  return data ?? [];
+  if (error) {
+    console.warn('fetchTestPanels failed, using Safety Pro fallback:', error.message);
+    return withAtlasSafetyProPanel([]);
+  }
+  return withAtlasSafetyProPanel(data ?? []);
 }
 
 export function splitTestPanels(panels: TestPanel[]) {

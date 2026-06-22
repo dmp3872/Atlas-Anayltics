@@ -1,0 +1,26 @@
+import { TestPanel } from './types';
+import { ATLAS_SAFETY_PRO_PRICE } from './submissionUtils';
+
+/** Stable fallback ID when the DB row is not available yet. */
+export const ATLAS_SAFETY_PRO_PANEL_ID = 'a0000000-0000-4000-8000-000000000001';
+
+export const ATLAS_SAFETY_PRO_PANEL: TestPanel = {
+  id: ATLAS_SAFETY_PRO_PANEL_ID,
+  name: 'Atlas Safety Pro Package',
+  description:
+    'Complete safety bundle per sample: HPLC Purity, Net Content, Identity (ID), Heavy Metals, Endotoxin (LAL), Sterility (PCR), Fentanyl Detection, and 3 Conformity Vials included.',
+  price_per_sample: ATLAS_SAFETY_PRO_PRICE,
+  turnaround_days: 10,
+  category: 'package',
+  is_active: true,
+  sort_order: -1,
+  created_at: '2026-06-22T00:00:00.000Z',
+};
+
+export function withAtlasSafetyProPanel(panels: TestPanel[]): TestPanel[] {
+  const hasPackage = panels.some(
+    (p) => p.category === 'package' && p.name.includes('Safety Pro'),
+  );
+  if (hasPackage) return panels;
+  return [ATLAS_SAFETY_PRO_PANEL, ...panels];
+}
