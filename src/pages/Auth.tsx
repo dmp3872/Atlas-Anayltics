@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Navigate, Link } from 'react-router-dom';
-import { FlaskConical, Mail, Lock, User, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { Mail, Lock, User, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import AtlasLogo from '../components/brand/AtlasLogo';
 
 type Mode = 'signin' | 'signup';
 
@@ -38,11 +39,8 @@ export default function Auth() {
   return (
     <div className="min-h-screen bg-slate-50 flex">
       <div className="hidden lg:flex flex-1 flex-col justify-between bg-slate-950 p-12">
-        <Link to="/" className="flex items-center gap-2.5">
-          <div className="w-8 h-8 bg-brand-600 rounded-lg flex items-center justify-center">
-            <FlaskConical size={17} className="text-white" />
-          </div>
-          <span className="font-bold text-white text-lg">Atlas Analytics</span>
+        <Link to="/" className="inline-block">
+          <AtlasLogo variant="light" size="md" />
         </Link>
         <div>
           <blockquote className="text-2xl font-medium text-white leading-relaxed mb-6">
@@ -67,11 +65,8 @@ export default function Auth() {
       <div className="flex-1 flex items-center justify-center px-6 py-12">
         <div className="w-full max-w-md">
           <div className="lg:hidden mb-8">
-            <Link to="/" className="flex items-center gap-2.5">
-              <div className="w-8 h-8 bg-brand-600 rounded-lg flex items-center justify-center">
-                <FlaskConical size={17} className="text-white" />
-              </div>
-              <span className="font-bold text-slate-900 text-lg">Atlas Analytics</span>
+            <Link to="/" className="inline-block">
+              <AtlasLogo size="sm" />
             </Link>
           </div>
 

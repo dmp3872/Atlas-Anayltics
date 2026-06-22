@@ -1,6 +1,6 @@
 import { useRef, useState, MouseEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { CheckCircle, XCircle, Clock, Shield, FlaskConical, ExternalLink } from 'lucide-react';
+import { CheckCircle, XCircle, Clock, Shield, ExternalLink } from 'lucide-react';
 import { COA, PanelResult } from '../../lib/types';
 import { formatDate } from '../../lib/utils';
 
@@ -84,12 +84,12 @@ function MiniChromatogram({ points, retentionTime }: { points?: { x: number; y: 
     <svg viewBox={`0 0 ${w} ${h}`} className="w-full" style={{ height: 44 }} preserveAspectRatio="none">
       <defs>
         <linearGradient id={`cg-${retentionTime}`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#14b8a6" stopOpacity="0.4" />
-          <stop offset="100%" stopColor="#14b8a6" stopOpacity="0" />
+          <stop offset="0%" stopColor="#C5A059" stopOpacity="0.4" />
+          <stop offset="100%" stopColor="#C5A059" stopOpacity="0" />
         </linearGradient>
       </defs>
       <path d={areaD} fill={`url(#cg-${retentionTime})`} />
-      <path d={pathD} stroke="#14b8a6" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+      <path d={pathD} stroke="#C5A059" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
@@ -140,10 +140,10 @@ export default function COACard3D({ coa }: COACard3DProps) {
   }
 
   const overallColor = coa.overall_result === 'pass'
-    ? { bg: 'from-emerald-950 to-slate-900', accent: '#10b981', textAccent: 'text-emerald-400', borderAccent: 'border-emerald-500/30' }
+    ? { bg: 'from-black to-neutral-900', accent: '#C5A059', textAccent: 'text-brand-400', borderAccent: 'border-brand-500/30' }
     : coa.overall_result === 'fail'
-    ? { bg: 'from-red-950 to-slate-900', accent: '#ef4444', textAccent: 'text-red-400', borderAccent: 'border-red-500/30' }
-    : { bg: 'from-amber-950 to-slate-900', accent: '#f59e0b', textAccent: 'text-amber-400', borderAccent: 'border-amber-500/30' };
+    ? { bg: 'from-red-950 to-neutral-900', accent: '#ef4444', textAccent: 'text-red-400', borderAccent: 'border-red-500/30' }
+    : { bg: 'from-amber-950 to-neutral-900', accent: '#C5A059', textAccent: 'text-amber-400', borderAccent: 'border-amber-500/30' };
 
   return (
     <div
@@ -176,12 +176,12 @@ export default function COACard3D({ coa }: COACard3DProps) {
         <div className="p-5" style={{ transform: 'translateZ(20px)', transformStyle: 'preserve-3d' }}>
           <div className="flex items-start justify-between mb-4">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-brand-600/30 border border-brand-500/30 flex items-center justify-center flex-shrink-0"
+              <div className="w-8 h-8 rounded-lg bg-brand-500/20 border border-brand-500/40 flex items-center justify-center flex-shrink-0"
                 style={{ transform: 'translateZ(8px)' }}>
-                <FlaskConical size={14} className="text-brand-400" />
+                <Shield size={14} className="text-brand-400" />
               </div>
               <div>
-                <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest leading-none mb-0.5">Atlas Analytics</p>
+                <p className="text-[10px] font-semibold text-brand-500 uppercase tracking-widest leading-none mb-0.5">Atlas Analytics</p>
                 <p className="text-[9px] text-slate-600 font-mono">COA</p>
               </div>
             </div>

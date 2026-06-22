@@ -37,7 +37,7 @@ export default function Roadmap() {
     <>
       <Header />
       <div className="min-h-screen bg-white">
-        <div className="bg-slate-950 py-14 px-4">
+        <div className="bg-black py-14 px-4">
           <div className="max-w-4xl mx-auto">
             <div className="flex items-center gap-3 mb-3">
               <div className="w-8 h-8 bg-brand-600 rounded-lg flex items-center justify-center">
@@ -85,7 +85,7 @@ export default function Roadmap() {
             </div>
           ))}
 
-          <div className="bg-slate-950 rounded-2xl p-8 text-center">
+          <div className="bg-black rounded-2xl p-8 text-center">
             <Zap size={28} className="text-brand-400 mx-auto mb-3" />
             <h3 className="text-xl font-bold text-white mb-2">Have a feature request?</h3>
             <p className="text-slate-400 text-sm mb-5">We build based on what the community needs most. Send us your ideas.</p>
@@ -93,7 +93,7 @@ export default function Roadmap() {
               <a href="mailto:labs@accumark.io?subject=Feature Request" className="btn-primary gap-2 text-sm">
                 <ArrowRight size={15} /> Email Us
               </a>
-              <Link to="/order" className="inline-flex items-center justify-center gap-2 px-5 py-2.5 border border-slate-700 text-slate-300 font-medium rounded-lg hover:bg-slate-800 transition-colors text-sm">
+              <Link to="/order" className="inline-flex items-center justify-center gap-2 px-5 py-2.5 border border-neutral-700 text-slate-300 font-medium rounded-lg hover:bg-slate-800 transition-colors text-sm">
                 Submit Samples
               </Link>
             </div>

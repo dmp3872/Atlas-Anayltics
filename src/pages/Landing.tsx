@@ -76,8 +76,8 @@ const testimonials = [
 export default function Landing() {
   return (
     <div className="bg-white">
-      <section className="relative bg-slate-950 overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900" />
+      <section className="relative bg-black overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-br from-black via-neutral-950 to-black" />
         <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-brand-600/10 rounded-full blur-3xl translate-x-1/3 -translate-y-1/4" />
         <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-brand-800/10 rounded-full blur-3xl -translate-x-1/4 translate-y-1/4" />
 
@@ -98,7 +98,7 @@ export default function Landing() {
               <Link to="/order" className="btn-primary text-base px-6 py-3 gap-2.5">
                 Submit Samples <ArrowRight size={18} />
               </Link>
-              <Link to="/pricing" className="inline-flex items-center justify-center gap-2 px-6 py-3 border border-slate-700 text-slate-300 font-medium rounded-lg hover:bg-slate-800 hover:text-white transition-colors text-base">
+              <Link to="/pricing" className="inline-flex items-center justify-center gap-2 px-6 py-3 border border-neutral-700 text-slate-300 font-medium rounded-lg hover:bg-slate-800 hover:text-white transition-colors text-base">
                 View Pricing
               </Link>
             </div>
@@ -119,7 +119,7 @@ export default function Landing() {
         </div>
       </section>
 
-      <section className="bg-slate-900 border-y border-slate-800">
+      <section className="bg-neutral-950 border-y border-neutral-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
             {stats.map((stat) => (
@@ -171,7 +171,7 @@ export default function Landing() {
                   { step: '04', title: 'Receive your digital COA', desc: 'Get a permanent COA URL with interactive chromatogram, pass/fail callouts, and cryptographic verification.' },
                 ].map((item) => (
                   <div key={item.step} className="flex gap-5">
-                    <div className="w-10 h-10 bg-slate-900 text-white rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0">
+                    <div className="w-10 h-10 bg-black text-brand-400 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0">
                       {item.step}
                     </div>
                     <div>
@@ -189,51 +189,54 @@ export default function Landing() {
             </div>
 
             <div className="flex-1 w-full max-w-md">
-              <div className="card p-6 shadow-lg">
-                <div className="flex items-center justify-between mb-5">
-                  <div>
-                    <h3 className="font-semibold text-slate-900">Certificate of Analysis</h3>
-                    <p className="text-xs text-slate-500 mt-0.5">ACC-20240115-7821 · BPC-157</p>
-                  </div>
-                  <span className="badge-pass">
-                    <CheckCircle size={11} /> PASS
+              <div className="border border-atlas-border shadow-lg overflow-hidden bg-white">
+                <div className="bg-black px-5 py-4 flex items-center justify-between">
+                  <p className="text-[10px] font-bold text-brand-500 uppercase tracking-widest">Certificate of Analysis</p>
+                  <span className="badge-pass text-[10px]">
+                    <CheckCircle size={10} /> PASS
                   </span>
                 </div>
+                <div className="coa-gold-divider" />
+                <div className="p-5">
+                  <p className="text-xs text-neutral-500 mb-4">ACC-20240115-7821 · BPC-157</p>
 
-                <div className="bg-slate-50 rounded-lg p-4 mb-4">
-                  <div className="flex items-end gap-1 h-20">
+                <div className="bg-neutral-50 border border-atlas-border p-4 mb-4 relative overflow-hidden">
+                  <div className="flex items-end gap-1 h-20 relative z-10">
                     {[12, 45, 30, 92, 87, 95, 88, 72, 40, 18, 8, 4].map((h, i) => (
-                      <div key={i} className="flex-1 bg-brand-500 rounded-sm opacity-80 transition-all" style={{ height: `${h}%` }} />
+                      <div key={i} className="flex-1 bg-brand-500 rounded-sm opacity-90 transition-all" style={{ height: `${h}%` }} />
                     ))}
                   </div>
-                  <p className="text-xs text-slate-500 mt-2 text-center">HPLC Chromatogram · RT: 12.4 min</p>
+                  <p className="text-xs text-neutral-500 mt-2 text-center uppercase tracking-wide">HPLC Chromatogram · RT: 12.4 min</p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3 mb-4">
-                  <div className="bg-slate-50 rounded-lg p-3">
-                    <p className="text-xs text-slate-500">Purity</p>
-                    <p className="text-lg font-bold text-slate-900">98.7%</p>
+                  <div className="coa-stat-card p-3">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">Purity</p>
+                    <p className="text-lg font-bold text-black">98.7%</p>
                   </div>
-                  <div className="bg-slate-50 rounded-lg p-3">
-                    <p className="text-xs text-slate-500">Molecular Weight</p>
-                    <p className="text-lg font-bold text-slate-900">1419.6 Da</p>
+                  <div className="coa-stat-card p-3">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">Mol. Weight</p>
+                    <p className="text-lg font-bold text-black">1419.6 Da</p>
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  {['HPLC Purity', 'Identity', 'Endotoxin'].map((panel, i) => (
-                    <div key={panel} className="flex items-center justify-between py-1.5 border-b border-slate-100 last:border-0">
-                      <span className="text-sm text-slate-700">{panel}</span>
-                      <span className={i === 1 ? 'badge-pass' : 'badge-pass'}>
-                        <CheckCircle size={10} /> Pass
-                      </span>
+                <div className="overflow-hidden border border-atlas-border">
+                  <div className="coa-table-header grid grid-cols-3 px-3 py-2">
+                    <span>Test</span><span>Result</span><span>Status</span>
+                  </div>
+                  {['HPLC Purity', 'Identity', 'Endotoxin'].map((panel) => (
+                    <div key={panel} className="grid grid-cols-3 px-3 py-2 text-xs border-t border-atlas-border">
+                      <span className="text-neutral-700">{panel}</span>
+                      <span className="font-medium">Pass</span>
+                      <span className="text-atlas-success font-bold uppercase">Pass</span>
                     </div>
                   ))}
                 </div>
 
-                <div className="mt-4 flex items-center gap-2 p-3 bg-emerald-50 rounded-lg border border-emerald-200">
-                  <Shield size={14} className="text-emerald-600" />
-                  <p className="text-xs text-emerald-700 font-medium">Cryptographically verified · Hash: A3F7C9D1</p>
+                <div className="mt-4 flex items-center gap-2 p-3 bg-neutral-50 border border-atlas-border">
+                  <Shield size={14} className="text-brand-500" />
+                  <p className="text-xs text-neutral-600 font-medium">Cryptographically verified · Hash: A3F7C9D1</p>
+                </div>
                 </div>
               </div>
             </div>
@@ -253,7 +256,7 @@ export default function Landing() {
                 {panel.tag && (
                   <span className={`absolute -top-2 left-3 text-xs font-semibold px-2 py-0.5 rounded-full ${
                     panel.tag === 'Most popular'
-                      ? 'bg-brand-600 text-white'
+                      ? 'bg-brand-500 text-black'
                       : 'bg-slate-200 text-slate-600'
                   }`}>
                     {panel.tag}
@@ -297,11 +300,11 @@ export default function Landing() {
         </div>
       </section>
 
-      <section className="py-20 bg-slate-950">
+      <section className="py-20 bg-black">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <div className="flex justify-center mb-6">
-            <div className="w-14 h-14 bg-brand-600 rounded-2xl flex items-center justify-center">
-              <Package size={26} className="text-white" />
+            <div className="w-14 h-14 bg-brand-500 rounded-2xl flex items-center justify-center">
+              <Package size={26} className="text-black" />
             </div>
           </div>
           <h2 className="text-3xl sm:text-4xl font-bold text-white mb-4">Ready to get started?</h2>
@@ -310,7 +313,7 @@ export default function Landing() {
             <Link to="/order" className="btn-primary text-base px-7 py-3 gap-2">
               Submit Your First Samples <ArrowRight size={18} />
             </Link>
-            <Link to="/verify" className="inline-flex items-center justify-center gap-2 px-7 py-3 border border-slate-700 text-slate-300 font-medium rounded-lg hover:bg-slate-800 transition-colors text-base">
+            <Link to="/verify" className="inline-flex items-center justify-center gap-2 px-7 py-3 border border-neutral-700 text-slate-300 font-medium rounded-lg hover:bg-slate-800 transition-colors text-base">
               <Award size={17} /> Verify a COA
             </Link>
           </div>

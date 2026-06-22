@@ -42,7 +42,7 @@ export default function PublicLibrary() {
     <>
       <Header />
       <div className="min-h-screen bg-slate-50">
-        <div className="bg-slate-950 py-14 px-4">
+        <div className="bg-black py-14 px-4">
           <div className="max-w-5xl mx-auto">
             <h1 className="text-4xl font-bold text-white mb-2">Public COA Library</h1>
             <p className="text-slate-400 text-lg mb-6">Browse all publicly available AccuMark certificates of analysis.</p>
@@ -53,7 +53,7 @@ export default function PublicLibrary() {
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 placeholder="Search by sample, company, batch number..."
-                className="w-full pl-10 pr-4 py-2.5 bg-slate-900 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+                className="w-full pl-10 pr-4 py-2.5 bg-neutral-950 border border-neutral-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
               />
             </div>
           </div>

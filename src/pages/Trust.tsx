@@ -8,7 +8,7 @@ export default function Trust() {
     <>
       <Header />
       <div className="min-h-screen bg-white">
-        <div className="bg-slate-950 py-16 px-4">
+        <div className="bg-black py-16 px-4">
           <div className="max-w-3xl mx-auto text-center">
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-brand-500/30 bg-brand-500/10 text-brand-400 text-xs font-medium mb-6">
               <Shield size={13} /> Why Third-Party Testing Matters
@@ -41,7 +41,7 @@ export default function Trust() {
                 },
                 {
                   icon: Search,
-                  color: 'bg-blue-100 text-blue-600',
+                  color: 'bg-brand-100 text-brand-700',
                   title: 'No verification mechanism',
                   desc: 'When a vendor shows you a PDF, how do you confirm it\'s real? Without a live database lookup against the original testing record, verification is impossible.'
                 }
@@ -118,14 +118,14 @@ export default function Trust() {
             </div>
           </section>
 
-          <section className="text-center bg-slate-950 rounded-2xl p-10">
+          <section className="text-center bg-black rounded-2xl p-10">
             <h2 className="text-2xl font-bold text-white mb-3">Ready to get verified results?</h2>
             <p className="text-slate-400 mb-6">No minimums. No contracts. First order 50% off.</p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <Link to="/order" className="btn-primary gap-2">
                 Submit Samples <ArrowRight size={16} />
               </Link>
-              <Link to="/verify" className="inline-flex items-center justify-center gap-2 px-5 py-2.5 border border-slate-700 text-slate-300 font-medium rounded-lg hover:bg-slate-800 transition-colors">
+              <Link to="/verify" className="inline-flex items-center justify-center gap-2 px-5 py-2.5 border border-neutral-700 text-slate-300 font-medium rounded-lg hover:bg-slate-800 transition-colors">
                 Verify a COA
               </Link>
             </div>

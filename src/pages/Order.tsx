@@ -145,7 +145,7 @@ export default function Order() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <div className="bg-slate-950 py-12 px-4">
+      <div className="bg-black py-12 px-4">
         <div className="max-w-4xl mx-auto">
           <div className="flex items-center gap-3 mb-2">
             <Package size={20} className="text-brand-400" />

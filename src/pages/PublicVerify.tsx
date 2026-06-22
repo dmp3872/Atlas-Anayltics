@@ -33,7 +33,7 @@ export default function PublicVerify() {
     <>
       <Header />
       <div className="min-h-screen bg-slate-50">
-        <div className="bg-slate-950 py-16 px-4">
+        <div className="bg-black py-16 px-4">
           <div className="max-w-2xl mx-auto text-center">
             <div className="w-14 h-14 bg-brand-600 rounded-2xl flex items-center justify-center mx-auto mb-6">
               <Shield size={26} className="text-white" />

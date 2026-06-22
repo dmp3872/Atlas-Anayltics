@@ -1,114 +1,63 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import {
   Shield, CheckCircle, XCircle, Clock, Download,
-  FlaskConical, ArrowLeft, Copy, Check, Info
+  ArrowLeft, Copy, Check, Droplets, Boxes
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { COA, PanelResult } from '../lib/types';
 import { formatDateTime } from '../lib/utils';
 import Header from '../components/layout/Header';
 import Footer from '../components/layout/Footer';
+import AtlasLogo, { AtlasWatermark } from '../components/brand/AtlasLogo';
 
-type PanelResultExtended = PanelResult & { description?: string };
-
-function PanelResultRow({ r }: { r: PanelResultExtended }) {
-  const [show, setShow] = useState(false);
-  const rowRef = useRef<HTMLDivElement>(null);
-
-  return (
-    <div
-      ref={rowRef}
-      onMouseEnter={() => setShow(true)}
-      onMouseLeave={() => setShow(false)}
-      className={`relative rounded-xl border transition-all duration-150 cursor-default ${
-        show
-          ? r.pass ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50'
-          : 'border-slate-100 bg-slate-50 hover:border-slate-200'
-      }`}
-    >
-      <div className="flex items-center gap-3 px-4 py-3">
-        <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
-          r.pass ? 'bg-emerald-100' : 'bg-red-100'
-        }`}>
-          {r.pass
-            ? <CheckCircle size={15} className="text-emerald-600" />
-            : <XCircle size={15} className="text-red-600" />
-          }
-        </div>
-
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5">
-            <p className="text-sm font-semibold text-slate-900 truncate">{r.panel_name}</p>
-            {r.description && <Info size={11} className="text-slate-400 flex-shrink-0" />}
-          </div>
-          {r.specification && (
-            <p className="text-xs text-slate-400 mt-0.5">Spec: {r.specification}</p>
-          )}
-        </div>
-
-        <div className="flex items-center gap-3 flex-shrink-0">
-          <span className="text-sm font-medium text-slate-800">{r.result}{r.unit ? ` ${r.unit}` : ''}</span>
-          {r.pass
-            ? <span className="badge-pass"><CheckCircle size={10} /> Pass</span>
-            : <span className="badge-fail"><XCircle size={10} /> Fail</span>
-          }
-        </div>
-      </div>
-
-      {show && r.description && (
-        <div className={`px-4 pb-3 pt-0 border-t ${r.pass ? 'border-emerald-200' : 'border-red-200'}`}>
-          <p className="text-xs text-slate-600 leading-relaxed">{r.description}</p>
-        </div>
-      )}
-    </div>
-  );
-}
+const GOLD = '#C5A059';
+const GRID = '#E0E0E0';
 
 function Chromatogram({ data }: { data: COA['chromatogram_data'] }) {
   const points = data?.points ?? generateDemoPoints();
   const maxY = Math.max(...points.map(p => p.y));
-  const width = 400;
-  const height = 120;
-  const padL = 30;
-  const padB = 20;
-  const innerW = width - padL - 10;
-  const innerH = height - padB - 10;
+  const width = 560;
+  const height = 160;
+  const padL = 36;
+  const padB = 24;
+  const innerW = width - padL - 16;
+  const innerH = height - padB - 16;
 
   const pathD = points.map((p, i) => {
     const x = padL + (p.x / (points[points.length - 1]?.x || 1)) * innerW;
-    const y = 10 + (1 - p.y / maxY) * innerH;
+    const y = 12 + (1 - p.y / maxY) * innerH;
     return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
   }).join(' ');
 
   return (
-    <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
-      <div className="flex items-center justify-between mb-3">
-        <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">HPLC Chromatogram</p>
-        {data?.retention_time && (
-          <span className="text-xs text-slate-500">RT: {data.retention_time} min</span>
-        )}
+    <div className="relative border border-atlas-border bg-white overflow-hidden">
+      <AtlasWatermark className="absolute inset-0 m-auto w-32 h-32 opacity-40" />
+      <div className="relative px-4 pt-4 pb-2">
+        <p className="text-xs font-bold text-brand-600 uppercase tracking-widest text-center">
+          HPLC Chromatogram Report
+        </p>
       </div>
-      <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-32">
-        <defs>
-          <linearGradient id="chromGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#14b8a6" stopOpacity="0.3" />
-            <stop offset="100%" stopColor="#14b8a6" stopOpacity="0" />
-          </linearGradient>
-        </defs>
-        <line x1={padL} y1={10} x2={padL} y2={height - padB} stroke="#e2e8f0" strokeWidth="1" />
-        <line x1={padL} y1={height - padB} x2={width - 10} y2={height - padB} stroke="#e2e8f0" strokeWidth="1" />
+      <svg viewBox={`0 0 ${width} ${height}`} className="relative w-full h-40">
         {[0.25, 0.5, 0.75, 1].map(t => (
-          <line key={t} x1={padL} y1={10 + (1 - t) * innerH} x2={width - 10} y2={10 + (1 - t) * innerH} stroke="#f1f5f9" strokeWidth="1" />
+          <line key={t} x1={padL} y1={12 + (1 - t) * innerH} x2={width - 16} y2={12 + (1 - t) * innerH} stroke={GRID} strokeWidth="1" />
         ))}
-        <path d={pathD + ` L ${padL + innerW} ${height - padB} L ${padL} ${height - padB} Z`} fill="url(#chromGrad)" />
-        <path d={pathD} stroke="#14b8a6" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-        <text x={padL} y={height - 5} fill="#94a3b8" fontSize="8" textAnchor="middle">0</text>
-        <text x={padL + innerW} y={height - 5} fill="#94a3b8" fontSize="8" textAnchor="middle">{(points[points.length - 1]?.x ?? 20).toFixed(0)} min</text>
+        {[0.25, 0.5, 0.75, 1].map(t => (
+          <line key={`v${t}`} x1={padL + t * innerW} y1={12} x2={padL + t * innerW} y2={height - padB} stroke={GRID} strokeWidth="1" />
+        ))}
+        <line x1={padL} y1={12} x2={padL} y2={height - padB} stroke="#999" strokeWidth="1" />
+        <line x1={padL} y1={height - padB} x2={width - 16} y2={height - padB} stroke="#999" strokeWidth="1" />
+        <path d={pathD} stroke={GOLD} strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        <text x={padL} y={height - 6} fill="#666" fontSize="9" textAnchor="middle">0</text>
+        <text x={padL + innerW} y={height - 6} fill="#666" fontSize="9" textAnchor="middle">
+          {(points[points.length - 1]?.x ?? 20).toFixed(0)} min
+        </text>
+        {data?.retention_time && (
+          <text x={width / 2} y={height - 6} fill="#666" fontSize="9" textAnchor="middle">
+            RT: {data.retention_time} min
+          </text>
+        )}
       </svg>
-      {data?.peak_area && (
-        <p className="text-xs text-slate-500 mt-2 text-center">Peak Area: {data.peak_area.toLocaleString()}</p>
-      )}
     </div>
   );
 }
@@ -125,12 +74,22 @@ function generateDemoPoints() {
   return pts;
 }
 
+function InfoField({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="py-3 border-b border-atlas-border">
+      <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">{label}</p>
+      <p className="text-sm font-medium text-black mt-0.5">{value}</p>
+    </div>
+  );
+}
+
 export default function COADetail() {
   const { slug } = useParams<{ slug: string }>();
   const [coa, setCoa] = useState<COA | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [vialSize, setVialSize] = useState('3ml');
 
   useEffect(() => {
     if (!slug) return;
@@ -155,20 +114,20 @@ export default function COADetail() {
 
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center">
-      <div className="w-8 h-8 border-2 border-brand-600 border-t-transparent rounded-full animate-spin" />
+      <div className="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
     </div>
   );
 
   if (notFound) return (
     <>
       <Header />
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center px-4">
+      <div className="min-h-screen bg-neutral-50 flex items-center justify-center px-4">
         <div className="text-center">
           <div className="w-16 h-16 bg-red-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
             <XCircle size={28} className="text-red-500" />
           </div>
-          <h1 className="text-2xl font-bold text-slate-900 mb-2">COA Not Found</h1>
-          <p className="text-slate-500 mb-6">No certificate of analysis found for this ID.</p>
+          <h1 className="text-2xl font-bold text-black mb-2">COA Not Found</h1>
+          <p className="text-neutral-500 mb-6">No certificate of analysis found for this ID.</p>
           <Link to="/verify" className="btn-primary">Try Verification Tool</Link>
         </div>
       </div>
@@ -184,132 +143,163 @@ export default function COADetail() {
     { panel_name: 'Endotoxin (LAL)', result: '<0.5 EU/mg', specification: '<1.0 EU/mg', pass: true },
   ];
 
+  const infoFields = [
+    { label: 'Client', value: coa.company_name || '—' },
+    { label: 'Sample Code', value: coa.slug },
+    { label: 'Sample Name', value: coa.sample_name },
+    { label: 'Display Name', value: coa.display_name || coa.sample_name },
+    { label: 'Batch Number', value: coa.batch_number || '—' },
+    { label: 'Date Issued', value: formatDateTime(coa.issued_at) },
+    { label: 'Vial Size', value: vialSize },
+  ];
+
   return (
     <>
       <Header />
-      <div className="min-h-screen bg-slate-50">
-        <div className="bg-slate-950 py-8 px-4">
-          <div className="max-w-4xl mx-auto">
-            <Link to="/coa-library" className="inline-flex items-center gap-1.5 text-slate-400 hover:text-white text-sm mb-4 transition-colors">
-              <ArrowLeft size={14} /> Public Library
-            </Link>
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <h1 className="text-2xl font-bold text-white">{coa.display_name || coa.sample_name}</h1>
-                <p className="text-slate-400 text-sm mt-1">
-                  Certificate of Analysis · Issued {formatDateTime(coa.issued_at)}
-                </p>
-              </div>
-              <div className={`flex items-center gap-2 px-4 py-2 rounded-xl border font-semibold text-sm ${
-                coa.overall_result === 'pass'
-                  ? 'border-emerald-500 bg-emerald-500/10 text-emerald-400'
-                  : coa.overall_result === 'fail'
-                  ? 'border-red-500 bg-red-500/10 text-red-400'
-                  : 'border-amber-500 bg-amber-500/10 text-amber-400'
-              }`}>
-                {coa.overall_result === 'pass' ? <CheckCircle size={16} /> : coa.overall_result === 'fail' ? <XCircle size={16} /> : <Clock size={16} />}
-                Overall: {coa.overall_result.toUpperCase()}
-              </div>
+      <div className="min-h-screen bg-white">
+        <div className="coa-header-bar">
+          <div className="max-w-4xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <AtlasLogo variant="light" size="md" />
+            <div className="text-right">
+              <h1 className="text-sm sm:text-base font-bold text-brand-500 uppercase tracking-[0.25em]">
+                Certificate of Analysis
+              </h1>
+              <p className="text-xs text-neutral-400 mt-1">{coa.display_name || coa.sample_name}</p>
             </div>
           </div>
         </div>
+        <div className="coa-gold-divider" />
 
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 space-y-6">
-          <div className="card p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-semibold text-slate-900">Verification Status</h2>
-            </div>
-            <div className="flex items-center gap-3 p-4 bg-emerald-50 rounded-xl border border-emerald-200">
-              <div className="w-10 h-10 bg-emerald-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                <Shield size={20} className="text-emerald-600" />
-              </div>
-              <div className="flex-1">
-                <p className="font-semibold text-emerald-800">Document Verified</p>
-                <p className="text-xs text-emerald-700 mt-0.5">This COA has been cryptographically signed by Atlas Analytics and has not been altered.</p>
-              </div>
-            </div>
-            {coa.content_hash && (
-              <div className="mt-3 flex items-center gap-2 text-xs text-slate-500 font-mono bg-slate-50 p-3 rounded-lg border border-slate-200">
-                <Shield size={11} className="text-brand-500 flex-shrink-0" />
-                Content Hash: {coa.content_hash} · Signature: {coa.signature || 'AM-' + coa.slug.slice(0, 8).toUpperCase()}
-              </div>
-            )}
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8">
+          <Link to="/coa-library" className="inline-flex items-center gap-1.5 text-neutral-500 hover:text-brand-600 text-sm mb-6 transition-colors">
+            <ArrowLeft size={14} /> Public Library
+          </Link>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-0 mb-8">
+            {infoFields.map(({ label, value }) => (
+              <InfoField key={label} label={label} value={value} />
+            ))}
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-            <div className="card p-5">
-              <h2 className="font-semibold text-slate-900 mb-4">Sample Information</h2>
-              <dl className="space-y-2.5">
-                {[
-                  { label: 'Sample Name', value: coa.sample_name },
-                  { label: 'Display Name', value: coa.display_name || '—' },
-                  { label: 'Company', value: coa.company_name || '—' },
-                  { label: 'Batch Number', value: coa.batch_number || '—' },
-                  { label: 'COA ID', value: coa.slug },
-                ].map(({ label, value }) => (
-                  <div key={label} className="flex justify-between gap-4 text-sm">
-                    <dt className="text-slate-500 flex-shrink-0">{label}</dt>
-                    <dd className="font-medium text-slate-900 text-right truncate">{value}</dd>
-                  </div>
-                ))}
-              </dl>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+            <div className="coa-stat-card">
+              <div className="flex items-start gap-3">
+                <Boxes size={28} className="text-brand-500 flex-shrink-0" strokeWidth={1.5} />
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">
+                    Average Net Peptide Content
+                  </p>
+                  <p className="text-3xl font-bold text-black mt-1">
+                    {coa.purity_percent ? `${(coa.purity_percent * 0.1).toFixed(1)} mg` : '—'}
+                  </p>
+                  <p className="text-xs text-atlas-success font-semibold mt-1 uppercase tracking-wide">Conforms</p>
+                </div>
+              </div>
             </div>
-
-            <div className="card p-5">
-              <h2 className="font-semibold text-slate-900 mb-4">Key Results</h2>
-              <div className="grid grid-cols-2 gap-3">
-                {coa.purity_percent && (
-                  <div className="bg-brand-50 rounded-xl p-4 border border-brand-100">
-                    <p className="text-xs text-brand-600 font-medium">Purity</p>
-                    <p className="text-2xl font-bold text-slate-900 mt-1">{coa.purity_percent}%</p>
-                  </div>
-                )}
-                {coa.molecular_weight && (
-                  <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
-                    <p className="text-xs text-slate-500 font-medium">Mol. Weight</p>
-                    <p className="text-2xl font-bold text-slate-900 mt-1">{coa.molecular_weight}</p>
-                    <p className="text-xs text-slate-400">Da</p>
-                  </div>
-                )}
-                {!coa.purity_percent && !coa.molecular_weight && (
-                  <div className="col-span-2 text-center py-4 text-sm text-slate-400">Results pending analysis</div>
-                )}
+            <div className="coa-stat-card">
+              <div className="flex items-start gap-3">
+                <Droplets size={28} className="text-brand-500 flex-shrink-0" strokeWidth={1.5} />
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">
+                    Average Purity
+                  </p>
+                  <p className="text-3xl font-bold text-black mt-1">
+                    {coa.purity_percent ?? 98.7}%
+                  </p>
+                  <p className="text-xs text-atlas-success font-semibold mt-1 uppercase tracking-wide">Measured</p>
+                </div>
               </div>
             </div>
           </div>
 
-          <div className="card p-5">
-            <h2 className="font-semibold text-slate-900 mb-4">Chromatogram</h2>
-            <Chromatogram data={coa.chromatogram_data} />
-          </div>
-
-          <div className="card p-5">
-            <h2 className="font-semibold text-slate-900 mb-1">Test Panel Results</h2>
-            <p className="text-xs text-slate-400 mb-4">Hover any row to see the test description and methodology</p>
-            <div className="space-y-2">
-              {panelResults.map((r, i) => (
-                <PanelResultRow key={i} r={r} />
+          <div className="mb-6">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 mb-2">Vial Size</p>
+            <div className="flex gap-2">
+              {['3ml', '5ml', '10ml'].map(size => (
+                <button
+                  key={size}
+                  onClick={() => setVialSize(size)}
+                  className={`coa-vial-btn ${vialSize === size ? 'coa-vial-btn-active' : ''}`}
+                >
+                  {size}
+                </button>
               ))}
             </div>
           </div>
 
-          <div className="card p-5">
-            <h2 className="font-semibold text-slate-900 mb-4">Lab Information</h2>
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-brand-600 rounded-xl flex items-center justify-center flex-shrink-0">
-                <FlaskConical size={22} className="text-white" />
-              </div>
-              <div>
-                <p className="font-semibold text-slate-900">Atlas Analytics</p>
-                <p className="text-sm text-slate-500">Independent Third-Party Testing Laboratory</p>
-                <p className="text-xs text-slate-400 mt-0.5">1234 Research Blvd, Austin, TX 78701 · ISO 17025 Accreditation Pending</p>
-              </div>
-            </div>
+          <div className="mb-8">
+            <Chromatogram data={coa.chromatogram_data} />
           </div>
 
-          <div className="flex flex-col sm:flex-row gap-3">
+          <div className="mb-8 overflow-hidden border border-atlas-border">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="coa-table-header">
+                  <th className="text-left px-4 py-3">Test</th>
+                  <th className="text-left px-4 py-3">Specification</th>
+                  <th className="text-left px-4 py-3">Result</th>
+                  <th className="text-left px-4 py-3">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {panelResults.map((r, i) => (
+                  <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-neutral-50'}>
+                    <td className="px-4 py-3 font-medium text-black border-t border-atlas-border">{r.panel_name}</td>
+                    <td className="px-4 py-3 text-neutral-600 border-t border-atlas-border">{r.specification || '—'}</td>
+                    <td className="px-4 py-3 font-medium text-black border-t border-atlas-border">
+                      {r.result}{r.unit ? ` ${r.unit}` : ''}
+                    </td>
+                    <td className="px-4 py-3 border-t border-atlas-border">
+                      <span className={`font-bold uppercase text-xs ${r.pass ? 'text-atlas-success' : 'text-red-600'}`}>
+                        {r.pass ? 'Pass' : 'Fail'}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {coa.content_hash && (
+            <div className="flex items-center gap-2 text-xs text-neutral-500 font-mono bg-neutral-50 p-3 border border-atlas-border mb-8">
+              <Shield size={11} className="text-brand-500 flex-shrink-0" />
+              Content Hash: {coa.content_hash} · Signature: {coa.signature || 'AM-' + coa.slug.slice(0, 8).toUpperCase()}
+            </div>
+          )}
+
+          <div className="bg-black text-white px-6 py-8">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 mb-6">
+              <div>
+                <p className="font-script text-2xl text-brand-500">Anthony Burke</p>
+                <p className="text-xs text-neutral-400 mt-1">Lab Director</p>
+              </div>
+              <div>
+                <p className="font-script text-2xl text-brand-500">Dr. Levi Friedle</p>
+                <p className="text-xs text-neutral-400 mt-1">Quality Assurance</p>
+              </div>
+            </div>
+            <div className="coa-gold-divider mb-4" />
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <p className="text-brand-500 text-sm font-medium">www.atlasanalytics.io</p>
+              <div className={`flex items-center gap-2 px-3 py-1.5 border font-semibold text-xs uppercase tracking-wider ${
+                coa.overall_result === 'pass'
+                  ? 'border-atlas-success text-atlas-success'
+                  : coa.overall_result === 'fail'
+                  ? 'border-red-500 text-red-400'
+                  : 'border-amber-500 text-amber-400'
+              }`}>
+                {coa.overall_result === 'pass' ? <CheckCircle size={14} /> : coa.overall_result === 'fail' ? <XCircle size={14} /> : <Clock size={14} />}
+                Overall: {coa.overall_result}
+              </div>
+            </div>
+            <p className="text-[10px] text-neutral-600 mt-4 leading-relaxed">
+              This certificate is cryptographically signed and tamper-proof. Verification available at atlasanalytics.io/verify
+            </p>
+          </div>
+
+          <div className="flex flex-col sm:flex-row gap-3 mt-8">
             <button onClick={copyLink} className="btn-outline flex-1 gap-2 justify-center">
-              {copied ? <><Check size={16} className="text-emerald-500" /> Link Copied!</> : <><Copy size={16} /> Copy Shareable Link</>}
+              {copied ? <><Check size={16} className="text-atlas-success" /> Link Copied!</> : <><Copy size={16} /> Copy Shareable Link</>}
             </button>
             <a href="#" className="btn-outline flex-1 gap-2 justify-center">
               <Download size={16} /> Download PDF

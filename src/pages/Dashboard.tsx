@@ -24,7 +24,7 @@ function StatusPipeline({ status }: { status: string }) {
         status === 'complete' ? 'bg-emerald-100 text-emerald-700' :
         status === 'in_review' ? 'bg-orange-100 text-orange-700' :
         status === 'analyzing' ? 'bg-amber-100 text-amber-700' :
-        status === 'processing' ? 'bg-blue-100 text-blue-700' :
+        status === 'processing' ? 'bg-brand-100 text-brand-800' :
         'bg-slate-100 text-slate-600'
       }`}>
         {ORDER_STATUS_LABELS[status as keyof typeof ORDER_STATUS_LABELS]}
@@ -67,7 +67,7 @@ export default function Dashboard() {
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           {[
-            { label: 'Active Orders', value: activeOrders.length, icon: Package, color: 'text-blue-600 bg-blue-50' },
+            { label: 'Active Orders', value: activeOrders.length, icon: Package, color: 'text-brand-700 bg-brand-50' },
             { label: 'Completed Orders', value: completedOrders.length, icon: CheckCircle, color: 'text-emerald-600 bg-emerald-50' },
             { label: 'My COAs', value: coaCount, icon: FileText, color: 'text-brand-600 bg-brand-50' },
             { label: 'Total Spent', value: formatCurrency(totalSpent), icon: TrendingUp, color: 'text-slate-600 bg-slate-100' },
@@ -83,7 +83,7 @@ export default function Dashboard() {
         </div>
 
         {profile?.is_first_order && (
-          <div className="card p-5 mb-6 bg-gradient-to-r from-brand-50 to-emerald-50 border-brand-200">
+          <div className="card p-5 mb-6 bg-gradient-to-r from-brand-50 to-brand-100/50 border-brand-200">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-brand-100 rounded-xl flex items-center justify-center">

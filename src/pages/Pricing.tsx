@@ -89,7 +89,7 @@ export default function Pricing() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      <div className="bg-slate-950 py-16 px-4">
+      <div className="bg-black py-16 px-4">
         <div className="max-w-3xl mx-auto text-center">
           <h1 className="text-4xl font-bold text-white mb-3">Pricing Calculator</h1>
           <p className="text-slate-400 text-lg">Volume discounts automatically applied. No hidden fees.</p>
