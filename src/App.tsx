@@ -17,6 +17,12 @@ import PublicVerify from './pages/PublicVerify';
 import PublicLibrary from './pages/PublicLibrary';
 import Trust from './pages/Trust';
 import Roadmap from './pages/Roadmap';
+import SubmissionList from './pages/submissions/SubmissionList';
+import SubmissionNew from './pages/submissions/SubmissionNew';
+import SubmissionDetail from './pages/submissions/SubmissionDetail';
+import SubmissionConfirm from './pages/submissions/SubmissionConfirm';
+import AdminDashboard from './pages/admin/AdminDashboard';
+import AdminSubmissionDetail from './pages/admin/AdminSubmissionDetail';
 
 function PublicLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -46,6 +52,12 @@ export default function App() {
           <Route path="/dashboard/orders" element={<OrderHistory />} />
           <Route path="/dashboard/coas" element={<COALibrary />} />
           <Route path="/dashboard/api" element={<APIKeys />} />
+          <Route path="/dashboard/submissions" element={<SubmissionList />} />
+          <Route path="/dashboard/submissions/new" element={<SubmissionNew />} />
+          <Route path="/dashboard/submissions/:id" element={<SubmissionDetail />} />
+          <Route path="/dashboard/submissions/:id/confirm" element={<SubmissionConfirm />} />
+          <Route path="/admin" element={<AdminDashboard />} />
+          <Route path="/admin/submissions/:id" element={<AdminSubmissionDetail />} />
           <Route path="/account" element={<Account />} />
           <Route path="/support" element={<Support />} />
         </Routes>
