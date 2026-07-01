@@ -1,4 +1,4 @@
-import { OrderSample, SampleStatus, TestPanel } from './types';
+import { COA, OrderSample, SampleStatus, TestPanel } from './types';
 
 // Canonical QC sections shown on a certificate when a sample doesn't have an
 // explicit panel list (matches the 8-section full QC panel used in seed COAs).
@@ -24,6 +24,29 @@ export function expectedPanelNames(sample: OrderSample, panels: TestPanel[]): st
     if (names.length) return names;
   }
   return QC_PANELS;
+}
+
+// Find the certificate for a sample. Prefers the direct sample_id link, then
+// falls back to batch number, then sample/display name — because some COAs are
+// created without a sample_id link.
+export function matchCoaForSample(sample: OrderSample, coas: COA[]): COA | undefined {
+  const direct = coas.find(c => c.sample_id === sample.id);
+  if (direct) return direct;
+
+  const meta = sample.metadata as { batch_number?: string } | null;
+  const batch = meta?.batch_number?.trim();
+  if (batch) {
+    const byBatch = coas.find(c => (c.batch_number || '').trim() === batch);
+    if (byBatch) return byBatch;
+  }
+
+  const names = [sample.display_name, sample.sample_name]
+    .filter(Boolean)
+    .map(n => n.toLowerCase().trim());
+  return coas.find(c =>
+    names.includes((c.display_name || '').toLowerCase().trim()) ||
+    names.includes((c.sample_name || '').toLowerCase().trim())
+  );
 }
 
 // Fraction of testing complete, inferred from sample status. Used to render a

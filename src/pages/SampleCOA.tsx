@@ -35,6 +35,14 @@ export default function SampleCOA() {
       const { data: coa } = await supabase.from('coas').select('slug').eq('sample_id', s.id).maybeSingle();
       if (coa?.slug) { setCompletedSlug(coa.slug); setLoading(false); return; }
 
+      // Fall back to matching an existing certificate by batch number.
+      const sMeta = s.metadata as { batch_number?: string } | null;
+      const batch = sMeta?.batch_number?.trim();
+      if (batch) {
+        const { data: byBatch } = await supabase.from('coas').select('slug').eq('batch_number', batch).limit(1).maybeSingle();
+        if (byBatch?.slug) { setCompletedSlug(byBatch.slug); setLoading(false); return; }
+      }
+
       const [{ data: o }, { data: p }] = await Promise.all([
         s.order_id ? supabase.from('orders').select('*').eq('id', s.order_id).maybeSingle() : Promise.resolve({ data: null }),
         supabase.from('test_panels').select('*').eq('is_active', true).order('sort_order'),
@@ -73,8 +81,9 @@ export default function SampleCOA() {
 
   const meta = sample.metadata as { batch_number?: string; labeled_content?: string; tests_label?: string } | null;
   const panelNames = expectedPanelNames(sample, panels);
+  const done = sample.status === 'complete';
   const progress = sampleProgress(sample.status);
-  const completedCount = Math.round(progress * panelNames.length);
+  const completedCount = done ? panelNames.length : Math.round(progress * panelNames.length);
   const companyLogo = profile?.company_logo || '';
 
   const infoFields = [
@@ -107,7 +116,11 @@ export default function SampleCOA() {
               <h1 className="text-sm sm:text-base font-bold text-brand-500 uppercase tracking-[0.25em]">
                 Certificate of Analysis
               </h1>
-              <p className="text-xs text-amber-400 mt-1 font-semibold uppercase tracking-wide">Preliminary · In Progress</p>
+              {done ? (
+                <p className="text-xs text-atlas-success mt-1 font-semibold uppercase tracking-wide">Analyses Complete</p>
+              ) : (
+                <p className="text-xs text-amber-400 mt-1 font-semibold uppercase tracking-wide">Preliminary · In Progress</p>
+              )}
             </div>
           </div>
         </div>
@@ -118,13 +131,23 @@ export default function SampleCOA() {
             <ArrowLeft size={14} /> Back to Orders
           </Link>
 
-          <div className="flex items-start gap-3 p-4 rounded-lg bg-amber-50 border border-amber-200 mb-8">
-            <Clock size={18} className="text-amber-600 flex-shrink-0 mt-0.5" />
-            <div>
-              <p className="font-semibold text-amber-900 text-sm">Testing in progress</p>
-              <p className="text-sm text-amber-800">This is a partial certificate. Completed analyses appear below; remaining sections are marked <strong>Pending</strong> and will populate as each test finishes.</p>
+          {done ? (
+            <div className="flex items-start gap-3 p-4 rounded-lg bg-emerald-50 border border-emerald-200 mb-8">
+              <CheckCircle size={18} className="text-atlas-success flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold text-emerald-900 text-sm">All analyses complete</p>
+                <p className="text-sm text-emerald-800">Every ordered test has been completed and reviewed. The final signed certificate is being generated and will appear under your COAs shortly.</p>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="flex items-start gap-3 p-4 rounded-lg bg-amber-50 border border-amber-200 mb-8">
+              <Clock size={18} className="text-amber-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold text-amber-900 text-sm">Testing in progress</p>
+                <p className="text-sm text-amber-800">This is a partial certificate. Completed analyses appear below; remaining sections are marked <strong>Pending</strong> and will populate as each test finishes.</p>
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-0 mb-8">
             {infoFields.map(({ label, value }) => (
@@ -149,8 +172,12 @@ export default function SampleCOA() {
           {/* Chromatogram placeholder */}
           <div className="mb-8 border border-atlas-border bg-neutral-50 flex flex-col items-center justify-center py-12 text-center">
             <FlaskConical size={28} className="text-neutral-300 mb-2" />
-            <p className="text-sm font-medium text-neutral-500">HPLC Chromatogram pending</p>
-            <p className="text-xs text-neutral-400">Available once purity analysis is complete.</p>
+            <p className="text-sm font-medium text-neutral-500">
+              {done ? 'HPLC Chromatogram on final certificate' : 'HPLC Chromatogram pending'}
+            </p>
+            <p className="text-xs text-neutral-400">
+              {done ? 'The full chromatogram appears on your issued COA.' : 'Available once purity analysis is complete.'}
+            </p>
           </div>
 
           {/* Panel table */}

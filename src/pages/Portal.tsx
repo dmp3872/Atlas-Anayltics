@@ -21,7 +21,7 @@ import {
   loadTeamMembers, saveTeamMembers, TeamMember, NotificationPrefs,
 } from '../lib/portalPrefs';
 import { loadOrderDraft, draftSummary } from '../lib/orderDraft';
-import { expectedPanelNames } from '../lib/coaPanels';
+import { expectedPanelNames, matchCoaForSample } from '../lib/coaPanels';
 import AccountSettings from '../components/account/AccountSettings';
 
 type PortalTab = 'coas' | 'samples' | 'orders' | 'invoices' | 'payments' | 'account' | 'widget' | 'team';
@@ -152,7 +152,7 @@ export default function Portal() {
 
   const filteredSamples = samples.filter(s => {
     const q = search.toLowerCase();
-    const coa = coas.find(c => c.sample_id === s.id);
+    const coa = matchCoaForSample(s, coas);
     const order = orders.find(o => o.id === s.order_id);
     const meta = s.metadata as { batch_number?: string } | null;
     const matchSearch = !q || [
@@ -396,7 +396,7 @@ export default function Portal() {
                         </thead>
                         <tbody className="divide-y divide-atlas-border">
                           {filteredSamples.map(s => {
-                            const coa = coas.find(c => c.sample_id === s.id);
+                            const coa = matchCoaForSample(s, coas);
                             const order = orders.find(o => o.id === s.order_id);
                             const meta = s.metadata as { batch_number?: string; labeled_content?: string; tests_label?: string } | null;
                             const lot = meta?.batch_number || coa?.batch_number || '—';
@@ -431,8 +431,16 @@ export default function Portal() {
                                     <Link to={`/coa/${coa.slug}`} className="btn-outline text-xs py-1.5 gap-1 inline-flex">
                                       <ExternalLink size={12} /> COA
                                     </Link>
+                                  ) : s.status === 'complete' ? (
+                                    <Link to={`/sample/${s.id}/coa`} className="btn-outline text-xs py-1.5 gap-1 inline-flex">
+                                      <ExternalLink size={12} /> COA
+                                    </Link>
+                                  ) : s.status === 'received' ? (
+                                    <span className="text-xs text-neutral-400">Awaiting testing</span>
                                   ) : (
-                                    <span className="text-xs text-neutral-400">In progress</span>
+                                    <Link to={`/sample/${s.id}/coa`} className="btn-outline text-xs py-1.5 gap-1 inline-flex whitespace-nowrap border-amber-300 text-amber-700 hover:bg-amber-50">
+                                      <Clock size={12} /> Partial COA
+                                    </Link>
                                   )}
                                 </td>
                               </tr>
@@ -494,7 +502,7 @@ export default function Portal() {
                         {orderSamples.length === 0 ? (
                           <p className="px-5 py-4 text-sm text-neutral-500">No samples recorded for this order.</p>
                         ) : orderSamples.map(s => {
-                          const coa = coas.find(c => c.sample_id === s.id);
+                          const coa = matchCoaForSample(s, coas);
                           const meta = s.metadata as { tests_label?: string; batch_number?: string } | null;
                           const tests = expectedPanelNames(s, panels);
                           return (
@@ -517,6 +525,10 @@ export default function Portal() {
                               <div className="flex-shrink-0">
                                 {coa ? (
                                   <Link to={`/coa/${coa.slug}`} className="btn-outline text-xs py-1.5 gap-1 inline-flex whitespace-nowrap">
+                                    <ExternalLink size={12} /> View COA
+                                  </Link>
+                                ) : s.status === 'complete' ? (
+                                  <Link to={`/sample/${s.id}/coa`} className="btn-outline text-xs py-1.5 gap-1 inline-flex whitespace-nowrap">
                                     <ExternalLink size={12} /> View COA
                                   </Link>
                                 ) : s.status === 'received' ? (
