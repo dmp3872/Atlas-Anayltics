@@ -3,6 +3,7 @@ import {
   Building2, Mail, Lock, CheckCircle, AlertCircle, User, MapPin, Globe, Phone,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import CompanyManager from './CompanyManager';
 
 type Message = { type: 'success' | 'error'; text: string } | null;
 
@@ -10,7 +11,6 @@ export default function AccountSettings() {
   const { user, profile, updateProfile, updateEmail, updatePassword } = useAuth();
 
   const [fullName, setFullName] = useState('');
-  const [companyName, setCompanyName] = useState('');
   const [phone, setPhone] = useState('');
   const [website, setWebsite] = useState('');
   const [addressLine1, setAddressLine1] = useState('');
@@ -33,7 +33,6 @@ export default function AccountSettings() {
 
   useEffect(() => {
     setFullName(profile?.full_name ?? '');
-    setCompanyName(profile?.company_name ?? '');
     setPhone(profile?.phone ?? '');
     setWebsite(profile?.website ?? '');
     setAddressLine1(profile?.address_line1 ?? '');
@@ -51,7 +50,9 @@ export default function AccountSettings() {
     setProfileMsg(null);
     const { error } = await updateProfile({
       full_name: fullName.trim(),
-      company_name: companyName.trim(),
+      // Company name/logo are managed in the Companies section (synced from the default company).
+      company_name: profile?.company_name ?? '',
+      company_logo: profile?.company_logo ?? '',
       phone: phone.trim(),
       website: website.trim(),
       address_line1: addressLine1.trim(),
@@ -122,20 +123,18 @@ export default function AccountSettings() {
   }
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div className="space-y-6">
+      <CompanyManager />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <form onSubmit={handleSaveProfile} className="card p-6 space-y-4">
         <h3 className="font-bold text-black flex items-center gap-2">
-          <Building2 size={16} /> Company Profile
+          <Building2 size={16} /> Contact &amp; Address
         </h3>
         <Alert msg={profileMsg} />
 
         <div>
           <label className="label flex items-center gap-1.5"><User size={13} /> Full Name</label>
           <input type="text" value={fullName} onChange={e => setFullName(e.target.value)} className="input-field" placeholder="Jane Smith" required />
-        </div>
-        <div>
-          <label className="label">Company Name <span className="text-neutral-400 font-normal text-xs">(appears on COAs)</span></label>
-          <input type="text" value={companyName} onChange={e => setCompanyName(e.target.value)} className="input-field" placeholder="Your company or lab" />
         </div>
         <div>
           <label className="label flex items-center gap-1.5"><Phone size={13} /> Phone</label>
@@ -205,6 +204,7 @@ export default function AccountSettings() {
             {pwSaving ? 'Updating...' : 'Update Password'}
           </button>
         </form>
+      </div>
       </div>
     </div>
   );

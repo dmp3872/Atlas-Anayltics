@@ -58,6 +58,7 @@ export interface COA {
   sample_name: string;
   display_name: string;
   company_name: string;
+  company_logo?: string;
   peptide_sequence: string;
   batch_number: string;
   purity_percent: number | null;
@@ -114,6 +115,21 @@ export interface UserProfile {
   prepaid_balance: number;
   is_first_order: boolean;
   website?: string;
+  company_logo?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Company {
+  id: string;
+  user_id: string;
+  name: string;
+  logo: string;
+  website?: string;
+  email?: string;
+  address?: string;
+  chromatograph_background?: string;
+  is_default: boolean;
   created_at: string;
   updated_at: string;
 }

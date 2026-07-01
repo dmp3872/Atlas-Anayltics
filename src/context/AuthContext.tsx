@@ -4,7 +4,7 @@ import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { UserProfile } from '../lib/types';
 
 export type ProfileUpdate = Pick<UserProfile,
-  'full_name' | 'company_name' | 'phone' | 'website' |
+  'full_name' | 'company_name' | 'phone' | 'website' | 'company_logo' |
   'address_line1' | 'address_line2' | 'city' | 'state' | 'zip' | 'country'
 >;
 
@@ -69,6 +69,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       company_name: updates.company_name,
       phone: updates.phone,
       website: updates.website ?? '',
+      company_logo: updates.company_logo ?? '',
       address_line1: updates.address_line1,
       address_line2: updates.address_line2,
       city: updates.city,
@@ -78,9 +79,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     let { error } = await supabase.from('user_profiles').upsert(row, { onConflict: 'id' });
+    // Gracefully retry without columns that may not exist yet (pending migrations).
     if (error?.message?.includes('website')) {
-      const { website: _w, ...withoutWebsite } = row;
-      ({ error } = await supabase.from('user_profiles').upsert(withoutWebsite, { onConflict: 'id' }));
+      delete row.website;
+      ({ error } = await supabase.from('user_profiles').upsert(row, { onConflict: 'id' }));
+    }
+    if (error?.message?.includes('company_logo')) {
+      delete row.company_logo;
+      ({ error } = await supabase.from('user_profiles').upsert(row, { onConflict: 'id' }));
     }
     if (error) return { error };
 

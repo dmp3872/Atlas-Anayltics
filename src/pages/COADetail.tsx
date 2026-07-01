@@ -7,6 +7,7 @@ import {
 import { supabase } from '../lib/supabase';
 import { COA, PanelResult } from '../lib/types';
 import { formatDateTime } from '../lib/utils';
+import { useAuth } from '../context/AuthContext';
 import Header from '../components/layout/Header';
 import Footer from '../components/layout/Footer';
 import AtlasLogo, { AtlasWatermark } from '../components/brand/AtlasLogo';
@@ -85,6 +86,7 @@ function InfoField({ label, value }: { label: string; value: string }) {
 
 export default function COADetail() {
   const { slug } = useParams<{ slug: string }>();
+  const { user, profile, loading: authLoading } = useAuth();
   const [coa, setCoa] = useState<COA | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -92,19 +94,22 @@ export default function COADetail() {
   const [vialSize, setVialSize] = useState('3ml');
 
   useEffect(() => {
-    if (!slug) return;
+    if (!slug || authLoading) return;
+    setLoading(true);
+    setNotFound(false);
+    // No is_public filter here: row-level security decides visibility.
+    // Public COAs are readable by anyone; private COAs only by their owner.
     supabase
       .from('coas')
       .select('*')
       .eq('slug', slug)
-      .eq('is_public', true)
       .maybeSingle()
       .then(({ data }) => {
         if (data) setCoa(data);
         else setNotFound(true);
         setLoading(false);
       });
-  }, [slug]);
+  }, [slug, user, authLoading]);
 
   async function copyLink() {
     await navigator.clipboard.writeText(window.location.href);
@@ -143,6 +148,11 @@ export default function COADetail() {
     { panel_name: 'Endotoxin (LAL)', result: '<0.5 EU/mg', specification: '<1.0 EU/mg', pass: true },
   ];
 
+  // Prefer the logo snapshotted onto the COA; fall back to the owner's profile
+  // logo when the owner is viewing their own certificate (RLS blocks others).
+  const isOwner = !!user && user.id === coa.user_id;
+  const companyLogo = coa.company_logo || (isOwner ? profile?.company_logo : '') || '';
+
   const infoFields = [
     { label: 'Client', value: coa.company_name || '—' },
     { label: 'Sample Code', value: coa.slug },
@@ -159,7 +169,19 @@ export default function COADetail() {
       <div className="min-h-screen bg-white">
         <div className="coa-header-bar">
           <div className="max-w-4xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <AtlasLogo variant="light" size="md" />
+            <div className="flex items-center gap-4">
+              <AtlasLogo variant="light" size="md" />
+              {companyLogo && (
+                <>
+                  <span className="hidden sm:block h-8 w-px bg-neutral-700" />
+                  <img
+                    src={companyLogo}
+                    alt={`${coa.company_name || 'Company'} logo`}
+                    className="h-10 max-w-[140px] object-contain"
+                  />
+                </>
+              )}
+            </div>
             <div className="text-right">
               <h1 className="text-sm sm:text-base font-bold text-brand-500 uppercase tracking-[0.25em]">
                 Certificate of Analysis
@@ -171,9 +193,16 @@ export default function COADetail() {
         <div className="coa-gold-divider" />
 
         <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8">
-          <Link to="/coa-library" className="inline-flex items-center gap-1.5 text-neutral-500 hover:text-brand-600 text-sm mb-6 transition-colors">
-            <ArrowLeft size={14} /> Public Library
-          </Link>
+          <div className="flex items-center justify-between gap-3 mb-6">
+            <Link to={isOwner ? '/dashboard/coas' : '/coa-library'} className="inline-flex items-center gap-1.5 text-neutral-500 hover:text-brand-600 text-sm transition-colors">
+              <ArrowLeft size={14} /> {isOwner ? 'Back to My COAs' : 'Public Library'}
+            </Link>
+            {isOwner && !coa.is_public && (
+              <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-neutral-600 bg-neutral-100 border border-neutral-200 rounded-full px-2.5 py-1">
+                <Shield size={12} /> Private — only visible to you
+              </span>
+            )}
+          </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-0 mb-8">
             {infoFields.map(({ label, value }) => (

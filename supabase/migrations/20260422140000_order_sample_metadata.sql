@@ -22,7 +22,7 @@ END $$;
 INSERT INTO orders (id, user_id, order_number, status, rush_processing, notes, subtotal, discount_amount, rush_fee, total, first_order_discount, company_name, created_at, updated_at)
 VALUES (
   'a0000006-0000-0000-0000-000000000006',
-  '162cf453-7912-4fe1-a6b2-d3fb0625ec98',
+  'd0931884-c3cb-4913-b103-cf9ed084b950',
   'ATL-20260418-3301',
   'complete',
   false,
@@ -39,7 +39,7 @@ VALUES
   (
     'b0000006-0000-0000-0000-000000000001',
     'a0000006-0000-0000-0000-000000000006',
-    '162cf453-7912-4fe1-a6b2-d3fb0625ec98',
+    'd0931884-c3cb-4913-b103-cf9ed084b950',
     'ION-3RT', 'ION-3RT 10mg', 'single', 3, '{}', 'complete',
     '{"batch_number":"LOT-2026-001","labeled_content":"10mg","vial_size":"3mL","sample_matrix":"Lyophilized","is_peptide":true,"peptide_identification":"ION-3RT","test_mode":"full_qc","tests_label":"Full QC Panel","line_total":500}'::jsonb,
     NOW() - INTERVAL '18 days'
@@ -47,7 +47,7 @@ VALUES
   (
     'b0000006-0000-0000-0000-000000000002',
     'a0000006-0000-0000-0000-000000000006',
-    '162cf453-7912-4fe1-a6b2-d3fb0625ec98',
+    'd0931884-c3cb-4913-b103-cf9ed084b950',
     'KLOW', 'KLOW 80mg', 'blend', 3, '{}', 'complete',
     '{"batch_number":"KLOW-BATCH-442","labeled_content":"80mg","vial_size":"10mL","sample_matrix":"Lyophilized","is_peptide":true,"peptide_identification":"KLOW Blend","test_mode":"full_qc","tests_label":"Full QC Panel","line_total":500}'::jsonb,
     NOW() - INTERVAL '18 days'
@@ -55,7 +55,7 @@ VALUES
   (
     'b0000006-0000-0000-0000-000000000003',
     'a0000006-0000-0000-0000-000000000006',
-    '162cf453-7912-4fe1-a6b2-d3fb0625ec98',
+    'd0931884-c3cb-4913-b103-cf9ed084b950',
     'ARA-290', 'ARA-290 10mg', 'single', 3, '{}', 'complete',
     '{"batch_number":"ARA-290-2026-A","labeled_content":"10mg","vial_size":"3mL","sample_matrix":"Lyophilized","is_peptide":true,"peptide_identification":"ARA-290","test_mode":"full_qc","tests_label":"Full QC Panel","line_total":500}'::jsonb,
     NOW() - INTERVAL '18 days'
@@ -69,7 +69,7 @@ VALUES
   'c0000006-0000-0000-0000-000000000001',
   'b0000006-0000-0000-0000-000000000001',
   'a0000006-0000-0000-0000-000000000006',
-  '162cf453-7912-4fe1-a6b2-d3fb0625ec98',
+  'd0931884-c3cb-4913-b103-cf9ed084b950',
   'dp-ion3rt-2026',
   'ION-3RT', 'ION-3RT 10mg', 'Apex Research Group', 'ION-3RT', 'LOT-2026-001', 99.2, 1187.4,
   '[
@@ -89,7 +89,7 @@ VALUES
   'c0000006-0000-0000-0000-000000000002',
   'b0000006-0000-0000-0000-000000000002',
   'a0000006-0000-0000-0000-000000000006',
-  '162cf453-7912-4fe1-a6b2-d3fb0625ec98',
+  'd0931884-c3cb-4913-b103-cf9ed084b950',
   'dp-klow-2026',
   'KLOW', 'KLOW 80mg', 'Apex Research Group', 'KLOW Blend', 'KLOW-BATCH-442', 98.9, null,
   '[
@@ -109,7 +109,7 @@ VALUES
   'c0000006-0000-0000-0000-000000000003',
   'b0000006-0000-0000-0000-000000000003',
   'a0000006-0000-0000-0000-000000000006',
-  '162cf453-7912-4fe1-a6b2-d3fb0625ec98',
+  'd0931884-c3cb-4913-b103-cf9ed084b950',
   'dp-ara290-2026',
   'ARA-290', 'ARA-290 10mg', 'Apex Research Group', 'ARA-290', 'ARA-290-2026-A', 99.0, 1026.2,
   '[
@@ -131,7 +131,7 @@ ON CONFLICT (slug) DO NOTHING;
 INSERT INTO orders (id, user_id, order_number, status, rush_processing, notes, subtotal, discount_amount, rush_fee, total, first_order_discount, company_name, created_at, updated_at)
 VALUES (
   'a0000007-0000-0000-0000-000000000007',
-  '162cf453-7912-4fe1-a6b2-d3fb0625ec98',
+  'd0931884-c3cb-4913-b103-cf9ed084b950',
   'ATL-DRAFT-20260422',
   'received',
   false,
@@ -147,7 +147,7 @@ INSERT INTO order_samples (id, order_id, user_id, sample_name, display_name, sam
 VALUES (
   'b0000007-0000-0000-0000-000000000001',
   'a0000007-0000-0000-0000-000000000007',
-  '162cf453-7912-4fe1-a6b2-d3fb0625ec98',
+  'd0931884-c3cb-4913-b103-cf9ed084b950',
   'ION-3RT', 'ION-3RT 10mg', 'single', 3, '{}', 'received',
   '{"batch_number":"","labeled_content":"10mg","vial_size":"3mL","sample_matrix":"Lyophilized","test_mode":"full_qc","draft":true}'::jsonb,
   NOW() - INTERVAL '2 hours'

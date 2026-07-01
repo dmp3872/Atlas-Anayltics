@@ -33,6 +33,8 @@
   - Public read on coas where is_public = true
 */
 
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 CREATE TABLE IF NOT EXISTS test_panels (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   name text NOT NULL,
@@ -95,7 +97,7 @@ CREATE TABLE IF NOT EXISTS coas (
   sample_id uuid REFERENCES order_samples(id) ON DELETE SET NULL,
   order_id uuid REFERENCES orders(id) ON DELETE SET NULL,
   user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  slug text UNIQUE NOT NULL DEFAULT encode(gen_random_bytes(12), 'hex'),
+  slug text UNIQUE NOT NULL DEFAULT encode(extensions.gen_random_bytes(12), 'hex'),
   sample_name text NOT NULL DEFAULT '',
   display_name text DEFAULT '',
   company_name text DEFAULT '',

@@ -11,6 +11,7 @@ import OrderWizard from './pages/OrderWizard';
 import OrderHistory from './pages/OrderHistory';
 import COALibrary from './pages/COALibrary';
 import COADetail from './pages/COADetail';
+import SampleCOA from './pages/SampleCOA';
 import APIKeys from './pages/APIKeys';
 import Support from './pages/Support';
 import PublicVerify from './pages/PublicVerify';
@@ -41,6 +42,7 @@ export default function App() {
           <Route path="/verify" element={<PublicVerify />} />
           <Route path="/coa-library" element={<PublicLibrary />} />
           <Route path="/coa/:slug" element={<COADetail />} />
+          <Route path="/sample/:sampleId/coa" element={<SampleCOA />} />
           <Route path="/trust" element={<Trust />} />
           <Route path="/roadmap" element={<Roadmap />} />
           <Route path="/dashboard" element={<Portal />} />

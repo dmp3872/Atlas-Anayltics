@@ -21,6 +21,7 @@ import {
   loadTeamMembers, saveTeamMembers, TeamMember, NotificationPrefs,
 } from '../lib/portalPrefs';
 import { loadOrderDraft, draftSummary } from '../lib/orderDraft';
+import { expectedPanelNames } from '../lib/coaPanels';
 import AccountSettings from '../components/account/AccountSettings';
 
 type PortalTab = 'coas' | 'samples' | 'orders' | 'invoices' | 'payments' | 'account' | 'widget' | 'team';
@@ -60,7 +61,9 @@ export default function Portal() {
   const [copiedAddr, setCopiedAddr] = useState(false);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [sampleProduct, setSampleProduct] = useState('all');
   const [selectedCoas, setSelectedCoas] = useState<Set<string>>(new Set());
+  const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
 
   const [promoCode, setPromoCode] = useState('');
   const [promoMsg, setPromoMsg] = useState('');
@@ -108,6 +111,7 @@ export default function Portal() {
     setParams({ tab: t }, { replace: true });
     setSearch('');
     setStatusFilter('all');
+    setSampleProduct('all');
   }
 
   async function copyAddress() {
@@ -144,10 +148,19 @@ export default function Portal() {
     return matchSearch && matchStatus;
   });
 
+  const sampleProducts = Array.from(new Set(samples.map(s => s.sample_name).filter(Boolean))).sort();
+
   const filteredSamples = samples.filter(s => {
     const q = search.toLowerCase();
     const coa = coas.find(c => c.sample_id === s.id);
-    return !q || [s.sample_name, s.display_name, coa?.slug].some(v => v?.toLowerCase().includes(q));
+    const order = orders.find(o => o.id === s.order_id);
+    const meta = s.metadata as { batch_number?: string } | null;
+    const matchSearch = !q || [
+      s.sample_name, s.display_name, coa?.slug, order?.order_number,
+      meta?.batch_number, coa?.batch_number,
+    ].some(v => v?.toLowerCase().includes(q));
+    const matchProduct = sampleProduct === 'all' || s.sample_name === sampleProduct;
+    return matchSearch && matchProduct;
   });
 
   const filteredOrders = orders.filter(o => {
@@ -282,7 +295,12 @@ export default function Portal() {
                 className="input-field pl-9 py-2 text-sm"
               />
             </div>
-            {tab !== 'samples' && (
+            {tab === 'samples' ? (
+              <select value={sampleProduct} onChange={e => setSampleProduct(e.target.value)} className="input-field py-2 text-sm w-auto">
+                <option value="all">All Products</option>
+                {sampleProducts.map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+            ) : (
               <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="input-field py-2 text-sm w-auto">
                 <option value="all">All Statuses</option>
                 {tab === 'coas' && <><option value="pass">Pass</option><option value="fail">Fail</option><option value="pending">Pending</option></>}
@@ -349,33 +367,82 @@ export default function Portal() {
 
             {/* Samples Tab */}
             {tab === 'samples' && (
-              <div className="card overflow-hidden">
-                {filteredSamples.length === 0 ? (
-                  <div className="p-12 text-center text-neutral-500">No samples yet</div>
-                ) : (
-                  <table className="w-full text-sm">
-                    <thead><tr className="coa-table-header"><th className="text-left px-5 py-3">Sample</th><th className="text-left px-5 py-3">Batch / Lot</th><th className="text-left px-5 py-3">Type</th><th className="text-left px-5 py-3">Status</th><th className="text-left px-5 py-3">Vials</th><th className="text-left px-5 py-3">COA</th></tr></thead>
-                    <tbody>
-                      {filteredSamples.map((s, i) => {
-                        const coa = coas.find(c => c.sample_id === s.id);
-                        const meta = s.metadata as { batch_number?: string; labeled_content?: string; tests_label?: string } | null;
-                        return (
-                          <tr key={s.id} className={i % 2 ? 'bg-neutral-50' : 'bg-white'}>
-                            <td className="px-5 py-3">
-                              <p className="font-medium">{s.display_name || s.sample_name}</p>
-                              {meta?.labeled_content && <p className="text-xs text-neutral-500">{meta.labeled_content}{meta.tests_label ? ` · ${meta.tests_label}` : ''}</p>}
-                            </td>
-                            <td className="px-5 py-3 text-neutral-600">{meta?.batch_number || coa?.batch_number || '—'}</td>
-                            <td className="px-5 py-3 capitalize">{s.sample_type}</td>
-                            <td className="px-5 py-3"><span className="text-xs font-semibold uppercase">{SAMPLE_STATUS_LABELS[s.status]}</span></td>
-                            <td className="px-5 py-3">{s.vial_count}</td>
-                            <td className="px-5 py-3">{coa ? <Link to={`/coa/${coa.slug}`} className="text-brand-700 hover:underline">{coa.slug.slice(0, 12)}</Link> : '—'}</td>
+              <div className="space-y-5">
+                <div>
+                  <h2 className="text-2xl sm:text-3xl font-bold text-black">Your Samples</h2>
+                  <p className="text-sm text-neutral-500 mt-1">Track every sample submitted to Atlas Analytics through testing.</p>
+                </div>
+                <div className="card overflow-hidden">
+                  {filteredSamples.length === 0 ? (
+                    <div className="p-12 text-center">
+                      <FlaskConical size={32} className="mx-auto mb-3 text-neutral-300" />
+                      <p className="font-medium">{samples.length === 0 ? 'No samples yet' : 'No samples match your search'}</p>
+                      {samples.length === 0 && (
+                        <Link to="/order-new" className="btn-primary text-sm mt-4 inline-flex">Submit a Sample</Link>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="coa-table-header">
+                            <th className="text-left px-5 py-3">Order</th>
+                            <th className="text-left px-5 py-3">Name</th>
+                            <th className="text-left px-5 py-3">Results</th>
+                            <th className="text-left px-5 py-3">Lot</th>
+                            <th className="text-left px-5 py-3">Date</th>
+                            <th className="px-5 py-3"></th>
                           </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                )}
+                        </thead>
+                        <tbody className="divide-y divide-atlas-border">
+                          {filteredSamples.map(s => {
+                            const coa = coas.find(c => c.sample_id === s.id);
+                            const order = orders.find(o => o.id === s.order_id);
+                            const meta = s.metadata as { batch_number?: string; labeled_content?: string; tests_label?: string } | null;
+                            const lot = meta?.batch_number || coa?.batch_number || '—';
+                            return (
+                              <tr key={s.id} className="bg-white hover:bg-neutral-50 transition-colors">
+                                <td className="px-5 py-3">
+                                  {order ? (
+                                    <button onClick={() => setTab('orders')} className="font-mono text-xs font-semibold text-brand-700 hover:underline">
+                                      {order.order_number}
+                                    </button>
+                                  ) : <span className="text-neutral-400">—</span>}
+                                </td>
+                                <td className="px-5 py-3">
+                                  <p className="font-medium text-black">{s.display_name || s.sample_name}</p>
+                                  {meta?.labeled_content && (
+                                    <p className="text-xs text-neutral-500">
+                                      {meta.labeled_content}{meta.tests_label ? ` · ${meta.tests_label}` : ''}
+                                    </p>
+                                  )}
+                                </td>
+                                <td className="px-5 py-3">
+                                  {coa ? (
+                                    <ResultBadge result={coa.overall_result} />
+                                  ) : (
+                                    <span className="badge-pending"><Clock size={10} /> {SAMPLE_STATUS_LABELS[s.status]}</span>
+                                  )}
+                                </td>
+                                <td className="px-5 py-3 text-neutral-600">{lot}</td>
+                                <td className="px-5 py-3 text-neutral-600">{formatDate(s.created_at)}</td>
+                                <td className="px-5 py-3 text-right">
+                                  {coa ? (
+                                    <Link to={`/coa/${coa.slug}`} className="btn-outline text-xs py-1.5 gap-1 inline-flex">
+                                      <ExternalLink size={12} /> COA
+                                    </Link>
+                                  ) : (
+                                    <span className="text-xs text-neutral-400">In progress</span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
@@ -384,28 +451,90 @@ export default function Portal() {
               <div className="space-y-3">
                 {filteredOrders.length === 0 ? (
                   <div className="card p-12 text-center"><Link to="/order-new" className="btn-primary text-sm">New Order</Link></div>
-                ) : filteredOrders.map(order => (
-                  <div key={order.id} className="card p-5">
-                    <div className="flex items-start justify-between gap-4 mb-3">
-                      <div>
-                        <p className="font-bold text-black">{order.order_number}</p>
-                        <p className="text-xs text-neutral-500">{formatDateTime(order.created_at)}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-bold">{formatCurrency(order.total)}</p>
-                        <span className="text-xs font-semibold uppercase text-brand-700">{ORDER_STATUS_LABELS[order.status]}</span>
-                      </div>
-                    </div>
-                    <div className="flex gap-1">
-                      {['received', 'processing', 'analyzing', 'in_review', 'complete'].map((step, i) => {
-                        const idx = ['received', 'processing', 'analyzing', 'in_review', 'complete'].indexOf(order.status);
-                        return (
-                          <div key={step} className={`h-1.5 flex-1 rounded-full ${i <= idx ? 'bg-brand-500' : 'bg-neutral-200'}`} />
-                        );
+                ) : filteredOrders.map(order => {
+                  const orderSamples = samples.filter(s => s.order_id === order.id);
+                  const expanded = expandedOrders.has(order.id);
+                  return (
+                  <div key={order.id} className="card overflow-hidden">
+                    <button
+                      onClick={() => setExpandedOrders(prev => {
+                        const next = new Set(prev);
+                        next.has(order.id) ? next.delete(order.id) : next.add(order.id);
+                        return next;
                       })}
-                    </div>
+                      className="w-full text-left p-5 hover:bg-neutral-50 transition-colors"
+                    >
+                      <div className="flex items-start justify-between gap-4 mb-3">
+                        <div className="flex items-center gap-3">
+                          {expanded ? <ChevronUp size={18} className="text-neutral-400 mt-0.5" /> : <ChevronDown size={18} className="text-neutral-400 mt-0.5" />}
+                          <div>
+                            <p className="font-bold text-black">{order.order_number}</p>
+                            <p className="text-xs text-neutral-500">
+                              {formatDateTime(order.created_at)} · {orderSamples.length} sample{orderSamples.length === 1 ? '' : 's'}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-bold">{formatCurrency(order.total)}</p>
+                          <span className="text-xs font-semibold uppercase text-brand-700">{ORDER_STATUS_LABELS[order.status]}</span>
+                        </div>
+                      </div>
+                      <div className="flex gap-1">
+                        {['received', 'processing', 'analyzing', 'in_review', 'complete'].map((step, i) => {
+                          const idx = ['received', 'processing', 'analyzing', 'in_review', 'complete'].indexOf(order.status);
+                          return (
+                            <div key={step} className={`h-1.5 flex-1 rounded-full ${i <= idx ? 'bg-brand-500' : 'bg-neutral-200'}`} />
+                          );
+                        })}
+                      </div>
+                    </button>
+
+                    {expanded && (
+                      <div className="border-t border-atlas-border divide-y divide-atlas-border">
+                        {orderSamples.length === 0 ? (
+                          <p className="px-5 py-4 text-sm text-neutral-500">No samples recorded for this order.</p>
+                        ) : orderSamples.map(s => {
+                          const coa = coas.find(c => c.sample_id === s.id);
+                          const meta = s.metadata as { tests_label?: string; batch_number?: string } | null;
+                          const tests = expectedPanelNames(s, panels);
+                          return (
+                            <div key={s.id} className="px-5 py-4 flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <p className="font-semibold text-black">{s.display_name || s.sample_name}</p>
+                                  <span className="text-xs text-neutral-400 capitalize">{s.sample_type}</span>
+                                  {coa ? <ResultBadge result={coa.overall_result} /> : <span className="badge-pending"><Clock size={10} /> {SAMPLE_STATUS_LABELS[s.status]}</span>}
+                                </div>
+                                <p className="text-xs font-semibold uppercase tracking-wider text-neutral-400 mt-2 mb-1">
+                                  Tests Ordered{meta?.tests_label ? ` · ${meta.tests_label}` : ''}
+                                </p>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {tests.map(t => (
+                                    <span key={t} className="inline-block text-xs bg-neutral-100 text-neutral-700 rounded px-2 py-0.5">{t}</span>
+                                  ))}
+                                </div>
+                              </div>
+                              <div className="flex-shrink-0">
+                                {coa ? (
+                                  <Link to={`/coa/${coa.slug}`} className="btn-outline text-xs py-1.5 gap-1 inline-flex whitespace-nowrap">
+                                    <ExternalLink size={12} /> View COA
+                                  </Link>
+                                ) : s.status === 'received' ? (
+                                  <span className="text-xs text-neutral-400 whitespace-nowrap">Awaiting testing</span>
+                                ) : (
+                                  <Link to={`/sample/${s.id}/coa`} className="btn-outline text-xs py-1.5 gap-1 inline-flex whitespace-nowrap border-amber-300 text-amber-700 hover:bg-amber-50">
+                                    <Clock size={12} /> View partial COA
+                                  </Link>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 
