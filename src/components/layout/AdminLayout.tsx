@@ -1,24 +1,17 @@
 import { useState } from 'react';
 import { Link, Navigate, useLocation } from 'react-router-dom';
 import {
-  LayoutDashboard, ShoppingCart, FileText, Key, User, HelpCircle,
-  LogOut, Menu, X, ChevronRight, FlaskConical, Shield,
+  LayoutDashboard, FlaskConical, LogOut, Menu, X, ChevronRight, ArrowLeft,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useUserRole } from '../../hooks/useUserRole';
 import AtlasLogo from '../brand/AtlasLogo';
 
 const navItems = [
-  { href: '/dashboard', icon: LayoutDashboard, label: 'Overview' },
-  { href: '/dashboard/submissions', icon: FlaskConical, label: 'Submissions' },
-  { href: '/dashboard/orders', icon: ShoppingCart, label: 'Orders' },
-  { href: '/dashboard/coas', icon: FileText, label: 'My COAs' },
-  { href: '/dashboard/api', icon: Key, label: 'API Keys' },
-  { href: '/account', icon: User, label: 'Account' },
-  { href: '/support', icon: HelpCircle, label: 'Support' },
+  { href: '/admin', icon: LayoutDashboard, label: 'Submissions' },
 ];
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const { user, signOut, loading } = useAuth();
   const { isStaff } = useUserRole();
   const location = useLocation();
@@ -32,19 +25,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     );
   }
 
-  if (!user) {
-    return <Navigate to="/auth" replace />;
-  }
+  if (!user) return <Navigate to="/auth" replace />;
+  if (!isStaff) return <Navigate to="/dashboard" replace />;
 
-  const isActive = (href: string) =>
-    href === '/dashboard'
-      ? location.pathname === href
-      : location.pathname.startsWith(href);
+  const isActive = (href: string) => location.pathname === href;
 
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
-      <Link to="/" className="px-6 py-5 border-b border-atlas-border">
+      <Link to="/admin" className="px-6 py-5 border-b border-atlas-border">
         <AtlasLogo size="sm" />
+        <p className="text-xs text-brand-700 font-semibold mt-1 uppercase tracking-wider">Admin</p>
       </Link>
 
       <nav className="flex-1 px-3 py-4 space-y-0.5">
@@ -66,33 +56,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         ))}
       </nav>
 
-      <div className="px-3 pb-4 border-t border-atlas-border pt-3">
-        <Link
-          to="/dashboard/submissions/new"
-          className="flex items-center justify-center gap-2 w-full py-2.5 btn-primary text-sm mb-3"
-        >
-          <FlaskConical size={15} />
-          New Submission
+      <div className="px-3 pb-4 border-t border-atlas-border pt-3 space-y-2">
+        <Link to="/dashboard" className="flex items-center gap-2 w-full px-3 py-2 text-sm text-neutral-600 hover:text-black rounded-lg hover:bg-neutral-100">
+          <ArrowLeft size={15} /> Client portal
         </Link>
-        {isStaff && (
-          <Link
-            to="/admin"
-            className="flex items-center justify-center gap-2 w-full py-2.5 btn-outline-gold text-sm mb-3"
-          >
-            <Shield size={15} />
-            Admin
-          </Link>
-        )}
         <button
           onClick={signOut}
           className="flex items-center gap-2.5 w-full px-3 py-2.5 text-sm font-medium text-neutral-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
         >
-          <LogOut size={15} />
-          Sign Out
+          <LogOut size={15} /> Sign Out
         </button>
-        <div className="mt-3 px-2">
-          <p className="text-xs text-neutral-500 truncate">{user.email}</p>
-        </div>
+        <p className="text-xs text-neutral-500 truncate px-2">{user.email}</p>
       </div>
     </div>
   );
@@ -107,10 +81,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <div className="md:hidden fixed inset-0 z-40">
           <div className="absolute inset-0 bg-black/50" onClick={() => setSidebarOpen(false)} />
           <aside className="relative flex flex-col w-64 bg-white h-full shadow-xl">
-            <button
-              onClick={() => setSidebarOpen(false)}
-              className="absolute top-4 right-4 p-1.5 rounded-lg hover:bg-neutral-100"
-            >
+            <button onClick={() => setSidebarOpen(false)} className="absolute top-4 right-4 p-1.5 rounded-lg hover:bg-neutral-100">
               <X size={18} />
             </button>
             <SidebarContent />
@@ -123,11 +94,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <button onClick={() => setSidebarOpen(true)} className="p-1.5 rounded-lg hover:bg-neutral-100">
             <Menu size={20} />
           </button>
-          <span className="font-semibold text-black">Atlas Analytics</span>
+          <span className="font-semibold text-black flex items-center gap-2">
+            <FlaskConical size={16} className="text-brand-600" /> Admin
+          </span>
         </div>
-        <main className="p-6 lg:p-8">
-          {children}
-        </main>
+        <main className="p-6 lg:p-8">{children}</main>
       </div>
     </div>
   );

@@ -1,3 +1,17 @@
+export type UserRole = 'client' | 'admin' | 'reviewer' | 'chemist' | 'verifier';
+
+export type SubmissionStatus =
+  | 'draft'
+  | 'submitted'
+  | 'awaiting_sample'
+  | 'sample_received'
+  | 'in_testing'
+  | 'qa_review'
+  | 'complete'
+  | 'archived';
+
+export type SubmissionUrgency = 'standard' | 'rush';
+
 export type OrderStatus = 'received' | 'processing' | 'analyzing' | 'in_review' | 'complete' | 'cancelled';
 export type SampleStatus = 'received' | 'analyzing' | 'in_review' | 'complete';
 export type COAResult = 'pass' | 'fail' | 'pending';
@@ -109,7 +123,57 @@ export interface ApiKey {
   created_at: string;
 }
 
-export type UserRole = 'client' | 'chemist' | 'admin' | 'verifier';
+export interface Submission {
+  id: string;
+  submission_number: string;
+  user_id: string;
+  company_name: string;
+  contact_name: string;
+  email: string;
+  phone: string;
+  status: SubmissionStatus;
+  urgency: SubmissionUrgency;
+  notes: string;
+  document_url: string | null;
+  created_at: string;
+  updated_at: string;
+  submission_samples?: SubmissionSample[];
+}
+
+export interface SubmissionSample {
+  id: string;
+  submission_id: string;
+  sample_number: string;
+  product_name: string;
+  batch_lot_number: string;
+  sample_count: number;
+  panel_id: string | null;
+  panel_ids: string[];
+  status: SubmissionStatus;
+  created_at: string;
+  submission_results?: SubmissionResult[];
+}
+
+export interface SubmissionResult {
+  id: string;
+  sample_id: string;
+  panel_id: string | null;
+  result_data: Record<string, unknown>;
+  overall_pass: boolean | null;
+  entered_by: string | null;
+  created_at: string;
+}
+
+export interface StatusHistoryEntry {
+  id: string;
+  submission_id: string;
+  sample_id: string | null;
+  from_status: SubmissionStatus | null;
+  to_status: SubmissionStatus;
+  changed_by: string | null;
+  note: string;
+  created_at: string;
+}
 
 export interface UserProfile {
   id: string;

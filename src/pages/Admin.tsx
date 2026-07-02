@@ -10,7 +10,7 @@ import { formatDate } from '../lib/utils';
 import { ROLE_LABELS } from '../lib/roles';
 import StaffHeader from '../components/layout/StaffHeader';
 
-const ROLES: UserRole[] = ['client', 'chemist', 'verifier', 'admin'];
+const ROLES: UserRole[] = ['client', 'chemist', 'verifier', 'reviewer', 'admin'];
 
 export default function Admin() {
   const [users, setUsers] = useState<UserProfile[]>([]);
@@ -55,6 +55,7 @@ export default function Admin() {
   ];
 
   const links = [
+    { to: '/admin/submissions', label: 'Submissions Queue', desc: 'Kyle workflow — status pipeline', icon: ShoppingCart },
     { to: '/lab', label: 'Lab Console', desc: 'Issue certificates', icon: FlaskConical },
     { to: '/dashboard', label: 'Client Portal', desc: 'Client experience', icon: LayoutDashboard },
     { to: '/verify-portal', label: 'Verification', desc: 'Browse & verify', icon: Shield },

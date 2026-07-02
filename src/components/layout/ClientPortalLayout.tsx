@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import {
   LayoutDashboard, FileText, ShoppingCart, FlaskConical, Beaker,
-  LogOut, Menu, X, Rocket, User, Key, HelpCircle, Plus,
+  LogOut, Menu, X, Rocket, User, Key, HelpCircle, Plus, ClipboardList,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import AtlasLogo from '../brand/AtlasLogo';
@@ -12,6 +12,7 @@ const MAIN_NAV = [
   { tab: 'home', href: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { tab: 'coas', href: '/dashboard/coas', icon: FileText, label: 'Your COAs' },
   { tab: 'orders', href: '/dashboard/orders', icon: ShoppingCart, label: 'Your Orders' },
+  { href: '/dashboard/submissions', icon: ClipboardList, label: 'Submissions', pathMatch: '/dashboard/submissions' },
   { tab: 'samples', href: '/dashboard?tab=samples', icon: FlaskConical, label: 'Samples' },
   { tab: 'peptide-requests', href: '/dashboard?tab=peptide-requests', icon: Beaker, label: 'Peptide Requests' },
 ];
@@ -23,6 +24,7 @@ const ACCOUNT_NAV = [
 ];
 
 function activeTab(location: ReturnType<typeof useLocation>, params: URLSearchParams): string {
+  if (location.pathname.includes('/submissions')) return 'submissions';
   if (location.pathname.includes('/coas')) return 'coas';
   if (location.pathname.includes('/orders')) return 'orders';
   if (location.pathname.includes('/api')) return 'api';
@@ -54,10 +56,12 @@ export default function ClientPortalLayout({ children }: { children: React.React
 
       <nav className="flex-1 px-3 space-y-0.5 overflow-y-auto">
         {MAIN_NAV.map(item => {
-          const on = current === item.tab;
+          const on = 'pathMatch' in item && item.pathMatch
+            ? location.pathname.startsWith(item.pathMatch)
+            : current === item.tab;
           return (
             <Link
-              key={item.tab}
+              key={item.label}
               to={item.href}
               onClick={() => setOpen(false)}
               className={`portal-nav-item ${on ? 'portal-nav-item-active' : ''}`}

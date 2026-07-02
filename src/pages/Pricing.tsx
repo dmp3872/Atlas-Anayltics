@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { CheckCircle, Zap, ArrowRight, Minus, Plus } from 'lucide-react';
-import { supabase } from '../lib/supabase';
 import { TestPanel } from '../lib/types';
+import { fetchTestPanels, splitTestPanels } from '../lib/services/submissions';
 import {
   formatCurrency,
   getVolumeDiscount,
@@ -13,6 +13,7 @@ import {
   BLEND_SURCHARGE_PER_COMPOUND,
   CONFORMITY_VIAL_PRICE,
 } from '../lib/utils';
+import { ATLAS_SAFETY_PRO_INCLUDES, ATLAS_SAFETY_PRO_PRICE } from '../lib/submissionUtils';
 
 interface BlendSample {
   id: number;
@@ -21,6 +22,7 @@ interface BlendSample {
 
 export default function Pricing() {
   const [addOnPanels, setAddOnPanels] = useState<TestPanel[]>([]);
+  const [packagePanels, setPackagePanels] = useState<TestPanel[]>([]);
   const [selectedAddOns, setSelectedAddOns] = useState<string[]>([]);
   const [sampleCount, setSampleCount] = useState(1);
   const [blendSamples, setBlendSamples] = useState<BlendSample[]>([]);
@@ -30,16 +32,14 @@ export default function Pricing() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase
-      .from('test_panels')
-      .select('*')
-      .eq('is_active', true)
-      .neq('category', 'base')
-      .order('sort_order')
-      .then(({ data }) => {
-        if (data) setAddOnPanels(data);
-        setLoading(false);
-      });
+    fetchTestPanels()
+      .then((panels) => {
+        const { packages, individual } = splitTestPanels(panels);
+        setPackagePanels(packages);
+        setAddOnPanels(individual);
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false));
   }, []);
 
   function toggleAddOn(id: string) {
@@ -104,7 +104,43 @@ export default function Pricing() {
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-5 sm:-mt-6 relative z-10">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-5 sm:-mt-6 relative z-10 pb-4">
+        {packagePanels.length > 0 && (
+          <div className="mb-5 lg:mb-8">
+            {packagePanels.map((pkg) => (
+              <div key={pkg.id} className="card p-5 sm:p-6 border-brand-200 bg-gradient-to-br from-brand-50/80 to-white shadow-sm">
+                <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
+                  <div className="flex-1">
+                    <p className="text-xs font-bold text-brand-700 uppercase tracking-wider mb-1">All-in-one testing</p>
+                    <h2 className="text-2xl font-bold text-black">{pkg.name}</h2>
+                    <p className="text-sm text-neutral-600 mt-2 max-w-2xl">{pkg.description}</p>
+                    <div className="mt-4 grid sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                      {ATLAS_SAFETY_PRO_INCLUDES.map((item) => (
+                        <div key={item} className="flex items-center gap-2 text-sm text-neutral-700">
+                          <CheckCircle size={14} className="text-brand-600 flex-shrink-0" />
+                          {item}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="lg:text-right flex-shrink-0">
+                    <p className="text-3xl font-bold text-brand-700">
+                      {formatCurrency(pkg.price_per_sample ?? ATLAS_SAFETY_PRO_PRICE)}
+                    </p>
+                    <p className="text-sm text-neutral-500 mt-1">per sample · {pkg.turnaround_days} business days</p>
+                    <Link
+                      to="/dashboard/submissions/new"
+                      className="inline-flex items-center gap-2 mt-4 btn-primary text-sm"
+                    >
+                      Submit with this package <ArrowRight size={14} />
+                    </Link>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 lg:gap-8">
           <div className="lg:col-span-2 space-y-5">
 

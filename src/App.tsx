@@ -21,6 +21,12 @@ import Roadmap from './pages/Roadmap';
 import Lab from './pages/Lab';
 import Admin from './pages/Admin';
 import VerifyPortal from './pages/VerifyPortal';
+import SubmissionList from './pages/submissions/SubmissionList';
+import SubmissionNew from './pages/submissions/SubmissionNew';
+import SubmissionDetail from './pages/submissions/SubmissionDetail';
+import SubmissionConfirm from './pages/submissions/SubmissionConfirm';
+import AdminDashboard from './pages/admin/AdminDashboard';
+import AdminSubmissionDetail from './pages/admin/AdminSubmissionDetail';
 
 function PublicLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -40,8 +46,6 @@ function Spinner() {
   );
 }
 
-// Gate a route by role. Redirects unauthenticated users to /auth and
-// authenticated users lacking the required role to their own home.
 function RoleRoute({ allow, children }: { allow: UserRole[]; children: React.ReactNode }) {
   const { user, profile, loading } = useAuth();
   if (loading) return <Spinner />;
@@ -74,14 +78,22 @@ export default function App() {
           <Route path="/dashboard/coas" element={<RoleRoute allow={['client', 'admin']}><Portal /></RoleRoute>} />
           <Route path="/dashboard/api" element={<RoleRoute allow={['client', 'admin']}><APIKeys /></RoleRoute>} />
 
-          {/* Chemist COA input */}
+          {/* Kyle submission workflow — client */}
+          <Route path="/dashboard/submissions" element={<RoleRoute allow={['client', 'admin']}><SubmissionList /></RoleRoute>} />
+          <Route path="/dashboard/submissions/new" element={<RoleRoute allow={['client', 'admin']}><SubmissionNew /></RoleRoute>} />
+          <Route path="/dashboard/submissions/:id" element={<RoleRoute allow={['client', 'admin']}><SubmissionDetail /></RoleRoute>} />
+          <Route path="/dashboard/submissions/:id/confirm" element={<RoleRoute allow={['client', 'admin']}><SubmissionConfirm /></RoleRoute>} />
+
+          {/* Chemist lab console */}
           <Route path="/lab" element={<RoleRoute allow={['chemist', 'admin']}><Lab /></RoleRoute>} />
 
-          {/* Verifier read-only portal */}
+          {/* Verifier portal */}
           <Route path="/verify-portal" element={<RoleRoute allow={['verifier', 'admin']}><VerifyPortal /></RoleRoute>} />
 
-          {/* Admin console */}
+          {/* Admin console + Kyle submission ops */}
           <Route path="/admin" element={<RoleRoute allow={['admin']}><Admin /></RoleRoute>} />
+          <Route path="/admin/submissions" element={<RoleRoute allow={['admin', 'reviewer']}><AdminDashboard /></RoleRoute>} />
+          <Route path="/admin/submissions/:id" element={<RoleRoute allow={['admin', 'reviewer']}><AdminSubmissionDetail /></RoleRoute>} />
 
           <Route path="/account" element={<Navigate to="/dashboard?tab=account" replace />} />
           <Route path="/support" element={<Support />} />
