@@ -14,9 +14,11 @@ import { supabase } from '../lib/supabase';
 import { DEFAULT_RECENT_PRODUCTS, searchPeptides } from '../data/peptideCatalog';
 import {
   WizardSample, createEmptySample, validateStep1, sampleMetadataPayload,
-  INDIVIDUAL_TESTS, FULL_QC_PANEL, SAMPLE_MATRICES, CONFORMITY_PRICE,
+  INDIVIDUAL_TESTS, ATLAS_PRO_PANEL, FULL_QC_PANEL, SAMPLE_MATRICES, CONFORMITY_PRICE,
   MULTI_BRAND_PRICE, RUSH_PRICE_PER_SAMPLE, MAX_BRANDS_PER_SAMPLE,
-  orderTotals, sampleChipLabel, sampleVialCount,
+  orderTotals, sampleChipLabel, sampleVialCount, bundledTestsForMode, isPackageMode,
+  packageIncludesConformity, panelVialsRequired, billableBrandCount, TestMode,
+  FENTANYL_OPTION_LABEL,
 } from '../lib/orderCatalog';
 import { clearOrderDraft, loadOrderDraft, saveOrderDraft } from '../lib/orderDraft';
 import { formatCurrency, generateOrderNumber } from '../lib/utils';
@@ -62,7 +64,7 @@ export default function OrderWizard() {
   const [error, setError] = useState('');
   const [validationError, setValidationError] = useState('');
 
-  const { subtotal } = orderTotals(samples);
+  const { subtotal } = orderTotals(samples, companyName);
   const promoDiscount = promoApplied ? subtotal * 0.1 : 0;
   const total = subtotal - promoDiscount;
 
@@ -187,7 +189,7 @@ export default function OrderWizard() {
 
   function toggleIndividualTest(sampleId: string, testId: string) {
     const sample = samples.find(s => s.id === sampleId);
-    if (!sample) return;
+    if (!sample || isPackageMode(sample.test_mode)) return;
     const has = sample.individual_tests.includes(testId);
     updateSample(sampleId, {
       test_mode: 'individual',
@@ -195,6 +197,24 @@ export default function OrderWizard() {
         ? sample.individual_tests.filter(t => t !== testId)
         : [...sample.individual_tests, testId],
     });
+  }
+
+  function selectTestMode(sampleId: string, mode: TestMode) {
+    updateSample(sampleId, {
+      test_mode: mode,
+      individual_tests: bundledTestsForMode(mode),
+      include_fentanyl: mode === 'atlas_pro',
+    });
+  }
+
+  function syncPrimaryBrandToSamples() {
+    const primary = companyName.trim();
+    if (!primary) return;
+    setSamples(prev => prev.map(s => {
+      const names = s.brand_names.filter(Boolean);
+      if (names.some(n => n.toLowerCase() === primary.toLowerCase())) return s;
+      return { ...s, brand_names: [primary, ...names].slice(0, MAX_BRANDS_PER_SAMPLE) };
+    }));
   }
 
   function addBrandName(sampleId: string) {
@@ -224,6 +244,7 @@ export default function OrderWizard() {
       }
       const err = validateStep1(samples);
       if (err) { setValidationError(err); return; }
+      syncPrimaryBrandToSamples();
     }
     setValidationError('');
     setStep(s => s + 1);
@@ -261,7 +282,7 @@ export default function OrderWizard() {
         prepaid_label: generatePrepaidLabel,
         coa_profile_id: selectedCompanyId,
         coa_profile_name: selectedCoa?.name ?? companyName,
-        samples_detail: samples.map(sampleMetadataPayload),
+        samples_detail: samples.map(s => sampleMetadataPayload(s, companyName)),
       };
 
       const orderPayload: Record<string, unknown> = {
@@ -295,7 +316,7 @@ export default function OrderWizard() {
         sample_type: s.sample_type,
         vial_count: sampleVialCount(s),
         panel_ids: [],
-        metadata: sampleMetadataPayload(s),
+        metadata: sampleMetadataPayload(s, companyName),
       }));
 
       let { error: samplesError } = await supabase.from('order_samples').insert(sampleRows);
@@ -553,32 +574,67 @@ export default function OrderWizard() {
 
                             <button
                               type="button"
-                              onClick={() => updateSample(sample.id, { test_mode: 'full_qc', individual_tests: [] })}
+                              onClick={() => selectTestMode(sample.id, 'atlas_pro')}
+                              className={`w-full p-4 rounded-xl border-2 text-left mb-2 transition-colors flex gap-3 ${sample.test_mode === 'atlas_pro' ? 'border-brand-500 bg-brand-50' : 'border-neutral-200 hover:border-brand-300'}`}
+                            >
+                              {sample.test_mode === 'atlas_pro' && <CheckCircle size={20} className="text-brand-600 flex-shrink-0 mt-0.5" />}
+                              <div className="flex-1 flex justify-between items-start gap-3">
+                                <div>
+                                  <p className="font-bold">
+                                    {ATLAS_PRO_PANEL.name}
+                                    <span className="text-xs font-normal text-brand-800 bg-brand-100 px-2 py-0.5 rounded-full ml-2">Recommended</span>
+                                  </p>
+                                  <p className="text-sm text-neutral-600 mt-1">{ATLAS_PRO_PANEL.description}</p>
+                                  <p className="text-xs text-neutral-500 mt-2">
+                                    Includes conformity testing across {ATLAS_PRO_PANEL.vialsRequired} vials (min. 10 mg each).
+                                  </p>
+                                </div>
+                                <span className="font-bold text-brand-800 whitespace-nowrap">{formatCurrency(ATLAS_PRO_PANEL.price)}</span>
+                              </div>
+                            </button>
+
+                            {sample.test_mode === 'atlas_pro' && (
+                              <label className="flex items-start gap-2.5 p-3 mb-2 rounded-lg border border-brand-200 bg-brand-50/60 text-sm cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={sample.include_fentanyl}
+                                  onChange={e => updateSample(sample.id, { include_fentanyl: e.target.checked })}
+                                  className="mt-0.5 rounded border-neutral-300 text-brand-600"
+                                />
+                                <span>
+                                  <span className="font-medium">{FENTANYL_OPTION_LABEL}</span>
+                                  <span className="block text-xs text-neutral-500 mt-0.5">
+                                    Included at no extra cost. Uncheck if fentanyl screening is not required.
+                                  </span>
+                                </span>
+                              </label>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={() => selectTestMode(sample.id, 'full_qc')}
                               className={`w-full p-4 rounded-xl border-2 text-left mb-2 transition-colors flex gap-3 ${sample.test_mode === 'full_qc' ? 'border-brand-500 bg-brand-50' : 'border-neutral-200 hover:border-brand-300'}`}
                             >
                               {sample.test_mode === 'full_qc' && <CheckCircle size={20} className="text-brand-600 flex-shrink-0 mt-0.5" />}
                               <div className="flex-1 flex justify-between items-start gap-3">
                                 <div>
-                                  <p className="font-bold">
-                                    {FULL_QC_PANEL.name}
-                                    <span className="text-xs font-normal text-brand-800 bg-brand-100 px-2 py-0.5 rounded-full ml-2">Recommended</span>
-                                  </p>
+                                  <p className="font-bold">{FULL_QC_PANEL.name}</p>
                                   <p className="text-sm text-neutral-600 mt-1">{FULL_QC_PANEL.description}</p>
                                   <p className="text-xs text-neutral-500 mt-2">
-                                    Includes conformity testing across {FULL_QC_PANEL.vialsRequired} vials (min. 10 mg each).
+                                    Includes conformity across {FULL_QC_PANEL.vialsRequired} vials (min. 10 mg each).
                                   </p>
                                 </div>
                                 <span className="font-bold text-brand-800 whitespace-nowrap">{formatCurrency(FULL_QC_PANEL.price)}</span>
                               </div>
                             </button>
 
-                            {sample.test_mode === 'full_qc' && (
+                            {packageIncludesConformity(sample.test_mode) && (
                               <div className="mb-4 p-4 border border-brand-200 rounded-xl bg-white">
                                 <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
                                   <div>
                                     <p className="font-semibold text-black">Additional Conformity Vials</p>
                                     <p className="text-sm text-neutral-600 mt-1">
-                                      Submit extra vials from the same batch for expanded sample-to-sample verification beyond the {FULL_QC_PANEL.vialsRequired} included with Full QC.
+                                      Submit extra vials from the same batch for expanded sample-to-sample verification beyond the {panelVialsRequired(sample.test_mode)} included with your package.
                                     </p>
                                     <p className="text-sm font-medium text-brand-800 mt-2">
                                       +{formatCurrency(CONFORMITY_PRICE)} per additional vial
@@ -615,30 +671,39 @@ export default function OrderWizard() {
                               </div>
                             )}
 
-                            <p className="text-sm text-brand-700 font-medium mb-3">Or select individual tests</p>
+                            <p className="text-sm text-brand-700 font-medium mb-3">
+                              {isPackageMode(sample.test_mode) ? 'Included tests (locked with package)' : 'Or select individual tests'}
+                            </p>
 
                             <div className="space-y-2">
                               {INDIVIDUAL_TESTS.map(test => {
-                                const sel = sample.test_mode === 'individual' && sample.individual_tests.includes(test.id);
+                                const bundled = bundledTestsForMode(sample.test_mode);
+                                const locked = isPackageMode(sample.test_mode) && bundled.includes(test.id);
+                                const sel = locked || (sample.test_mode === 'individual' && sample.individual_tests.includes(test.id));
                                 return (
                                   <button
                                     key={test.id}
                                     type="button"
+                                    disabled={locked}
                                     onClick={() => toggleIndividualTest(sample.id, test.id)}
-                                    className={`w-full p-3 rounded-lg border-2 text-left flex justify-between items-center gap-3 ${sel ? 'border-brand-500 bg-brand-50' : 'border-neutral-200 hover:border-brand-300'}`}
+                                    className={`w-full p-3 rounded-lg border-2 text-left flex justify-between items-center gap-3 ${
+                                      sel ? 'border-brand-500 bg-brand-50' : 'border-neutral-200 hover:border-brand-300'
+                                    } ${locked ? 'opacity-80 cursor-default' : ''}`}
                                   >
                                     <div className="flex items-center gap-2">
                                       {sel && <CheckCircle size={16} className="text-brand-600" />}
                                       <span className="text-sm font-medium">{test.name}</span>
+                                      {locked && <span className="text-[10px] uppercase tracking-wide text-brand-700 font-semibold">Included</span>}
                                     </div>
-                                    <span className="text-sm font-semibold">{formatCurrency(test.price)}</span>
+                                    <span className="text-sm font-semibold">{locked ? '—' : formatCurrency(test.price)}</span>
                                   </button>
                                 );
                               })}
                             </div>
 
                             <ul className="text-xs text-neutral-500 space-y-1 list-disc pl-4 mt-4">
-                              <li>Full QC Panel: {FULL_QC_PANEL.vialsRequired} vials (min. 10 mg each) with conformity testing included</li>
+                              <li>{ATLAS_PRO_PANEL.name}: {ATLAS_PRO_PANEL.vialsRequired} vials (min. 10 mg each) with conformity included</li>
+                              <li>{FULL_QC_PANEL.name}: {FULL_QC_PANEL.vialsRequired} vials with conformity included</li>
                               <li>Additional conformity vials: {formatCurrency(CONFORMITY_PRICE)} per vial (same batch)</li>
                               <li>Individual tests: Submit 1 vial per test (minimum 10 mg each)</li>
                               <li>
@@ -664,86 +729,91 @@ export default function OrderWizard() {
               <>
                 <div>
                   <h2 className="text-xl font-bold text-black">Add-Ons &amp; Options</h2>
-                  <p className="text-sm text-neutral-500 mt-1">Enhance your order with conformity testing, multi-brand COAs, or rush processing.</p>
-                </div>
-
-                <div className="card p-5 space-y-4">
-                  <div>
-                    <h3 className="font-bold text-black">Conformity Testing</h3>
-                    <p className="text-sm text-neutral-600 mt-1">
-                      For individual tests, add extra vials from the same batch to verify sample-to-sample consistency.
-                      Full QC samples configure conformity on the Products step.
-                    </p>
-                    <p className="text-sm font-medium text-brand-800 mt-1">+{formatCurrency(CONFORMITY_PRICE)} per additional vial</p>
-                  </div>
-                  {samples.filter(s => s.test_mode === 'individual').map((sample, idx) => (
-                    <div key={sample.id} className="flex items-center justify-between py-2 border-t border-atlas-border">
-                      <span className="text-sm font-medium">{sample.sample_name || `Sample ${idx + 1}`}</span>
-                      <div className="flex items-center gap-2">
-                        <button type="button" onClick={() => updateSample(sample.id, { conformity_extra: Math.max(0, sample.conformity_extra - 1) })} className="w-8 h-8 border rounded-lg flex items-center justify-center hover:bg-neutral-50"><Minus size={14} /></button>
-                        <span className="font-bold w-6 text-center">{sample.conformity_extra}</span>
-                        <button type="button" onClick={() => updateSample(sample.id, { conformity_extra: sample.conformity_extra + 1 })} className="w-8 h-8 border rounded-lg flex items-center justify-center hover:bg-brand-50 text-brand-800 font-medium">Add</button>
-                      </div>
-                    </div>
-                  ))}
-                  {samples.every(s => s.test_mode === 'full_qc') && (
-                    <p className="text-sm text-neutral-500 border-t border-atlas-border pt-3">
-                      All samples use Full QC — additional conformity vials were set on step 1.
-                    </p>
-                  )}
+                  <p className="text-sm text-neutral-500 mt-1">Multi-brand COAs, rush processing, and prepaid shipping.</p>
                 </div>
 
                 <div className="card p-5 space-y-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <h3 className="font-bold text-black">Multi-Brand COA</h3>
-                      <p className="text-sm text-neutral-600 mt-1">Get additional COAs under different brand names — perfect for white-label products. Up to 5 brands per sample.</p>
-                      <p className="text-sm font-medium text-brand-800 mt-1">+{formatCurrency(MULTI_BRAND_PRICE)} per brand per sample</p>
+                      <p className="text-sm text-neutral-600 mt-1">
+                        Your COA profile brand is included. Add up to {MAX_BRANDS_PER_SAMPLE - 1} additional brand{MAX_BRANDS_PER_SAMPLE - 1 === 1 ? '' : 's'} per sample.
+                      </p>
+                      <p className="text-sm font-medium text-brand-800 mt-1">+{formatCurrency(MULTI_BRAND_PRICE)} per additional brand per sample</p>
                     </div>
                   </div>
-                  {samples.map((sample, idx) => (
-                    <div key={sample.id} className="border-t border-atlas-border pt-3">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium">{sample.sample_name || `Sample ${idx + 1}`}</span>
-                        <button
-                          type="button"
-                          onClick={() => addBrandName(sample.id)}
-                          disabled={sample.brand_names.length >= MAX_BRANDS_PER_SAMPLE}
-                          className="text-sm text-brand-700 font-medium disabled:opacity-40"
-                        >
-                          Add Brand
-                        </button>
-                      </div>
-                      {sample.brand_names.map((brand, bi) => (
-                        <input
-                          key={bi}
-                          value={brand}
-                          onChange={e => {
-                            const next = [...sample.brand_names];
-                            next[bi] = e.target.value;
-                            updateSample(sample.id, { brand_names: next });
-                          }}
-                          placeholder="Brand name for COA"
-                          className="input-field text-sm mb-2"
-                        />
-                      ))}
-                      {companies.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5 mt-1">
-                          {companies.filter(c => !sample.brand_names.includes(c.name)).slice(0, 6).map(c => (
-                            <button
-                              key={c.id}
-                              type="button"
-                              onClick={() => addBrandFromCompany(sample.id, c.name)}
-                              disabled={sample.brand_names.filter(Boolean).length >= MAX_BRANDS_PER_SAMPLE}
-                              className="text-[11px] px-2 py-1 border border-atlas-border rounded hover:bg-brand-50 hover:border-brand-400 disabled:opacity-40"
-                            >
-                              + {c.name}
-                            </button>
-                          ))}
+                  {samples.map((sample, idx) => {
+                    const primary = companyName.trim();
+                    const additionalBrands = sample.brand_names.filter(
+                      b => b.trim() && (!primary || b.trim().toLowerCase() !== primary.toLowerCase()),
+                    );
+                    const billable = billableBrandCount(sample, companyName);
+                    return (
+                      <div key={sample.id} className="border-t border-atlas-border pt-3">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm font-medium">{sample.sample_name || `Sample ${idx + 1}`}</span>
+                          <button
+                            type="button"
+                            onClick={() => addBrandName(sample.id)}
+                            disabled={sample.brand_names.length >= MAX_BRANDS_PER_SAMPLE}
+                            className="text-sm text-brand-700 font-medium disabled:opacity-40"
+                          >
+                            Add Brand
+                          </button>
                         </div>
-                      )}
-                    </div>
-                  ))}
+                        {primary && (
+                          <div className="flex items-center gap-2 mb-2 px-3 py-2 rounded-lg bg-brand-50 border border-brand-200">
+                            <CheckCircle size={14} className="text-brand-600 flex-shrink-0" />
+                            <span className="text-sm font-medium text-black">{primary}</span>
+                            <span className="text-[10px] uppercase tracking-wide text-brand-700 font-semibold ml-auto">Included</span>
+                          </div>
+                        )}
+                        {additionalBrands.map((brand, bi) => {
+                          const brandIndex = sample.brand_names.indexOf(brand);
+                          return (
+                            <input
+                              key={`${sample.id}-${bi}-${brandIndex}`}
+                              value={brand}
+                              onChange={e => {
+                                const next = [...sample.brand_names];
+                                next[brandIndex] = e.target.value;
+                                updateSample(sample.id, { brand_names: next });
+                              }}
+                              placeholder="Additional brand name for COA"
+                              className="input-field text-sm mb-2"
+                            />
+                          );
+                        })}
+                        {billable > 0 && (
+                          <p className="text-xs text-neutral-500">
+                            {billable} additional brand{billable === 1 ? '' : 's'} · +{formatCurrency(billable * MULTI_BRAND_PRICE)}
+                          </p>
+                        )}
+                        {companies.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 mt-1">
+                            {companies
+                              .filter(c => {
+                                const n = c.name.trim().toLowerCase();
+                                if (primary && n === primary.toLowerCase()) return false;
+                                return !sample.brand_names.some(b => b.trim().toLowerCase() === n);
+                              })
+                              .slice(0, 6)
+                              .map(c => (
+                                <button
+                                  key={c.id}
+                                  type="button"
+                                  onClick={() => addBrandFromCompany(sample.id, c.name)}
+                                  disabled={sample.brand_names.filter(Boolean).length >= MAX_BRANDS_PER_SAMPLE}
+                                  className="text-[11px] px-2 py-1 border border-atlas-border rounded hover:bg-brand-50 hover:border-brand-400 disabled:opacity-40"
+                                >
+                                  + {c.name}
+                                </button>
+                              ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
 
                 <div className="card p-5 space-y-4">
@@ -784,16 +854,6 @@ export default function OrderWizard() {
                     />
                     Generate prepaid shipping label at checkout
                   </label>
-                  <div className="grid sm:grid-cols-2 gap-3 pt-2 border-t border-atlas-border">
-                    <div>
-                      <label className="label">Carrier (if already shipped)</label>
-                      <input value={shippingCarrier} onChange={e => setShippingCarrier(e.target.value)} placeholder="FedEx, UPS" className="input-field" />
-                    </div>
-                    <div>
-                      <label className="label">Tracking Number</label>
-                      <input value={shippingTracking} onChange={e => setShippingTracking(e.target.value)} placeholder="Optional" className="input-field" />
-                    </div>
-                  </div>
                 </div>
               </>
             )}
@@ -828,6 +888,11 @@ export default function OrderWizard() {
 
                 {samples.map(s => (
                   <div key={s.id} className="card p-5 relative">
+                    {s.test_mode === 'atlas_pro' && (
+                      <span className="absolute top-4 right-4 text-xs font-medium bg-brand-100 text-brand-800 px-2.5 py-1 rounded-full border border-brand-200">
+                        {ATLAS_PRO_PANEL.name}
+                      </span>
+                    )}
                     {s.test_mode === 'full_qc' && (
                       <span className="absolute top-4 right-4 text-xs font-medium bg-neutral-100 text-neutral-700 px-2.5 py-1 rounded-full border border-neutral-200">
                         Full QC Panel
@@ -836,11 +901,18 @@ export default function OrderWizard() {
                     <p className="font-bold text-lg pr-28">{s.sample_name}</p>
                     <p className="text-sm text-neutral-500 mt-1">Batch: {s.batch_number}</p>
                     <p className="text-sm text-neutral-600">{[s.labeled_content, s.vial_size, s.sample_matrix].filter(Boolean).join(' | ')}</p>
-                    {s.test_mode === 'full_qc' && (
+                    {isPackageMode(s.test_mode) && (
                       <p className="text-sm text-neutral-600 mt-1">
-                        {FULL_QC_PANEL.vialsRequired} vials incl. conformity
+                        {panelVialsRequired(s.test_mode)} vials incl. conformity
                         {s.conformity_extra > 0 && ` + ${s.conformity_extra} extra (${formatCurrency(s.conformity_extra * CONFORMITY_PRICE)})`}
                         {' · '}{sampleVialCount(s)} vials total
+                      </p>
+                    )}
+                    {s.test_mode === 'atlas_pro' && (
+                      <p className="text-sm text-neutral-600 mt-1">
+                        {s.include_fentanyl
+                          ? `${FENTANYL_OPTION_LABEL} included`
+                          : `${FENTANYL_OPTION_LABEL} not requested`}
                       </p>
                     )}
                     <div className="flex items-center gap-2 mt-3 text-sm">
@@ -944,7 +1016,7 @@ export default function OrderWizard() {
           </div>
 
           <div>
-            <OrderSummarySidebar samples={samples} step={step} total={step === 3 ? total : undefined} />
+            <OrderSummarySidebar samples={samples} step={step} total={step === 3 ? total : undefined} primaryBrand={companyName} />
           </div>
         </div>
       </div>

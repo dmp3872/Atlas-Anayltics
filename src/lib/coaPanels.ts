@@ -7,11 +7,20 @@ export interface OrderSampleMetadata {
   vial_size?: string;
   sample_matrix?: string;
   tests_label?: string;
+  test_mode?: string;
+  include_fentanyl?: boolean;
 }
 
 export function parseSampleMetadata(metadata: OrderSample['metadata']): OrderSampleMetadata {
   if (!metadata || typeof metadata !== 'object') return {};
   return metadata as OrderSampleMetadata;
+}
+
+export function orderSampleIncludesFentanyl(metadata: OrderSample['metadata']): boolean {
+  const meta = parseSampleMetadata(metadata);
+  if (meta.test_mode && meta.test_mode !== 'atlas_pro') return false;
+  if (typeof meta.include_fentanyl === 'boolean') return meta.include_fentanyl;
+  return meta.test_mode === 'atlas_pro';
 }
 
 /** Default chemist COA test rows — matches the lab issue form. */
@@ -59,7 +68,6 @@ export const QC_PANELS = [
   'Heavy Metals (ICP-MS)',
   'Sterility (PCR)',
   'Microbial Screen',
-  'Visual Inspection',
   'Conformity (Sample-to-Sample)',
 ];
 

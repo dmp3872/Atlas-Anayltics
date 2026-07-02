@@ -1,5 +1,6 @@
 import { SampleType } from './types';
 import { formatCurrency } from './utils';
+import { ATLAS_SAFETY_PRO_INCLUDES, ATLAS_SAFETY_PRO_PRICE } from './submissionUtils';
 
 export type SampleMatrix =
   | 'Powder'
@@ -20,7 +21,7 @@ export const SAMPLE_MATRICES: SampleMatrix[] = [
   'Other',
 ];
 
-export type TestMode = 'full_qc' | 'individual';
+export type TestMode = 'atlas_pro' | 'full_qc' | 'individual';
 
 export interface IndividualTestOption {
   id: string;
@@ -40,13 +41,42 @@ export const INDIVIDUAL_TESTS: IndividualTestOption[] = [
   { id: 'recon_stability', name: 'Reconstitution Stability', description: 'Stability after reconstitution study', price: 650 },
 ];
 
+/** Optional add-on for Atlas Safety Pro — same package price either way. */
+export const FENTANYL_TEST_ID = 'fentanyl_detection';
+export const FENTANYL_OPTION_LABEL = 'Fentanyl Detection';
+
+/** Bundled tests included in Atlas Safety Pro (matches pricing page). */
+export const ATLAS_PRO_BUNDLED_TEST_IDS = [
+  'purity_hplc',
+  'heavy_metals_icpms',
+  'endotoxin_usp85',
+  'sterility_pcr',
+] as const;
+
+export const ATLAS_PRO_PANEL = {
+  id: 'atlas_pro' as const,
+  name: 'Atlas Safety Pro',
+  description: ATLAS_SAFETY_PRO_INCLUDES.filter(i => i !== 'Fentanyl Detection').join(', '),
+  price: ATLAS_SAFETY_PRO_PRICE,
+  vialsRequired: 3,
+  bundledTestIds: [...ATLAS_PRO_BUNDLED_TEST_IDS],
+  includesConformity: true,
+};
+
+export const FULL_QC_BUNDLED_TEST_IDS = [
+  'purity_hplc',
+  'heavy_metals_icpms',
+  'endotoxin_usp85',
+  'sterility_pcr',
+] as const;
+
 export const FULL_QC_PANEL = {
-  id: 'full_qc',
+  id: 'full_qc' as const,
   name: 'Full QC Panel',
   description: 'Purity, Content ID, Heavy Metals, Endotoxin, Sterility Screen, Conformity',
   price: 500,
   vialsRequired: 3,
-  /** Conformity across the base vial set is included in panel price. */
+  bundledTestIds: [...FULL_QC_BUNDLED_TEST_IDS],
   includesConformity: true,
 };
 
@@ -74,6 +104,24 @@ export interface WizardSample {
   brand_names: string[];
   rush: boolean;
   catalog_mode: boolean;
+  /** Atlas Safety Pro only — included by default, no price change. */
+  include_fentanyl: boolean;
+}
+
+export function bundledTestsForMode(mode: TestMode): string[] {
+  if (mode === 'atlas_pro') return [...ATLAS_PRO_PANEL.bundledTestIds];
+  if (mode === 'full_qc') return [...FULL_QC_PANEL.bundledTestIds];
+  return [];
+}
+
+export function isPackageMode(mode: TestMode): boolean {
+  return mode === 'atlas_pro' || mode === 'full_qc';
+}
+
+export function panelVialsRequired(mode: TestMode): number {
+  if (mode === 'atlas_pro') return ATLAS_PRO_PANEL.vialsRequired;
+  if (mode === 'full_qc') return FULL_QC_PANEL.vialsRequired;
+  return Math.max(1, 1);
 }
 
 export function createEmptySample(partial?: Partial<WizardSample>): WizardSample {
@@ -90,27 +138,38 @@ export function createEmptySample(partial?: Partial<WizardSample>): WizardSample
     peptide_identification: '',
     sample_type: 'single',
     blend_compounds: 2,
-    test_mode: 'full_qc',
-    individual_tests: [],
+    test_mode: 'atlas_pro',
+    individual_tests: [...ATLAS_PRO_BUNDLED_TEST_IDS],
     conformity_extra: 0,
     brand_names: [],
     rush: false,
     catalog_mode: false,
+    include_fentanyl: true,
     ...partial,
   };
 }
 
+export function sampleIncludesFentanyl(sample: WizardSample): boolean {
+  return sample.test_mode === 'atlas_pro' && sample.include_fentanyl;
+}
+
 export function sampleTestCount(sample: WizardSample): number {
-  if (sample.test_mode === 'full_qc') return 1;
+  if (isPackageMode(sample.test_mode)) return 1;
   return sample.individual_tests.length;
 }
 
-/** Vials the client must ship for this sample line. */
 export function sampleVialCount(sample: WizardSample): number {
-  const base = sample.test_mode === 'full_qc'
-    ? FULL_QC_PANEL.vialsRequired
+  const base = isPackageMode(sample.test_mode)
+    ? panelVialsRequired(sample.test_mode)
     : Math.max(1, sample.individual_tests.length);
   return base + Math.max(0, sample.conformity_extra);
+}
+
+export function billableBrandCount(sample: WizardSample, primaryBrand = ''): number {
+  const names = sample.brand_names.filter(Boolean);
+  const primary = primaryBrand.trim().toLowerCase();
+  if (!primary) return names.length;
+  return names.filter(n => n.trim().toLowerCase() !== primary).length;
 }
 
 export function sampleChipLabel(sample: WizardSample, index: number): string {
@@ -122,6 +181,7 @@ export function sampleChipLabel(sample: WizardSample, index: number): string {
 }
 
 export function sampleTestPrice(sample: WizardSample): number {
+  if (sample.test_mode === 'atlas_pro') return ATLAS_PRO_PANEL.price;
   if (sample.test_mode === 'full_qc') return FULL_QC_PANEL.price;
   return sample.individual_tests.reduce((sum, id) => {
     const t = INDIVIDUAL_TESTS.find(x => x.id === id);
@@ -129,22 +189,22 @@ export function sampleTestPrice(sample: WizardSample): number {
   }, 0);
 }
 
-export function sampleAddOnPrice(sample: WizardSample): number {
+export function sampleAddOnPrice(sample: WizardSample, primaryBrand = ''): number {
   const conformity = sample.conformity_extra * CONFORMITY_PRICE;
-  const brands = sample.brand_names.filter(Boolean).length * MULTI_BRAND_PRICE;
+  const brands = billableBrandCount(sample, primaryBrand) * MULTI_BRAND_PRICE;
   const rush = sample.rush ? RUSH_PRICE_PER_SAMPLE : 0;
   return conformity + brands + rush;
 }
 
-export function sampleLineTotal(sample: WizardSample): number {
-  return (sampleTestPrice(sample) + sampleAddOnPrice(sample)) * Math.max(1, sample.quantity);
+export function sampleLineTotal(sample: WizardSample, primaryBrand = ''): number {
+  return (sampleTestPrice(sample) + sampleAddOnPrice(sample, primaryBrand)) * Math.max(1, sample.quantity);
 }
 
-export function orderTotals(samples: WizardSample[]) {
-  const subtotal = samples.reduce((s, sample) => s + sampleLineTotal(sample), 0);
+export function orderTotals(samples: WizardSample[], primaryBrand = '') {
+  const subtotal = samples.reduce((s, sample) => s + sampleLineTotal(sample, primaryBrand), 0);
   const sampleCount = samples.reduce((n, s) => n + Math.max(1, s.quantity), 0);
   const testCount = samples.reduce((n, s) => {
-    const tests = s.test_mode === 'full_qc' ? 1 : s.individual_tests.length;
+    const tests = isPackageMode(s.test_mode) ? 1 : s.individual_tests.length;
     return n + tests * Math.max(1, s.quantity);
   }, 0);
   return { subtotal, sampleCount, testCount };
@@ -170,13 +230,18 @@ export function validateStep1(samples: WizardSample[]): string | null {
 }
 
 export function formatSampleTests(sample: WizardSample): string {
+  if (sample.test_mode === 'atlas_pro') {
+    const base = ATLAS_PRO_PANEL.name;
+    if (sample.include_fentanyl) return `${base} (+ ${FENTANYL_OPTION_LABEL})`;
+    return base;
+  }
   if (sample.test_mode === 'full_qc') return FULL_QC_PANEL.name;
   return sample.individual_tests
     .map(id => INDIVIDUAL_TESTS.find(t => t.id === id)?.name ?? id)
     .join(', ') || 'No tests selected';
 }
 
-export function sampleMetadataPayload(sample: WizardSample) {
+export function sampleMetadataPayload(sample: WizardSample, primaryBrand = '') {
   return {
     batch_number: sample.batch_number,
     labeled_content: sample.labeled_content,
@@ -189,18 +254,23 @@ export function sampleMetadataPayload(sample: WizardSample) {
     conformity_extra: sample.conformity_extra,
     brand_names: sample.brand_names.filter(Boolean),
     rush: sample.rush,
+    include_fentanyl: sampleIncludesFentanyl(sample),
     tests_label: formatSampleTests(sample),
-    line_total: sampleLineTotal(sample),
+    line_total: sampleLineTotal(sample, primaryBrand),
   };
 }
 
-export function describePricing(sample: WizardSample): string {
+export function describePricing(sample: WizardSample, primaryBrand = ''): string {
   const base = sampleTestPrice(sample);
   const extras: string[] = [];
   if (sample.conformity_extra) extras.push(`${sample.conformity_extra} conformity (+${formatCurrency(sample.conformity_extra * CONFORMITY_PRICE)})`);
-  const brands = sample.brand_names.filter(Boolean).length;
-  if (brands) extras.push(`${brands} brand(s) (+${formatCurrency(brands * MULTI_BRAND_PRICE)})`);
+  const brands = billableBrandCount(sample, primaryBrand);
+  if (brands) extras.push(`${brands} extra brand(s) (+${formatCurrency(brands * MULTI_BRAND_PRICE)})`);
   if (sample.rush) extras.push(`rush (+${formatCurrency(RUSH_PRICE_PER_SAMPLE)})`);
   if (!extras.length) return formatCurrency(base);
   return `${formatCurrency(base)} + ${extras.join(', ')}`;
+}
+
+export function packageIncludesConformity(mode: TestMode): boolean {
+  return mode === 'atlas_pro' || mode === 'full_qc';
 }

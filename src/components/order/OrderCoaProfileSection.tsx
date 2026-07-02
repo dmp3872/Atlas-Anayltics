@@ -23,7 +23,7 @@ export default function OrderCoaProfileSection({
   onCompaniesChange,
   onProfileSynced,
 }: Props) {
-  const [creating, setCreating] = useState(companies.length === 0);
+  const [creating, setCreating] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [form, setForm] = useState<CoaProfileFormState>(EMPTY_COA_PROFILE_FORM);
   const [msg, setMsg] = useState<Message>(null);

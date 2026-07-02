@@ -1,7 +1,7 @@
 import { CheckCircle, ShoppingCart } from 'lucide-react';
 import {
-  WizardSample, orderTotals, FULL_QC_PANEL, CONFORMITY_PRICE,
-  sampleVialCount, sampleTestPrice, sampleAddOnPrice,
+  WizardSample, orderTotals, ATLAS_PRO_PANEL, FULL_QC_PANEL, CONFORMITY_PRICE,
+  sampleVialCount, sampleTestPrice, sampleAddOnPrice, isPackageMode,
 } from '../../lib/orderCatalog';
 import { formatCurrency } from '../../lib/utils';
 
@@ -9,15 +9,16 @@ interface Props {
   samples: WizardSample[];
   step: number;
   total?: number;
+  primaryBrand?: string;
 }
 
-export default function OrderSummarySidebar({ samples, step, total }: Props) {
-  const { subtotal, sampleCount } = orderTotals(samples);
+export default function OrderSummarySidebar({ samples, step, total, primaryBrand = '' }: Props) {
+  const { subtotal, sampleCount } = orderTotals(samples, primaryBrand);
   const displayTotal = total ?? subtotal;
-  const hasTests = samples.some(s => s.sample_name && (s.test_mode === 'full_qc' || s.individual_tests.length > 0));
+  const hasTests = samples.some(s => s.sample_name && (isPackageMode(s.test_mode) || s.individual_tests.length > 0));
   const totalVials = samples.reduce((n, s) => n + (s.sample_name ? sampleVialCount(s) * Math.max(1, s.quantity) : 0), 0);
   const panelFees = samples.reduce((s, sample) => s + sampleTestPrice(sample) * Math.max(1, sample.quantity), 0);
-  const addOnFees = samples.reduce((s, sample) => s + sampleAddOnPrice(sample) * Math.max(1, sample.quantity), 0);
+  const addOnFees = samples.reduce((s, sample) => s + sampleAddOnPrice(sample, primaryBrand) * Math.max(1, sample.quantity), 0);
   const conformityVials = samples.reduce((n, s) => n + s.conformity_extra * Math.max(1, s.quantity), 0);
 
   return (
@@ -77,8 +78,8 @@ export default function OrderSummarySidebar({ samples, step, total }: Props) {
 
       {step === 1 && (
         <p className="text-[10px] text-neutral-400 mt-4 leading-relaxed border-t border-atlas-border pt-3">
-          {FULL_QC_PANEL.name}: {FULL_QC_PANEL.vialsRequired} vials with conformity included.
-          Extra conformity vials {formatCurrency(CONFORMITY_PRICE)} each.
+          {ATLAS_PRO_PANEL.name}: {ATLAS_PRO_PANEL.vialsRequired} vials with conformity included.
+          {FULL_QC_PANEL.name} also available. Extra conformity vials {formatCurrency(CONFORMITY_PRICE)} each.
         </p>
       )}
     </div>

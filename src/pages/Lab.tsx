@@ -2,27 +2,30 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   FlaskConical, Plus, Trash2, CheckCircle, AlertCircle, ExternalLink, ClipboardList,
-  ChevronDown, ChevronUp, Shield, Globe, ArrowRight,
+  ChevronDown, ChevronUp, ArrowRight,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { COA, Order, OrderSample, OrderStatus, PanelResult, SampleStatus, UserProfile } from '../lib/types';
-import { formatDate, formatDateTime, ORDER_STATUS_LABELS, SAMPLE_STATUS_LABELS } from '../lib/utils';
+import { COA, Order, OrderSample, OrderStatus, SampleStatus, UserProfile } from '../lib/types';
+import { formatDateTime, ORDER_STATUS_LABELS, SAMPLE_STATUS_LABELS } from '../lib/utils';
 import { computeCoaContentHash } from '../lib/coaVerify';
 import { notifyCoaReady } from '../lib/notifications';
-import { matchCoaForSample, buildCoaPanelsFromSample, clientSubmittedLabel, parseSampleMetadata, DEFAULT_COA_TEST_PANELS } from '../lib/coaPanels';
-import { COA_WORKFLOW_LABELS, COA_WORKFLOW_STEPS, coaWorkflowStage } from '../lib/coaWorkflow';
+import { matchCoaForSample, clientSubmittedLabel, parseSampleMetadata } from '../lib/coaPanels';
+import {
+  EMPTY_LAB_RESULTS, LabCoaResults, VIAL_SIZE_OPTIONS, VialSizeOption,
+  HEAVY_METAL_NAMES, buildLabResultsFromSample, labResultsToPanelResults,
+  parsePurityPercent, parseMolecularWeight, lookupCas, casForSampleName,
+} from '../lib/labCoaForm';
+import { COA_WORKFLOW_LABELS, coaWorkflowStage, buildWorkflowStagePatch, CoaWorkflowStage } from '../lib/coaWorkflow';
+import CoaWorkflowBoard from '../components/lab/CoaWorkflowBoard';
 import StaffHeader from '../components/layout/StaffHeader';
 
 type Message = { type: 'success' | 'error'; text: string; slug?: string } | null;
 type LabTab = 'queue' | 'issue' | 'workflow';
 
-const DEFAULT_PANELS = DEFAULT_COA_TEST_PANELS;
-
 const BLANK = {
   clientId: '', sampleId: '', orderId: '',
   sampleName: '', displayName: '', companyName: '',
-  batchNumber: '', peptideSequence: '', purity: '', molecularWeight: '',
-  sealSerial: '',
+  batchNumber: '', casNumber: '', vialSize: '3ml' as VialSizeOption,
   overallResult: 'pass' as COA['overall_result'],
 };
 
@@ -41,8 +44,11 @@ export default function Lab() {
   const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
   const [queueFilter, setQueueFilter] = useState<'all' | 'pending'>('all');
 
+  const [movingCoaId, setMovingCoaId] = useState<string | null>(null);
   const [form, setForm] = useState({ ...BLANK });
-  const [panels, setPanels] = useState<PanelResult[]>(DEFAULT_PANELS.map(p => ({ ...p })));
+  const [labResults, setLabResults] = useState<LabCoaResults>({ ...EMPTY_LAB_RESULTS });
+  const [casSuggestions, setCasSuggestions] = useState<{ name: string; cas: string }[]>([]);
+  const [showCasSuggestions, setShowCasSuggestions] = useState(false);
 
   async function loadAll() {
     setLoading(true);
@@ -66,11 +72,10 @@ export default function Lab() {
     [samples, coas],
   );
 
-  const workflowCoas = useMemo(() => ({
-    issued: coas.filter(c => coaWorkflowStage(c) === 'issued'),
-    verified: coas.filter(c => coaWorkflowStage(c) === 'verified'),
-    published: coas.filter(c => coaWorkflowStage(c) === 'published'),
-  }), [coas]);
+  const workflowActiveCount = useMemo(
+    () => coas.filter(c => coaWorkflowStage(c) !== 'published').length,
+    [coas],
+  );
 
   const filteredOrders = useMemo(() => {
     if (queueFilter !== 'pending') return orders;
@@ -92,6 +97,7 @@ export default function Lab() {
     const meta = parseSampleMetadata(s.metadata);
     const client = clients.find(c => c.id === s.user_id);
     const order = orders.find(o => o.id === s.order_id);
+    const cas = casForSampleName(s.sample_name) || meta.peptide_identification?.trim() || '';
     setForm({
       ...BLANK,
       clientId: s.user_id,
@@ -101,12 +107,47 @@ export default function Lab() {
       displayName: s.display_name || s.sample_name,
       companyName: order?.company_name || client?.company_name || '',
       batchNumber: meta.batch_number ?? '',
-      peptideSequence: meta.peptide_identification ?? '',
+      casNumber: cas,
+      vialSize: (VIAL_SIZE_OPTIONS.includes(meta.vial_size as VialSizeOption) ? meta.vial_size : '3ml') as VialSizeOption,
     });
-    setPanels(buildCoaPanelsFromSample(s.metadata));
+    setLabResults(buildLabResultsFromSample(s.metadata, s.sample_name));
+    setCasSuggestions(cas ? lookupCas(cas) : []);
+    setShowCasSuggestions(false);
     setMsg(null);
     setTab('issue');
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function updateResults(patch: Partial<LabCoaResults>) {
+    setLabResults(prev => ({ ...prev, ...patch }));
+  }
+
+  function updateHeavyMetal(metal: typeof HEAVY_METAL_NAMES[number], value: string) {
+    setLabResults(prev => ({
+      ...prev,
+      heavyMetals: { ...prev.heavyMetals, [metal]: value },
+    }));
+  }
+
+  function addConformityPeptide() {
+    setLabResults(prev => ({
+      ...prev,
+      conformityPeptides: [...prev.conformityPeptides, { name: '', netContent: '', netPurity: '' }],
+    }));
+  }
+
+  function updateConformityPeptide(index: number, patch: Partial<{ name: string; netContent: string; netPurity: string }>) {
+    setLabResults(prev => ({
+      ...prev,
+      conformityPeptides: prev.conformityPeptides.map((row, i) => (i === index ? { ...row, ...patch } : row)),
+    }));
+  }
+
+  function removeConformityPeptide(index: number) {
+    setLabResults(prev => ({
+      ...prev,
+      conformityPeptides: prev.conformityPeptides.filter((_, i) => i !== index),
+    }));
   }
 
   function update(patch: Partial<typeof BLANK>) {
@@ -132,18 +173,6 @@ export default function Lab() {
     await insertCoa(brandPayload);
   }
 
-  function updatePanel(i: number, patch: Partial<PanelResult>) {
-    setPanels(prev => prev.map((p, idx) => (idx === i ? { ...p, ...patch } : p)));
-  }
-
-  function addPanel() {
-    setPanels(prev => [...prev, { panel_name: '', specification: '', result: '', pass: true }]);
-  }
-
-  function removePanel(i: number) {
-    setPanels(prev => prev.filter((_, idx) => idx !== i));
-  }
-
   async function updateOrderStatus(orderId: string, status: OrderStatus) {
     const { error } = await supabase.from('orders').update({ status, updated_at: new Date().toISOString() }).eq('id', orderId);
     if (error) { setMsg({ type: 'error', text: error.message }); return; }
@@ -156,33 +185,32 @@ export default function Lab() {
     setSamples(prev => prev.map(s => s.id === sampleId ? { ...s, status } : s));
   }
 
-  async function advanceWorkflow(coa: COA, next: 'verified' | 'published') {
+  async function moveCoaToStage(coa: COA, targetStage: CoaWorkflowStage) {
+    if (coaWorkflowStage(coa) === targetStage) return;
+
+    setMovingCoaId(coa.id);
     setMsg(null);
-    const now = new Date().toISOString();
-    const patch: Record<string, unknown> = { coa_workflow_stage: next };
-    if (next === 'verified') {
-      patch.verified_at = now;
-      patch.is_public = false;
-    }
-    if (next === 'published') {
-      patch.published_at = now;
-      patch.is_public = true;
-      patch.coa_workflow_stage = 'published';
-    }
+
+    const patch = buildWorkflowStagePatch(coa, targetStage);
     const { error } = await supabase.from('coas').update(patch).eq('id', coa.id);
+
     if (error) {
       setMsg({ type: 'error', text: error.message });
+      setMovingCoaId(null);
       return;
     }
-    if (next === 'published') {
+
+    if (targetStage === 'published' && !coa.published_at) {
       await notifyCoaReady(coa.user_id, coa.display_name || coa.sample_name, coa.slug);
     }
+
+    setCoas(prev => prev.map(c => (c.id === coa.id ? { ...c, ...patch } as COA : c)));
     setMsg({
       type: 'success',
-      text: next === 'verified' ? 'COA marked verified.' : 'COA published — client can now view it.',
+      text: `Moved to ${COA_WORKFLOW_LABELS[targetStage]}.`,
       slug: coa.slug,
     });
-    loadAll();
+    setMovingCoaId(null);
   }
 
   async function saveCoa(e: React.FormEvent) {
@@ -193,12 +221,10 @@ export default function Lab() {
     setSaving(true);
     setMsg(null);
 
-    const cleanPanels = panels
-      .filter(p => p.panel_name.trim())
-      .map(p => ({ ...p, panel_name: p.panel_name.trim(), result: p.result.trim() }));
+    const cleanPanels = labResultsToPanelResults(labResults);
 
-    const purityNum = form.purity ? parseFloat(form.purity) : null;
-    const mwNum = form.molecularWeight ? parseFloat(form.molecularWeight) : null;
+    const purityNum = parsePurityPercent(labResults.netPurity);
+    const mwNum = parseMolecularWeight(labResults.molecularWeight);
     const content_hash = computeCoaContentHash({
       sample_name: form.sampleName.trim(),
       batch_number: form.batchNumber.trim(),
@@ -213,18 +239,17 @@ export default function Lab() {
       sample_name: form.sampleName.trim(),
       display_name: form.displayName.trim() || form.sampleName.trim(),
       company_name: form.companyName.trim(),
-      peptide_sequence: form.peptideSequence.trim(),
+      peptide_sequence: form.casNumber.trim(),
       batch_number: form.batchNumber.trim(),
       purity_percent: purityNum,
       molecular_weight: mwNum,
       panel_results: cleanPanels,
-      chromatogram_data: {},
+      chromatogram_data: { vial_size: form.vialSize },
       overall_result: form.overallResult,
       is_public: false,
       coa_workflow_stage: 'issued',
       content_hash,
       signature: `AA-${Date.now().toString(36).toUpperCase()}`,
-      seal_serial: form.sealSerial.trim(),
     };
 
     const { data, error } = await insertCoa(payload);
@@ -248,7 +273,9 @@ export default function Lab() {
     }
 
     setForm({ ...BLANK });
-    setPanels(DEFAULT_PANELS.map(p => ({ ...p })));
+    setLabResults({ ...EMPTY_LAB_RESULTS });
+    setCasSuggestions([]);
+    setShowCasSuggestions(false);
     setMsg({ type: 'success', text: 'COA issued (private). Verify it, then publish for the client.', slug: data?.slug });
     setSaving(false);
     setTab('workflow');
@@ -258,7 +285,7 @@ export default function Lab() {
   const tabs: { id: LabTab; label: string; count?: number }[] = [
     { id: 'queue', label: 'Testing Queue', count: pendingSamples.length || undefined },
     { id: 'issue', label: 'Issue COA' },
-    { id: 'workflow', label: 'COA Workflow', count: workflowCoas.issued.length + workflowCoas.verified.length || undefined },
+    { id: 'workflow', label: 'COA Workflow', count: workflowActiveCount || undefined },
   ];
 
   return (
@@ -409,6 +436,9 @@ export default function Lab() {
                     {linkedMeta?.labeled_content && (
                       <> · Net content claim: <strong>{linkedMeta.labeled_content}</strong></>
                     )}
+                    {labResults.includeFentanyl && (
+                      <> · <strong>Fentanyl Detection</strong> requested</>
+                    )}
                   </p>
                 </div>
               )}
@@ -444,37 +474,143 @@ export default function Lab() {
                   <input value={form.displayName} onChange={e => update({ displayName: e.target.value })} className="input-field" placeholder="e.g. BPC-157 5mg" />
                 </div>
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                 <div><label className="label">Batch / Lot</label><input value={form.batchNumber} onChange={e => update({ batchNumber: e.target.value })} className="input-field" /></div>
-                <div><label className="label">Purity %</label><input type="number" step="0.1" value={form.purity} onChange={e => update({ purity: e.target.value })} className="input-field" /></div>
-                <div><label className="label">MW (Da)</label><input type="number" step="0.1" value={form.molecularWeight} onChange={e => update({ molecularWeight: e.target.value })} className="input-field" /></div>
+                <div>
+                  <label className="label">Vial Size</label>
+                  <select value={form.vialSize} onChange={e => update({ vialSize: e.target.value as VialSizeOption })} className="input-field">
+                    {VIAL_SIZE_OPTIONS.map(v => <option key={v} value={v}>{v}</option>)}
+                  </select>
+                </div>
                 <div>
                   <label className="label">Overall</label>
                   <select value={form.overallResult} onChange={e => update({ overallResult: e.target.value as COA['overall_result'] })} className="input-field">
                     <option value="pass">Pass</option><option value="fail">Fail</option><option value="pending">Pending</option>
                   </select>
                 </div>
-                <div><label className="label">Seal Serial</label><input value={form.sealSerial} onChange={e => update({ sealSerial: e.target.value })} className="input-field" /></div>
+              </div>
+              <div className="relative">
+                <label className="label">CAS Number</label>
+                <input
+                  value={form.casNumber}
+                  onChange={e => {
+                    update({ casNumber: e.target.value });
+                    setCasSuggestions(lookupCas(e.target.value));
+                    setShowCasSuggestions(true);
+                  }}
+                  onFocus={() => {
+                    setCasSuggestions(lookupCas(form.casNumber));
+                    setShowCasSuggestions(true);
+                  }}
+                  onBlur={() => setTimeout(() => setShowCasSuggestions(false), 150)}
+                  className="input-field"
+                  placeholder="e.g. 137266-51-2"
+                  autoComplete="off"
+                />
+                {showCasSuggestions && casSuggestions.length > 0 && (
+                  <ul className="absolute z-10 mt-1 w-full bg-white border border-atlas-border rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                    {casSuggestions.map(hit => (
+                      <li key={`${hit.name}-${hit.cas}`}>
+                        <button
+                          type="button"
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-brand-50"
+                          onMouseDown={e => e.preventDefault()}
+                          onClick={() => {
+                            update({ casNumber: hit.cas });
+                            setShowCasSuggestions(false);
+                          }}
+                        >
+                          <span className="font-medium">{hit.name}</span>
+                          <span className="text-neutral-500 ml-2">{hit.cas}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
               <div>
-                <label className="label">Peptide Sequence</label>
-                <input value={form.peptideSequence} onChange={e => update({ peptideSequence: e.target.value })} className="input-field" />
-              </div>
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="label mb-0">Test Results</label>
-                  <button type="button" onClick={addPanel} className="text-xs text-brand-700 font-medium inline-flex items-center gap-1"><Plus size={13} /> Add test</button>
-                </div>
-                <div className="space-y-2">
-                  {panels.map((p, i) => (
-                    <div key={i} className="grid grid-cols-12 gap-2 items-center">
-                      <input value={p.panel_name} onChange={e => updatePanel(i, { panel_name: e.target.value })} className="input-field col-span-4 py-1.5 text-sm" placeholder="Test name" />
-                      <input value={p.specification ?? ''} onChange={e => updatePanel(i, { specification: e.target.value })} className="input-field col-span-3 py-1.5 text-sm" placeholder="Spec" />
-                      <input value={p.result} onChange={e => updatePanel(i, { result: e.target.value })} className="input-field col-span-3 py-1.5 text-sm" placeholder="Result" />
-                      <select value={p.pass ? 'pass' : 'fail'} onChange={e => updatePanel(i, { pass: e.target.value === 'pass' })} className="input-field col-span-1 py-1.5 text-sm px-1"><option value="pass">✓</option><option value="fail">✗</option></select>
-                      <button type="button" onClick={() => removePanel(i)} className="col-span-1 text-neutral-400 hover:text-red-600 flex justify-center"><Trash2 size={15} /></button>
+                <label className="label mb-3 block">Test Results</label>
+                <div className="space-y-4 rounded-lg border border-atlas-border p-4 bg-neutral-50/50">
+                  <div className="grid sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="label">Identification</label>
+                      <input value={labResults.identification} onChange={e => updateResults({ identification: e.target.value })} className="input-field" placeholder="Peptide identification" />
                     </div>
-                  ))}
+                    <div>
+                      <label className="label">Net Content</label>
+                      <input value={labResults.netContent} onChange={e => updateResults({ netContent: e.target.value })} className="input-field" placeholder="e.g. 5 mg" />
+                    </div>
+                    <div>
+                      <label className="label">Net Purity (%)</label>
+                      <input type="number" step="0.1" value={labResults.netPurity} onChange={e => updateResults({ netPurity: e.target.value })} className="input-field" placeholder="e.g. 99.2" />
+                    </div>
+                    <div>
+                      <label className="label">Molecular Weight (Da)</label>
+                      <input type="number" step="0.1" value={labResults.molecularWeight} onChange={e => updateResults({ molecularWeight: e.target.value })} className="input-field" placeholder="e.g. 1419.5" />
+                    </div>
+                  </div>
+                  <div className="grid sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="label">Sterility</label>
+                      <select value={labResults.sterilityPass ? 'pass' : 'fail'} onChange={e => updateResults({ sterilityPass: e.target.value === 'pass' })} className="input-field">
+                        <option value="pass">Pass</option>
+                        <option value="fail">Fail</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="label">Endotoxin (EU/mg)</label>
+                      <input type="number" step="0.01" value={labResults.endotoxinEuMg} onChange={e => updateResults({ endotoxinEuMg: e.target.value })} className="input-field" placeholder="e.g. 0.25" />
+                    </div>
+                    {labResults.includeFentanyl && (
+                      <div>
+                        <label className="label">Fentanyl Detection</label>
+                        <select value={labResults.fentanylPass ? 'pass' : 'fail'} onChange={e => updateResults({ fentanylPass: e.target.value === 'pass' })} className="input-field">
+                          <option value="pass">Pass</option>
+                          <option value="fail">Fail</option>
+                        </select>
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <label className="label mb-2">Heavy Metals (ppm)</label>
+                    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {HEAVY_METAL_NAMES.map(metal => (
+                        <div key={metal}>
+                          <label className="text-xs text-neutral-500 mb-1 block">{metal}</label>
+                          <input
+                            type="number"
+                            step="0.001"
+                            value={labResults.heavyMetals[metal]}
+                            onChange={e => updateHeavyMetal(metal, e.target.value)}
+                            className="input-field py-1.5 text-sm"
+                            placeholder="ppm"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="label mb-0">Conformity (multiple peptides)</label>
+                      <button type="button" onClick={addConformityPeptide} className="text-xs text-brand-700 font-medium inline-flex items-center gap-1">
+                        <Plus size={13} /> Add peptide
+                      </button>
+                    </div>
+                    {labResults.conformityPeptides.length === 0 ? (
+                      <p className="text-xs text-neutral-500">Add rows for sample-to-sample conformity results.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {labResults.conformityPeptides.map((row, i) => (
+                          <div key={i} className="grid grid-cols-12 gap-2 items-center">
+                            <input value={row.name} onChange={e => updateConformityPeptide(i, { name: e.target.value })} className="input-field col-span-4 py-1.5 text-sm" placeholder="Peptide" />
+                            <input value={row.netContent} onChange={e => updateConformityPeptide(i, { netContent: e.target.value })} className="input-field col-span-3 py-1.5 text-sm" placeholder="Net content" />
+                            <input value={row.netPurity} onChange={e => updateConformityPeptide(i, { netPurity: e.target.value })} className="input-field col-span-3 py-1.5 text-sm" placeholder="Net purity %" />
+                            <button type="button" onClick={() => removeConformityPeptide(i)} className="col-span-2 text-neutral-400 hover:text-red-600 flex justify-center"><Trash2 size={15} /></button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
               <button type="submit" disabled={saving} className="btn-primary w-full gap-2">
@@ -501,58 +637,11 @@ export default function Lab() {
         )}
 
         {tab === 'workflow' && (
-          <div className="space-y-4">
-            <div className="flex flex-wrap gap-2 text-xs">
-              {COA_WORKFLOW_STEPS.map((step, i) => (
-                <span key={step} className="inline-flex items-center gap-1 text-neutral-600">
-                  <span className="w-5 h-5 rounded-full bg-black text-white text-[10px] font-bold flex items-center justify-center">{i + 1}</span>
-                  {COA_WORKFLOW_LABELS[step]}
-                  {i < COA_WORKFLOW_STEPS.length - 1 && <ArrowRight size={12} className="text-neutral-400 mx-1" />}
-                </span>
-              ))}
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {(['issued', 'verified', 'published'] as const).map(stage => (
-                <div key={stage} className="card overflow-hidden">
-                  <div className="px-4 py-3 border-b border-atlas-border bg-neutral-50 flex items-center justify-between">
-                    <h3 className="font-bold text-sm flex items-center gap-2">
-                      {stage === 'issued' && <FlaskConical size={14} />}
-                      {stage === 'verified' && <Shield size={14} className="text-brand-600" />}
-                      {stage === 'published' && <Globe size={14} className="text-emerald-600" />}
-                      {COA_WORKFLOW_LABELS[stage]}
-                    </h3>
-                    <span className="text-xs text-neutral-500">{workflowCoas[stage].length}</span>
-                  </div>
-                  <div className="divide-y divide-atlas-border max-h-[480px] overflow-y-auto">
-                    {workflowCoas[stage].length === 0 ? (
-                      <p className="p-4 text-xs text-neutral-500">None</p>
-                    ) : workflowCoas[stage].map(c => (
-                      <div key={c.id} className="p-4 space-y-2">
-                        <p className="font-medium text-sm text-black">{c.display_name || c.sample_name}</p>
-                        <p className="text-xs text-neutral-500">{c.company_name || '—'} · {formatDate(c.issued_at)}</p>
-                        <div className="flex flex-wrap gap-2 pt-1">
-                          <Link to={`/coa/${c.slug}`} className="btn-outline text-xs py-1 px-2 gap-1"><ExternalLink size={11} /> Preview</Link>
-                          {stage === 'issued' && (
-                            <button type="button" onClick={() => advanceWorkflow(c, 'verified')} className="btn-secondary text-xs py-1 px-2 gap-1">
-                              <Shield size={11} /> Verify COA
-                            </button>
-                          )}
-                          {stage === 'verified' && (
-                            <button type="button" onClick={() => advanceWorkflow(c, 'published')} className="btn-primary text-xs py-1 px-2 gap-1">
-                              <Globe size={11} /> Make Public
-                            </button>
-                          )}
-                          {stage === 'published' && (
-                            <span className="text-xs text-emerald-700 font-medium flex items-center gap-1"><CheckCircle size={12} /> Client visible</span>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          <CoaWorkflowBoard
+            coas={coas}
+            onMoveCoa={moveCoaToStage}
+            movingId={movingCoaId}
+          />
         )}
       </main>
     </div>

@@ -65,7 +65,7 @@ export interface OrderSample {
   created_at: string;
 }
 
-export type CoaWorkflowStage = 'issued' | 'verified' | 'published';
+export type CoaWorkflowStage = 'issued' | 'awaiting_info' | 'verified' | 'published';
 
 export interface COA {
   id: string;
