@@ -28,6 +28,8 @@ export interface Order {
   total: number;
   first_order_discount: boolean;
   prepaid_shipping: boolean;
+  shipping_label_id?: string;
+  payment_method?: 'card' | 'crypto';
   company_name: string;
   created_at: string;
   updated_at: string;
@@ -48,6 +50,8 @@ export interface OrderSample {
   analysis_results?: Record<string, unknown>[] | null;
   created_at: string;
 }
+
+export type CoaWorkflowStage = 'issued' | 'verified' | 'published';
 
 export interface COA {
   id: string;
@@ -71,6 +75,10 @@ export interface COA {
   content_hash: string;
   signature: string;
   pdf_url: string;
+  seal_serial?: string;
+  coa_workflow_stage?: CoaWorkflowStage;
+  verified_at?: string | null;
+  published_at?: string | null;
   issued_at: string;
   created_at: string;
 }
@@ -101,9 +109,12 @@ export interface ApiKey {
   created_at: string;
 }
 
+export type UserRole = 'client' | 'chemist' | 'admin' | 'verifier';
+
 export interface UserProfile {
   id: string;
   full_name: string;
+  role?: UserRole;
   company_name: string;
   phone: string;
   address_line1: string;

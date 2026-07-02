@@ -10,7 +10,10 @@ export interface OrderDraft {
   shippingCarrier: string;
   shippingTracking: string;
   companyName: string;
+  selectedCompanyId: string;
   cardholderName: string;
+  paymentMethod: 'card' | 'crypto';
+  generatePrepaidLabel: boolean;
   paymentAuthorized: boolean;
   updatedAt: string;
 }

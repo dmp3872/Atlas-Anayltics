@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { CheckCircle, Zap, ArrowRight, Info, Minus, Plus } from 'lucide-react';
+import { CheckCircle, Zap, ArrowRight, Minus, Plus } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { TestPanel } from '../lib/types';
 import {
@@ -88,28 +88,38 @@ export default function Pricing() {
   const currentVolumeTier = VOLUME_DISCOUNTS.find(t => sampleCount >= t.min && sampleCount <= t.max);
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <div className="bg-black py-16 px-4">
-        <div className="max-w-3xl mx-auto text-center">
-          <h1 className="text-4xl font-bold text-white mb-3">Pricing Calculator</h1>
-          <p className="text-slate-400 text-lg">Volume discounts automatically applied. No hidden fees.</p>
+    <div className="min-h-screen bg-neutral-100 pb-28 lg:pb-10">
+      {/* Hero — compact on mobile */}
+      <div className="bg-black border-b border-neutral-800">
+        <div className="max-w-3xl mx-auto text-center px-4 pt-8 pb-10 sm:pt-10 sm:pb-12 md:py-14">
+          <p className="text-brand-400 text-[10px] sm:text-xs font-bold uppercase tracking-[0.2em] mb-3">
+            Transparent pricing
+          </p>
+          <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white tracking-tight">
+            Pricing Calculator
+          </h1>
+          <p className="text-neutral-400 text-sm sm:text-base mt-2 max-w-md mx-auto">
+            Volume discounts applied automatically. No hidden fees.
+          </p>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2 space-y-6">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-5 sm:-mt-6 relative z-10">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 lg:gap-8">
+          <div className="lg:col-span-2 space-y-5">
 
-            <div className="card p-6">
-              <h2 className="font-semibold text-slate-900 mb-1 text-lg">Configure Your Bundle</h2>
-              <p className="text-sm text-slate-500 mb-5">Volume discounts automatically applied.</p>
+            <div className="card p-4 sm:p-6 shadow-sm">
+              <h2 className="font-bold text-black text-lg">Configure Your Bundle</h2>
+              <p className="text-sm text-neutral-500 mt-0.5 mb-5">Volume discounts automatically applied.</p>
 
               <div className="mb-6">
-                <label className="label text-sm font-semibold text-slate-700">Number of Samples</label>
-                <div className="flex items-center gap-3 mt-2">
+                <label className="label">Number of Samples</label>
+                <div className="flex items-center gap-2 sm:gap-3 mt-2">
                   <button
+                    type="button"
                     onClick={() => setSampleCountSafe(sampleCount - 1)}
-                    className="w-10 h-10 rounded-lg border border-slate-300 flex items-center justify-center hover:bg-slate-50 text-slate-600 font-bold transition-colors"
+                    className="qty-stepper-btn"
+                    aria-label="Decrease samples"
                   >
                     <Minus size={16} />
                   </button>
@@ -119,62 +129,78 @@ export default function Pricing() {
                     max={200}
                     value={sampleCount}
                     onChange={e => setSampleCountSafe(parseInt(e.target.value) || 1)}
-                    className="input-field w-20 text-center font-semibold text-lg"
+                    className="input-field flex-1 sm:flex-none sm:w-20 text-center font-bold text-lg py-2.5"
                   />
                   <button
+                    type="button"
                     onClick={() => setSampleCountSafe(sampleCount + 1)}
-                    className="w-10 h-10 rounded-lg border border-slate-300 flex items-center justify-center hover:bg-slate-50 text-slate-600 font-bold transition-colors"
+                    className="qty-stepper-btn"
+                    aria-label="Increase samples"
                   >
                     <Plus size={16} />
                   </button>
-                  {volumeDiscount > 0 && (
-                    <span className="text-sm font-semibold text-brand-600 bg-brand-50 px-3 py-1.5 rounded-full border border-brand-200">
-                      {Math.round(volumeDiscount * 100)}% volume discount
-                    </span>
-                  )}
                 </div>
-                <p className="text-xs text-slate-500 mt-2">
+                {volumeDiscount > 0 && (
+                  <p className="mt-3 text-sm font-semibold text-brand-800 bg-brand-50 border border-brand-200 rounded-md px-3 py-2 inline-block">
+                    {Math.round(volumeDiscount * 100)}% volume discount applied
+                  </p>
+                )}
+                <p className="text-xs text-neutral-500 mt-3 leading-relaxed">
                   Each sample includes Purity, Net Content, and ID testing — {formatCurrency(BASE_PRICE_PER_SAMPLE)}/sample
                 </p>
-                <div className="mt-3 flex flex-wrap gap-2">
+                <div className="mt-4 grid grid-cols-2 sm:flex sm:flex-wrap gap-2">
                   {VOLUME_DISCOUNTS.filter(t => t.discount > 0).map(tier => (
-                    <div key={tier.min} className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
-                      currentVolumeTier?.min === tier.min
-                        ? 'border-brand-500 bg-brand-50 text-brand-700 font-semibold'
-                        : 'border-slate-200 text-slate-500'
-                    }`}>
+                    <div
+                      key={tier.min}
+                      className={`pricing-tier-pill ${
+                        currentVolumeTier?.min === tier.min ? 'pricing-tier-pill-active' : 'pricing-tier-pill-inactive'
+                      }`}
+                    >
                       {tier.min}–{tier.max === Infinity ? '∞' : tier.max}: {Math.round(tier.discount * 100)}% off
                     </div>
                   ))}
                 </div>
               </div>
 
-              <div className="border-t border-slate-100 pt-5">
-                <h3 className="font-semibold text-slate-900 mb-1">Blend Samples</h3>
-                <p className="text-xs text-slate-500 mb-3">
-                  Mark which compounds are blends. Blends add {formatCurrency(BLEND_SURCHARGE_PER_COMPOUND)} per blend compound and are not discounted.
+              <div className="border-t border-atlas-border pt-5">
+                <h3 className="font-bold text-black mb-1">Blend Samples</h3>
+                <p className="text-xs text-neutral-500 mb-3 leading-relaxed">
+                  Mark blends for +{formatCurrency(BLEND_SURCHARGE_PER_COMPOUND)} per compound (not volume-discounted).
                 </p>
                 <div className="space-y-2">
                   {Array.from({ length: sampleCount }, (_, i) => {
                     const blend = blendSamples.find(b => b.id === i);
                     return (
-                      <div key={i} className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${blend ? 'border-brand-300 bg-brand-50' : 'border-slate-200 bg-white hover:border-slate-300'}`}>
-                        <button
-                          onClick={() => toggleBlend(i)}
-                          className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${blend ? 'border-brand-500 bg-brand-500' : 'border-slate-300'}`}
-                        >
-                          {blend && <CheckCircle size={11} className="text-white" />}
-                        </button>
-                        <span className="text-sm font-medium text-slate-700 flex-1">Compound {i + 1}</span>
-                        <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${blend ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-500'}`}>
-                          {blend ? 'Blend' : 'Single Compound'}
-                        </span>
+                      <div
+                        key={i}
+                        className={`p-3 sm:p-3.5 rounded-lg border transition-colors ${
+                          blend ? 'border-brand-400 bg-brand-50' : 'border-atlas-border bg-white'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => toggleBlend(i)}
+                            className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+                              blend ? 'border-brand-500 bg-brand-500' : 'border-neutral-300'
+                            }`}
+                            aria-label={`Toggle blend for compound ${i + 1}`}
+                          >
+                            {blend && <CheckCircle size={11} className="text-white" />}
+                          </button>
+                          <span className="text-sm font-medium text-black flex-1 min-w-0">Compound {i + 1}</span>
+                          <span className={`text-[11px] px-2 py-0.5 rounded font-semibold uppercase tracking-wide shrink-0 ${
+                            blend ? 'bg-amber-100 text-amber-800' : 'bg-neutral-100 text-neutral-500'
+                          }`}>
+                            {blend ? 'Blend' : 'Single'}
+                          </span>
+                        </div>
                         {blend && (
-                          <div className="flex items-center gap-1.5">
-                            <button onClick={() => setBlendCompounds(i, blend.compounds - 1)} className="w-6 h-6 rounded border border-slate-300 flex items-center justify-center text-slate-600 hover:bg-slate-100"><Minus size={11} /></button>
-                            <span className="text-sm font-semibold text-slate-900 w-5 text-center">{blend.compounds}</span>
-                            <button onClick={() => setBlendCompounds(i, blend.compounds + 1)} className="w-6 h-6 rounded border border-slate-300 flex items-center justify-center text-slate-600 hover:bg-slate-100"><Plus size={11} /></button>
-                            <span className="text-xs text-slate-500">compounds</span>
+                          <div className="flex items-center gap-2 mt-3 ml-8 pt-3 border-t border-brand-200/60">
+                            <span className="text-xs text-neutral-600 mr-1">Compounds</span>
+                            <button type="button" onClick={() => setBlendCompounds(i, blend.compounds - 1)} className="qty-stepper-btn w-8 h-8"><Minus size={11} /></button>
+                            <span className="text-sm font-bold text-black w-6 text-center">{blend.compounds}</span>
+                            <button type="button" onClick={() => setBlendCompounds(i, blend.compounds + 1)} className="qty-stepper-btn w-8 h-8"><Plus size={11} /></button>
                           </div>
                         )}
                       </div>
@@ -183,25 +209,25 @@ export default function Pricing() {
                 </div>
               </div>
 
-              <div className="border-t border-slate-100 pt-5 mt-5">
-                <div className="flex items-center justify-between mb-1">
-                  <h3 className="font-semibold text-slate-900">Conformity Vials</h3>
-                  <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">{formatCurrency(CONFORMITY_VIAL_PRICE)}/vial</span>
+              <div className="border-t border-atlas-border pt-5 mt-5">
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <h3 className="font-bold text-black">Conformity Vials</h3>
+                  <span className="text-[11px] font-semibold text-neutral-600 bg-neutral-100 px-2 py-0.5 rounded">{formatCurrency(CONFORMITY_VIAL_PRICE)}/vial</span>
                 </div>
-                <p className="text-xs text-slate-500 mb-3">Extra vials for batch clarity/conformity testing</p>
-                <div className="flex items-center gap-3">
-                  <button onClick={() => setConformityVials(Math.max(0, conformityVials - 1))} className="w-9 h-9 rounded-lg border border-slate-300 flex items-center justify-center hover:bg-slate-50 text-slate-600 transition-colors"><Minus size={14} /></button>
-                  <span className="w-8 text-center font-semibold text-slate-900 text-base">{conformityVials}</span>
-                  <button onClick={() => setConformityVials(conformityVials + 1)} className="w-9 h-9 rounded-lg border border-slate-300 flex items-center justify-center hover:bg-slate-50 text-slate-600 transition-colors"><Plus size={14} /></button>
+                <p className="text-xs text-neutral-500 mb-3">Extra vials for batch clarity testing</p>
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => setConformityVials(Math.max(0, conformityVials - 1))} className="qty-stepper-btn w-10 h-10"><Minus size={14} /></button>
+                  <span className="min-w-[2rem] text-center font-bold text-black text-lg">{conformityVials}</span>
+                  <button type="button" onClick={() => setConformityVials(conformityVials + 1)} className="qty-stepper-btn w-10 h-10"><Plus size={14} /></button>
                 </div>
               </div>
             </div>
 
-            <div className="card p-6">
-              <h2 className="font-semibold text-slate-900 mb-1 text-lg">Add-on Tests <span className="text-sm font-normal text-slate-500">(apply to all samples)</span></h2>
-              <p className="text-xs text-slate-500 mb-4">Volume discounts apply to add-ons.</p>
+            <div className="card p-4 sm:p-6 shadow-sm">
+              <h2 className="font-bold text-black text-lg">Add-on Tests</h2>
+              <p className="text-xs text-neutral-500 mt-0.5 mb-4">Apply to all samples · volume discounts included</p>
               {loading ? (
-                <div className="space-y-2">{[...Array(5)].map((_, i) => <div key={i} className="h-14 bg-slate-100 rounded-lg animate-pulse" />)}</div>
+                <div className="space-y-2">{[...Array(5)].map((_, i) => <div key={i} className="h-14 bg-neutral-100 rounded-lg animate-pulse" />)}</div>
               ) : (
                 <div className="space-y-2">
                   {addOnPanels.map(panel => {
@@ -209,152 +235,198 @@ export default function Pricing() {
                     return (
                       <button
                         key={panel.id}
+                        type="button"
                         onClick={() => toggleAddOn(panel.id)}
-                        className={`w-full flex items-center justify-between p-4 rounded-xl border-2 transition-all text-left ${
-                          selected ? 'border-brand-500 bg-brand-50' : 'border-slate-200 hover:border-slate-300 bg-white'
+                        className={`w-full flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-4 rounded-lg border-2 transition-all text-left ${
+                          selected ? 'border-brand-500 bg-brand-50' : 'border-atlas-border hover:border-neutral-400 bg-white'
                         }`}
                       >
-                        <div className="flex items-center gap-3">
-                          <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-colors ${selected ? 'border-brand-500 bg-brand-500' : 'border-slate-300'}`}>
+                        <div className="flex items-start gap-3 min-w-0">
+                          <div className={`w-5 h-5 mt-0.5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${selected ? 'border-brand-500 bg-brand-500' : 'border-neutral-300'}`}>
                             {selected && <CheckCircle size={12} className="text-white" />}
                           </div>
-                          <div>
-                            <p className="font-medium text-slate-900 text-sm">{panel.name}</p>
-                            <p className="text-xs text-slate-500">{panel.description}</p>
+                          <div className="min-w-0">
+                            <p className="font-medium text-black text-sm">{panel.name}</p>
+                            <p className="text-xs text-neutral-500 mt-0.5 leading-relaxed">{panel.description}</p>
                           </div>
                         </div>
-                        <div className="text-right flex-shrink-0 ml-4">
-                          <p className="font-bold text-slate-900">+{formatCurrency(panel.price_per_sample)}</p>
-                          <p className="text-xs text-slate-500">per sample</p>
+                        <div className="sm:text-right flex-shrink-0 pl-8 sm:pl-0">
+                          <p className="font-bold text-black">+{formatCurrency(panel.price_per_sample)}</p>
+                          <p className="text-xs text-neutral-500">per sample</p>
                         </div>
                       </button>
                     );
                   })}
 
-                  <div className="pt-3 mt-1">
-                    <button
-                      onClick={() => setRushProcessing(!rushProcessing)}
-                      className={`w-full flex items-center justify-between p-4 rounded-xl border-2 transition-all text-left ${rushProcessing ? 'border-amber-400 bg-amber-50' : 'border-slate-200 hover:border-slate-300 bg-white'}`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 ${rushProcessing ? 'border-amber-500 bg-amber-500' : 'border-slate-300'}`}>
-                          {rushProcessing && <CheckCircle size={12} className="text-white" />}
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <p className="font-medium text-slate-900 text-sm">Rush Processing</p>
-                            <Zap size={14} className="text-amber-500" />
-                          </div>
-                          <p className="text-xs text-slate-500">Expedited 48-hour turnaround</p>
-                        </div>
+                  <button
+                    type="button"
+                    onClick={() => setRushProcessing(!rushProcessing)}
+                    className={`w-full flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-4 rounded-lg border-2 transition-all text-left mt-3 ${
+                      rushProcessing ? 'border-amber-400 bg-amber-50' : 'border-atlas-border hover:border-neutral-400 bg-white'
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className={`w-5 h-5 mt-0.5 rounded border-2 flex items-center justify-center flex-shrink-0 ${rushProcessing ? 'border-amber-500 bg-amber-500' : 'border-neutral-300'}`}>
+                        {rushProcessing && <CheckCircle size={12} className="text-white" />}
                       </div>
-                      <div className="text-right flex-shrink-0 ml-4">
-                        <p className="font-bold text-slate-900">+{formatCurrency(RUSH_FEE_PER_SAMPLE)}</p>
-                        <p className="text-xs text-slate-500">per sample</p>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium text-black text-sm">Rush Processing</p>
+                          <Zap size={14} className="text-amber-500" />
+                        </div>
+                        <p className="text-xs text-neutral-500 mt-0.5">Expedited 48-hour turnaround</p>
                       </div>
-                    </button>
-                  </div>
+                    </div>
+                    <div className="sm:text-right flex-shrink-0 pl-8 sm:pl-0">
+                      <p className="font-bold text-black">+{formatCurrency(RUSH_FEE_PER_SAMPLE)}</p>
+                      <p className="text-xs text-neutral-500">per sample</p>
+                    </div>
+                  </button>
                 </div>
               )}
             </div>
 
-            <div className="card p-5 bg-emerald-50 border-emerald-200">
+            <div className="card p-4 sm:p-5 bg-emerald-50 border-emerald-200">
               <button
+                type="button"
                 onClick={() => setFirstOrder(!firstOrder)}
-                className="w-full flex items-center gap-3 text-left"
+                className="w-full flex items-start sm:items-center gap-3 text-left"
               >
-                <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 ${firstOrder ? 'border-emerald-500 bg-emerald-500' : 'border-emerald-400'}`}>
+                <div className={`w-5 h-5 mt-0.5 sm:mt-0 rounded border-2 flex items-center justify-center flex-shrink-0 ${firstOrder ? 'border-emerald-500 bg-emerald-500' : 'border-emerald-400'}`}>
                   {firstOrder && <CheckCircle size={12} className="text-white" />}
                 </div>
-                <div className="flex-1">
-                  <p className="font-semibold text-emerald-900 text-sm">First Order? Apply 50% Discount</p>
-                  <p className="text-xs text-emerald-700">Automatically applied at checkout for new accounts. Check to preview pricing.</p>
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-emerald-900 text-sm">First order? Preview 50% discount</p>
+                  <p className="text-xs text-emerald-700 mt-0.5 leading-relaxed">Applied automatically at checkout for new accounts.</p>
                 </div>
                 {firstOrder && firstOrderSavings > 0 && (
-                  <span className="font-bold text-emerald-700">−{formatCurrency(firstOrderSavings)}</span>
+                  <span className="font-bold text-emerald-700 shrink-0">−{formatCurrency(firstOrderSavings)}</span>
                 )}
               </button>
             </div>
           </div>
 
-          <div className="lg:col-span-1">
-            <div className="card p-6 sticky top-24">
-              <h2 className="font-semibold text-slate-900 mb-4">Price Summary</h2>
-
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between text-slate-700">
-                  <span>Base bundle × {sampleCount}</span>
-                  <span>{formatCurrency(BASE_PRICE_PER_SAMPLE * sampleCount)}</span>
-                </div>
-                {selectedPanelObjects.map(p => (
-                  <div key={p.id} className="flex justify-between text-slate-600">
-                    <span className="truncate pr-2 text-xs">{p.name} × {sampleCount}</span>
-                    <span className="flex-shrink-0">{formatCurrency(p.price_per_sample * sampleCount)}</span>
-                  </div>
-                ))}
-                {volumeDiscount > 0 && (
-                  <div className="flex justify-between text-brand-600 font-medium">
-                    <span>Volume ({Math.round(volumeDiscount * 100)}% off)</span>
-                    <span>−{formatCurrency((baseCost + addOnCost) * volumeDiscount)}</span>
-                  </div>
-                )}
-                {blendSurcharge > 0 && (
-                  <div className="flex justify-between text-slate-700">
-                    <span>Blend surcharge</span>
-                    <span>+{formatCurrency(blendSurcharge)}</span>
-                  </div>
-                )}
-                {conformityCost > 0 && (
-                  <div className="flex justify-between text-slate-700">
-                    <span>Conformity vials × {conformityVials}</span>
-                    <span>+{formatCurrency(conformityCost)}</span>
-                  </div>
-                )}
-                {firstOrder && firstOrderSavings > 0 && (
-                  <div className="flex justify-between text-emerald-600 font-medium">
-                    <span>First order (50% off)</span>
-                    <span>−{formatCurrency(firstOrderSavings)}</span>
-                  </div>
-                )}
-                {rushProcessing && (
-                  <div className="flex justify-between text-amber-600 font-medium">
-                    <span>Rush × {sampleCount}</span>
-                    <span>+{formatCurrency(rushFee)}</span>
-                  </div>
-                )}
-
-                <div className="pt-3 border-t border-slate-200">
-                  <div className="flex justify-between text-lg font-bold text-slate-900">
-                    <span>Estimated Total</span>
-                    <span>{formatCurrency(total)}</span>
-                  </div>
-                  <p className="text-xs text-slate-400 mt-1">+ prepaid shipping (coming soon)</p>
-                </div>
-
-                <Link to="/order" className="btn-primary w-full mt-4 gap-2 justify-center">
-                  Start Order <ArrowRight size={16} />
-                </Link>
-
-                {total === 0 && (
-                  <div className="flex items-center gap-2 text-xs text-slate-400 bg-slate-50 p-3 rounded-lg">
-                    <Info size={13} className="flex-shrink-0" />
-                    Configure above to see pricing.
-                  </div>
-                )}
-              </div>
-
-              <div className="mt-5 pt-4 border-t border-slate-100 space-y-1.5">
-                {['No minimums or contracts', 'Flat pricing any peptide', 'No hidden fees', 'First order 50% off'].map(f => (
-                  <div key={f} className="flex items-center gap-2 text-xs text-slate-500">
-                    <CheckCircle size={11} className="text-brand-500" />
-                    {f}
-                  </div>
-                ))}
-              </div>
+          {/* Desktop summary sidebar */}
+          <div className="hidden lg:block lg:col-span-1">
+            <div className="card p-6 sticky top-20 shadow-sm">
+              <PriceSummary
+                sampleCount={sampleCount}
+                baseCost={baseCost}
+                selectedPanelObjects={selectedPanelObjects}
+                volumeDiscount={volumeDiscount}
+                addOnCost={addOnCost}
+                blendSurcharge={blendSurcharge}
+                conformityCost={conformityCost}
+                conformityVials={conformityVials}
+                firstOrder={firstOrder}
+                firstOrderSavings={firstOrderSavings}
+                rushProcessing={rushProcessing}
+                rushFee={rushFee}
+                total={total}
+              />
             </div>
           </div>
         </div>
       </div>
+
+      {/* Mobile sticky total bar */}
+      <div className="pricing-mobile-bar">
+        <div className="flex items-center gap-3 max-w-lg mx-auto">
+          <div className="min-w-0 flex-1">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">Estimated total</p>
+            <p className="text-xl font-bold text-black truncate">{formatCurrency(total)}</p>
+          </div>
+          <Link to="/order-new" className="btn-primary shrink-0 px-5 py-2.5 text-sm gap-1.5">
+            Start Order <ArrowRight size={15} />
+          </Link>
+        </div>
+      </div>
     </div>
+  );
+}
+
+function PriceSummary({
+  sampleCount, baseCost, selectedPanelObjects, volumeDiscount, addOnCost,
+  blendSurcharge, conformityCost, conformityVials, firstOrder, firstOrderSavings,
+  rushProcessing, rushFee, total,
+}: {
+  sampleCount: number;
+  baseCost: number;
+  selectedPanelObjects: TestPanel[];
+  volumeDiscount: number;
+  addOnCost: number;
+  blendSurcharge: number;
+  conformityCost: number;
+  conformityVials: number;
+  firstOrder: boolean;
+  firstOrderSavings: number;
+  rushProcessing: boolean;
+  rushFee: number;
+  total: number;
+}) {
+  return (
+    <>
+      <h2 className="font-bold text-black mb-4">Price Summary</h2>
+      <div className="space-y-2 text-sm">
+        <div className="flex justify-between text-neutral-700 gap-4">
+          <span>Base bundle × {sampleCount}</span>
+          <span className="shrink-0">{formatCurrency(BASE_PRICE_PER_SAMPLE * sampleCount)}</span>
+        </div>
+        {selectedPanelObjects.map(p => (
+          <div key={p.id} className="flex justify-between text-neutral-600 gap-4">
+            <span className="truncate text-xs">{p.name} × {sampleCount}</span>
+            <span className="shrink-0">{formatCurrency(p.price_per_sample * sampleCount)}</span>
+          </div>
+        ))}
+        {volumeDiscount > 0 && (
+          <div className="flex justify-between text-brand-700 font-medium gap-4">
+            <span>Volume ({Math.round(volumeDiscount * 100)}% off)</span>
+            <span className="shrink-0">−{formatCurrency((baseCost + addOnCost) * volumeDiscount)}</span>
+          </div>
+        )}
+        {blendSurcharge > 0 && (
+          <div className="flex justify-between text-neutral-700 gap-4">
+            <span>Blend surcharge</span>
+            <span className="shrink-0">+{formatCurrency(blendSurcharge)}</span>
+          </div>
+        )}
+        {conformityCost > 0 && (
+          <div className="flex justify-between text-neutral-700 gap-4">
+            <span>Conformity vials × {conformityVials}</span>
+            <span className="shrink-0">+{formatCurrency(conformityCost)}</span>
+          </div>
+        )}
+        {firstOrder && firstOrderSavings > 0 && (
+          <div className="flex justify-between text-emerald-600 font-medium gap-4">
+            <span>First order (50% off)</span>
+            <span className="shrink-0">−{formatCurrency(firstOrderSavings)}</span>
+          </div>
+        )}
+        {rushProcessing && (
+          <div className="flex justify-between text-amber-600 font-medium gap-4">
+            <span>Rush × {sampleCount}</span>
+            <span className="shrink-0">+{formatCurrency(rushFee)}</span>
+          </div>
+        )}
+        <div className="pt-3 border-t border-atlas-border">
+          <div className="flex justify-between text-lg font-bold text-black gap-4">
+            <span>Estimated Total</span>
+            <span className="shrink-0">{formatCurrency(total)}</span>
+          </div>
+          <p className="text-xs text-neutral-500 mt-1">Prepaid shipping label included at checkout</p>
+        </div>
+        <Link to="/order-new" className="btn-primary w-full mt-4 gap-2 justify-center">
+          Start Order <ArrowRight size={16} />
+        </Link>
+      </div>
+      <div className="mt-5 pt-4 border-t border-atlas-border space-y-1.5">
+        {['No minimums or contracts', 'Flat pricing any peptide', 'No hidden fees', 'First order 50% off'].map(f => (
+          <div key={f} className="flex items-center gap-2 text-xs text-neutral-500">
+            <CheckCircle size={11} className="text-brand-600 shrink-0" />
+            {f}
+          </div>
+        ))}
+      </div>
+    </>
   );
 }

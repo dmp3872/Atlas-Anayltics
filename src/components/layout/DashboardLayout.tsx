@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, Navigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, ShoppingCart, FileText, Key, User, HelpCircle,
   LogOut, Menu, X, ChevronRight

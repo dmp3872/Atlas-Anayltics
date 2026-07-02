@@ -1,4 +1,53 @@
-import { COA, OrderSample, SampleStatus, TestPanel } from './types';
+import { COA, OrderSample, PanelResult, SampleStatus, TestPanel } from './types';
+
+export interface OrderSampleMetadata {
+  batch_number?: string;
+  labeled_content?: string;
+  peptide_identification?: string;
+  vial_size?: string;
+  sample_matrix?: string;
+  tests_label?: string;
+}
+
+export function parseSampleMetadata(metadata: OrderSample['metadata']): OrderSampleMetadata {
+  if (!metadata || typeof metadata !== 'object') return {};
+  return metadata as OrderSampleMetadata;
+}
+
+/** Default chemist COA test rows — matches the lab issue form. */
+export const DEFAULT_COA_TEST_PANELS: PanelResult[] = [
+  { panel_name: 'Purity & Quantitation (HPLC)', specification: '≥95.0%', result: '', pass: true },
+  { panel_name: 'Identity Confirmation (MS)', specification: '± 2 Da', result: '', pass: true },
+  { panel_name: 'Net Content (Weight)', specification: '', result: '', pass: true },
+  { panel_name: 'Endotoxin (USP <85>)', specification: '<1.0 EU/mg', result: '', pass: true },
+];
+
+/** Prefill test rows from client intake metadata (labeled content → net content result). */
+export function buildCoaPanelsFromSample(metadata: OrderSample['metadata']): PanelResult[] {
+  const meta = parseSampleMetadata(metadata);
+  const labeledContent = meta.labeled_content?.trim() ?? '';
+
+  return DEFAULT_COA_TEST_PANELS.map(panel => {
+    if (!panel.panel_name.toLowerCase().includes('net content') || !labeledContent) {
+      return { ...panel };
+    }
+    return {
+      ...panel,
+      specification: panel.specification?.trim() ? panel.specification : `Label claim: ${labeledContent}`,
+      result: labeledContent,
+    };
+  });
+}
+
+export function clientSubmittedLabel(
+  profile: { full_name?: string; company_name?: string } | undefined,
+  orderCompany?: string,
+): string {
+  const name = profile?.full_name?.trim();
+  const company = orderCompany?.trim() || profile?.company_name?.trim();
+  if (name && company) return `${name} · ${company}`;
+  return name || company || 'Unknown client';
+}
 
 // Canonical QC sections shown on a certificate when a sample doesn't have an
 // explicit panel list (matches the 8-section full QC panel used in seed COAs).
@@ -11,6 +60,7 @@ export const QC_PANELS = [
   'Sterility (PCR)',
   'Microbial Screen',
   'Visual Inspection',
+  'Conformity (Sample-to-Sample)',
 ];
 
 // Resolve the list of test section names ordered for a sample. Prefers explicit

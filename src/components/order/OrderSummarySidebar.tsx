@@ -1,6 +1,7 @@
 import { CheckCircle, ShoppingCart } from 'lucide-react';
 import {
-  WizardSample, orderTotals, formatSampleTests, FULL_QC_PANEL,
+  WizardSample, orderTotals, FULL_QC_PANEL, CONFORMITY_PRICE,
+  sampleVialCount, sampleTestPrice, sampleAddOnPrice,
 } from '../../lib/orderCatalog';
 import { formatCurrency } from '../../lib/utils';
 
@@ -14,6 +15,10 @@ export default function OrderSummarySidebar({ samples, step, total }: Props) {
   const { subtotal, sampleCount } = orderTotals(samples);
   const displayTotal = total ?? subtotal;
   const hasTests = samples.some(s => s.sample_name && (s.test_mode === 'full_qc' || s.individual_tests.length > 0));
+  const totalVials = samples.reduce((n, s) => n + (s.sample_name ? sampleVialCount(s) * Math.max(1, s.quantity) : 0), 0);
+  const panelFees = samples.reduce((s, sample) => s + sampleTestPrice(sample) * Math.max(1, sample.quantity), 0);
+  const addOnFees = samples.reduce((s, sample) => s + sampleAddOnPrice(sample) * Math.max(1, sample.quantity), 0);
+  const conformityVials = samples.reduce((n, s) => n + s.conformity_extra * Math.max(1, s.quantity), 0);
 
   return (
     <div className="card p-5 sticky top-24 border-brand-200 shadow-sm">
@@ -27,10 +32,24 @@ export default function OrderSummarySidebar({ samples, step, total }: Props) {
           <span className="text-neutral-500">Samples</span>
           <span className="font-semibold">{sampleCount || samples.filter(s => s.sample_name).length}</span>
         </div>
-        {hasTests && (
+        {hasTests && panelFees > 0 && (
           <div className="flex justify-between">
-            <span className="text-neutral-500">Testing</span>
-            <span className="font-semibold">{formatCurrency(subtotal)}</span>
+            <span className="text-neutral-500">Panel / tests</span>
+            <span className="font-semibold">{formatCurrency(panelFees)}</span>
+          </div>
+        )}
+        {addOnFees > 0 && (
+          <div className="flex justify-between">
+            <span className="text-neutral-500">
+              Add-ons{conformityVials > 0 ? ` (incl. ${conformityVials} extra vial${conformityVials === 1 ? '' : 's'})` : ''}
+            </span>
+            <span className="font-semibold">+{formatCurrency(addOnFees)}</span>
+          </div>
+        )}
+        {totalVials > 0 && (
+          <div className="flex justify-between">
+            <span className="text-neutral-500">Vials to ship</span>
+            <span className="font-semibold">{totalVials}</span>
           </div>
         )}
       </div>
@@ -58,7 +77,8 @@ export default function OrderSummarySidebar({ samples, step, total }: Props) {
 
       {step === 1 && (
         <p className="text-[10px] text-neutral-400 mt-4 leading-relaxed border-t border-atlas-border pt-3">
-          {FULL_QC_PANEL.name}: submit {FULL_QC_PANEL.vialsRequired} vials (min. 10 mg each). Individual tests: 1 vial per test.
+          {FULL_QC_PANEL.name}: {FULL_QC_PANEL.vialsRequired} vials with conformity included.
+          Extra conformity vials {formatCurrency(CONFORMITY_PRICE)} each.
         </p>
       )}
     </div>

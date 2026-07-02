@@ -5,24 +5,10 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { Company } from '../../lib/types';
-import LogoDropzone from './LogoDropzone';
+import { fetchUserCompanies, saveCoaProfile, syncDefaultCompanyToProfile } from '../../lib/coaProfile';
+import CoaProfileFormFields, { EMPTY_COA_PROFILE_FORM, CoaProfileFormState } from '../order/CoaProfileFormFields';
 
 type Message = { type: 'success' | 'error'; text: string } | null;
-
-const BACKGROUND_MAX_BYTES = 3 * 1024 * 1024; // 3 MB
-
-interface FormState {
-  name: string;
-  website: string;
-  email: string;
-  address: string;
-  logo: string;
-  chromatograph_background: string;
-}
-
-const EMPTY_FORM: FormState = {
-  name: '', website: '', email: '', address: '', logo: '', chromatograph_background: '',
-};
 
 export default function CompanyManager() {
   const { user, refreshProfile } = useAuth();
@@ -32,48 +18,31 @@ export default function CompanyManager() {
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Company | null>(null);
-  const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [form, setForm] = useState<CoaProfileFormState>(EMPTY_COA_PROFILE_FORM);
   const [modalMsg, setModalMsg] = useState<Message>(null);
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
     if (!user) return;
-    const { data, error } = await supabase
-      .from('companies')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('is_default', { ascending: false })
-      .order('created_at', { ascending: true });
-    if (error) {
+    try {
+      setCompanies(await fetchUserCompanies(user.id));
+    } catch {
       setMsg({ type: 'error', text: 'Could not load COA profiles. The companies table may need to be migrated.' });
-    } else {
-      setCompanies(data ?? []);
     }
     setLoading(false);
   }, [user]);
 
   useEffect(() => { load(); }, [load]);
 
-  // Keep the account profile's company_name / company_logo pointed at the
-  // default profile so order prefill and COA rendering stay in sync.
   async function syncDefaultToProfile() {
     if (!user) return;
-    const { data } = await supabase
-      .from('companies')
-      .select('name, logo')
-      .eq('user_id', user.id)
-      .eq('is_default', true)
-      .maybeSingle();
-    await supabase
-      .from('user_profiles')
-      .update({ company_name: data?.name ?? '', company_logo: data?.logo ?? '' })
-      .eq('id', user.id);
+    await syncDefaultCompanyToProfile(user.id);
     await refreshProfile();
   }
 
   function openCreate() {
     setEditing(null);
-    setForm(EMPTY_FORM);
+    setForm(EMPTY_COA_PROFILE_FORM);
     setModalMsg(null);
     setModalOpen(true);
   }
@@ -92,37 +61,18 @@ export default function CompanyManager() {
     setModalOpen(true);
   }
 
-  function updateForm(patch: Partial<FormState>) {
+  function updateForm(patch: Partial<CoaProfileFormState>) {
     setForm(prev => ({ ...prev, ...patch }));
   }
 
   async function saveProfile() {
     if (!user) return;
-    if (!form.name.trim()) {
-      setModalMsg({ type: 'error', text: 'Company name is required.' });
-      return;
-    }
     setSaving(true);
     setModalMsg(null);
-    const payload = {
-      name: form.name.trim(),
-      website: form.website.trim(),
-      email: form.email.trim(),
-      address: form.address.trim(),
-      logo: form.logo,
-      chromatograph_background: form.chromatograph_background,
-    };
-
-    let error;
-    if (editing) {
-      ({ error } = await supabase.from('companies').update(payload).eq('id', editing.id));
-    } else {
-      ({ error } = await supabase.from('companies').insert({
-        ...payload,
-        user_id: user.id,
-        is_default: companies.length === 0,
-      }));
-    }
+    const { error } = await saveCoaProfile(user.id, form, {
+      editingId: editing?.id,
+      existingCount: companies.length,
+    });
 
     if (error) {
       setModalMsg({ type: 'error', text: error.message });
@@ -275,64 +225,11 @@ export default function CompanyManager() {
                 </div>
               )}
 
-              <div>
-                <label className="label">Company Name <span className="text-red-500">*</span></label>
-                <input
-                  type="text"
-                  value={form.name}
-                  onChange={e => updateForm({ name: e.target.value })}
-                  className="input-field"
-                  placeholder="Company name for COA header"
-                  autoFocus
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="label">Website</label>
-                  <input type="url" value={form.website} onChange={e => updateForm({ website: e.target.value })} className="input-field" placeholder="https://example.com" />
-                </div>
-                <div>
-                  <label className="label">Email</label>
-                  <input type="email" value={form.email} onChange={e => updateForm({ email: e.target.value })} className="input-field" placeholder="contact@example.com" />
-                </div>
-              </div>
-
-              <div>
-                <label className="label">Address</label>
-                <textarea
-                  value={form.address}
-                  onChange={e => updateForm({ address: e.target.value })}
-                  className="input-field min-h-[64px] resize-y"
-                  placeholder="Street address, City, State, Zip"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="label">Company Logo <span className="text-neutral-400 font-normal text-xs">(300×300px · PNG or JPG)</span></label>
-                  <LogoDropzone
-                    value={form.logo}
-                    onChange={logo => updateForm({ logo })}
-                    onError={text => setModalMsg({ type: 'error', text })}
-                    prompt="a logo"
-                    hint="PNG or JPG · 300×300px"
-                    compact
-                  />
-                </div>
-                <div>
-                  <label className="label">Chromatograph Background <span className="text-neutral-400 font-normal text-xs">(1500×600px · PNG)</span></label>
-                  <LogoDropzone
-                    value={form.chromatograph_background}
-                    onChange={chromatograph_background => updateForm({ chromatograph_background })}
-                    onError={text => setModalMsg({ type: 'error', text })}
-                    prompt="a background"
-                    hint="PNG preferred · 1500×600px"
-                    maxBytes={BACKGROUND_MAX_BYTES}
-                    compact
-                  />
-                </div>
-              </div>
+              <CoaProfileFormFields
+                form={form}
+                onChange={updateForm}
+                onError={text => setModalMsg({ type: 'error', text })}
+              />
             </div>
 
             <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-neutral-200">

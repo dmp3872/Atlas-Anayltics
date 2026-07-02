@@ -2,17 +2,40 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { UserProfile } from '../lib/types';
+import { effectiveRole } from '../lib/roles';
 
 export type ProfileUpdate = Pick<UserProfile,
   'full_name' | 'company_name' | 'phone' | 'website' | 'company_logo' |
   'address_line1' | 'address_line2' | 'city' | 'state' | 'zip' | 'country'
 >;
 
+function fallbackProfile(authUser: User): UserProfile {
+  const now = new Date().toISOString();
+  return {
+    id: authUser.id,
+    full_name: (authUser.user_metadata?.full_name as string) || authUser.email?.split('@')[0] || 'User',
+    role: 'client',
+    company_name: '',
+    phone: '',
+    address_line1: '',
+    address_line2: '',
+    city: '',
+    state: '',
+    zip: '',
+    country: 'US',
+    prepaid_balance: 0,
+    is_first_order: true,
+    created_at: now,
+    updated_at: now,
+  };
+}
+
 interface AuthContextValue {
   user: User | null;
   session: Session | null;
   profile: UserProfile | null;
   loading: boolean;
+  profileError: string | null;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
@@ -29,31 +52,60 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [profileError, setProfileError] = useState<string | null>(null);
 
   async function loadProfile(userId: string) {
-    const { data } = await supabase
-      .from('user_profiles')
-      .select('*')
-      .eq('id', userId)
-      .maybeSingle();
+    setProfileError(null);
+    try {
+      const { data, error } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .eq('id', userId)
+        .maybeSingle();
 
-    if (data) {
-      setProfile(data);
-      return;
+      if (error) {
+        console.warn('Profile fetch failed:', error.message);
+      }
+
+      if (data) {
+        setProfile({ ...data, role: effectiveRole(data) });
+        return;
+      }
+
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (!authUser) return;
+
+      const fullName = (authUser.user_metadata?.full_name as string) || '';
+      const { error: upsertError } = await supabase
+        .from('user_profiles')
+        .upsert({ id: userId, full_name: fullName }, { onConflict: 'id' });
+
+      if (upsertError) {
+        console.warn('Profile upsert failed:', upsertError.message);
+        setProfile(fallbackProfile(authUser));
+        setProfileError('Using a temporary profile — some account data may be limited.');
+        return;
+      }
+
+      const { data: created, error: refetchError } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (created) {
+        setProfile({ ...created, role: effectiveRole(created) });
+      } else {
+        setProfile(fallbackProfile(authUser));
+        if (refetchError) setProfileError(refetchError.message);
+      }
+    } catch (err) {
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (authUser) {
+        setProfile(fallbackProfile(authUser));
+        setProfileError(err instanceof Error ? err.message : 'Could not load profile');
+      }
     }
-
-    const { data: { user: authUser } } = await supabase.auth.getUser();
-    if (!authUser) return;
-
-    const fullName = (authUser.user_metadata?.full_name as string) || '';
-    await supabase.from('user_profiles').upsert({ id: userId, full_name: fullName });
-
-    const { data: created } = await supabase
-      .from('user_profiles')
-      .select('*')
-      .eq('id', userId)
-      .maybeSingle();
-    setProfile(created);
   }
 
   async function refreshProfile() {
@@ -157,7 +209,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthContext.Provider value={{
-      user, session, profile, loading,
+      user, session, profile, loading, profileError,
       signIn, signUp, signOut, refreshProfile,
       updateProfile, updateEmail, updatePassword,
     }}>

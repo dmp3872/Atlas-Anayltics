@@ -3,10 +3,12 @@ import { Link, Navigate, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, ArrowRight, Plus, Trash2, CheckCircle, Zap,
   Package, Beaker, ShoppingCart, Copy, Minus, AlertCircle, X, Search,
-  ChevronDown, ChevronUp, Pencil, Check,
+  ChevronDown, ChevronUp, Pencil, Check, CreditCard, Bitcoin, Truck,
 } from 'lucide-react';
 import AtlasLogo from '../components/brand/AtlasLogo';
 import OrderSummarySidebar from '../components/order/OrderSummarySidebar';
+import OrderCoaProfileSection from '../components/order/OrderCoaProfileSection';
+import PrepaidShippingLabel from '../components/order/PrepaidShippingLabel';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { DEFAULT_RECENT_PRODUCTS, searchPeptides } from '../data/peptideCatalog';
@@ -14,10 +16,14 @@ import {
   WizardSample, createEmptySample, validateStep1, sampleMetadataPayload,
   INDIVIDUAL_TESTS, FULL_QC_PANEL, SAMPLE_MATRICES, CONFORMITY_PRICE,
   MULTI_BRAND_PRICE, RUSH_PRICE_PER_SAMPLE, MAX_BRANDS_PER_SAMPLE,
-  orderTotals, sampleChipLabel,
+  orderTotals, sampleChipLabel, sampleVialCount,
 } from '../lib/orderCatalog';
 import { clearOrderDraft, loadOrderDraft, saveOrderDraft } from '../lib/orderDraft';
 import { formatCurrency, generateOrderNumber } from '../lib/utils';
+import { generateShippingLabelId } from '../lib/shippingLabel';
+import { notifyOrderUpdate } from '../lib/notifications';
+import { defaultCompany, fetchUserCompanies } from '../lib/coaProfile';
+import { Company } from '../lib/types';
 
 const STEPS = [
   { id: 1, label: 'Products', sub: 'Select & configure', icon: Beaker },
@@ -28,7 +34,7 @@ const STEPS = [
 const SUPPORT_EMAIL = 'info@atlas-analytics.com';
 
 export default function OrderWizard() {
-  const { user, profile } = useAuth();
+  const { user, profile, refreshProfile } = useAuth();
   const navigate = useNavigate();
 
   const [step, setStep] = useState(1);
@@ -44,7 +50,12 @@ export default function OrderWizard() {
   const [shippingTracking, setShippingTracking] = useState('');
   const [companyName, setCompanyName] = useState(profile?.company_name ?? '');
   const [cardholderName, setCardholderName] = useState(profile?.full_name ?? '');
+  const [paymentMethod, setPaymentMethod] = useState<'card' | 'crypto'>('card');
+  const [generatePrepaidLabel, setGeneratePrepaidLabel] = useState(true);
   const [paymentAuthorized, setPaymentAuthorized] = useState(false);
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [selectedCompanyId, setSelectedCompanyId] = useState('');
+  const [companiesLoading, setCompaniesLoading] = useState(true);
 
   const [recentProducts, setRecentProducts] = useState<string[]>(DEFAULT_RECENT_PRODUCTS);
   const [loading, setLoading] = useState(false);
@@ -62,9 +73,9 @@ export default function OrderWizard() {
     if (!user) return;
     saveOrderDraft(user.id, {
       step, samples, notes, promoCode, shippingCarrier, shippingTracking,
-      companyName, cardholderName, paymentAuthorized,
+      companyName, selectedCompanyId, cardholderName, paymentMethod, generatePrepaidLabel, paymentAuthorized,
     });
-  }, [user, step, samples, notes, promoCode, shippingCarrier, shippingTracking, companyName, cardholderName, paymentAuthorized]);
+  }, [user, step, samples, notes, promoCode, shippingCarrier, shippingTracking, companyName, selectedCompanyId, cardholderName, paymentMethod, generatePrepaidLabel, paymentAuthorized]);
 
   useEffect(() => {
     if (!user) return;
@@ -77,9 +88,29 @@ export default function OrderWizard() {
       setShippingCarrier(draft.shippingCarrier);
       setShippingTracking(draft.shippingTracking);
       setCompanyName(draft.companyName || profile?.company_name || '');
+      setSelectedCompanyId(draft.selectedCompanyId || '');
       setCardholderName(draft.cardholderName || profile?.full_name || '');
+      setPaymentMethod(draft.paymentMethod ?? 'card');
+      setGeneratePrepaidLabel(draft.generatePrepaidLabel ?? true);
       setPaymentAuthorized(draft.paymentAuthorized);
     }
+  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!user) return;
+    setCompaniesLoading(true);
+    const draftId = loadOrderDraft(user.id)?.selectedCompanyId;
+    fetchUserCompanies(user.id)
+      .then(data => {
+        setCompanies(data);
+        const pick = data.find(c => c.id === draftId) ?? data.find(c => c.id === selectedCompanyId) ?? defaultCompany(data);
+        if (pick) {
+          setSelectedCompanyId(pick.id);
+          setCompanyName(pick.name);
+        }
+      })
+      .catch(() => setCompanies([]))
+      .finally(() => setCompaniesLoading(false));
   }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -107,8 +138,17 @@ export default function OrderWizard() {
   }, [persistDraft]);
 
   const catalogResults = useMemo(() => searchPeptides(productSearch), [productSearch]);
+  const previewLabelId = useMemo(() => generateShippingLabelId('AA-PREVIEW'), []);
 
   if (!user) return <Navigate to="/auth" replace />;
+
+  function addBrandFromCompany(sampleId: string, name: string) {
+    const sample = samples.find(s => s.id === sampleId);
+    if (!sample || !name.trim()) return;
+    const existing = sample.brand_names.filter(Boolean);
+    if (existing.includes(name.trim()) || existing.length >= MAX_BRANDS_PER_SAMPLE) return;
+    updateSample(sampleId, { brand_names: [...existing, name.trim()] });
+  }
 
   function updateSample(id: string, updates: Partial<WizardSample>) {
     setSamples(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s));
@@ -170,8 +210,18 @@ export default function OrderWizard() {
     navigate('/dashboard');
   }
 
+  function selectCoaProfile(company: Company) {
+    setSelectedCompanyId(company.id);
+    setCompanyName(company.name);
+    setValidationError('');
+  }
+
   function goNext() {
     if (step === 1) {
+      if (!selectedCompanyId || !companies.some(c => c.id === selectedCompanyId)) {
+        setValidationError('Create or select a COA profile before continuing.');
+        return;
+      }
       const err = validateStep1(samples);
       if (err) { setValidationError(err); return; }
     }
@@ -191,6 +241,10 @@ export default function OrderWizard() {
 
   async function submitOrder() {
     setError('');
+    if (!selectedCompanyId || !companies.some(c => c.id === selectedCompanyId)) {
+      setValidationError('Select a COA profile before submitting.');
+      return;
+    }
     if (!paymentAuthorized) {
       setValidationError('Please authorize payment to submit your order.');
       return;
@@ -198,14 +252,19 @@ export default function OrderWizard() {
     setLoading(true);
     try {
       const orderNumber = generateOrderNumber();
+      const shippingLabelId = generatePrepaidLabel ? generateShippingLabelId(orderNumber) : '';
+      const selectedCoa = companies.find(c => c.id === selectedCompanyId);
       const orderMeta = {
         shipping_carrier: shippingCarrier,
         shipping_tracking: shippingTracking,
         promo_code: promoApplied ? promoCode : null,
+        prepaid_label: generatePrepaidLabel,
+        coa_profile_id: selectedCompanyId,
+        coa_profile_name: selectedCoa?.name ?? companyName,
         samples_detail: samples.map(sampleMetadataPayload),
       };
 
-      const { data: order, error: orderError } = await supabase.from('orders').insert({
+      const orderPayload: Record<string, unknown> = {
         user_id: user.id,
         order_number: orderNumber,
         rush_processing: samples.some(s => s.rush),
@@ -215,8 +274,17 @@ export default function OrderWizard() {
         rush_fee: samples.filter(s => s.rush).length * RUSH_PRICE_PER_SAMPLE,
         total,
         first_order_discount: false,
-        company_name: companyName,
-      }).select().single();
+        company_name: selectedCoa?.name ?? companyName,
+        prepaid_shipping: generatePrepaidLabel,
+        payment_method: paymentMethod,
+        shipping_label_id: shippingLabelId,
+      };
+
+      let { data: order, error: orderError } = await supabase.from('orders').insert(orderPayload).select().single();
+      if (orderError?.message?.includes('payment_method') || orderError?.message?.includes('shipping_label_id')) {
+        const { payment_method: _pm, shipping_label_id: _sl, prepaid_shipping: _ps, ...fallback } = orderPayload;
+        ({ data: order, error: orderError } = await supabase.from('orders').insert(fallback).select().single());
+      }
       if (orderError) throw orderError;
 
       const sampleRows = samples.map(s => ({
@@ -225,7 +293,7 @@ export default function OrderWizard() {
         sample_name: s.sample_name,
         display_name: s.display_name || `${s.sample_name} ${s.labeled_content}`.trim(),
         sample_type: s.sample_type,
-        vial_count: s.test_mode === 'full_qc' ? FULL_QC_PANEL.vialsRequired : Math.max(1, s.individual_tests.length),
+        vial_count: sampleVialCount(s),
         panel_ids: [],
         metadata: sampleMetadataPayload(s),
       }));
@@ -237,8 +305,13 @@ export default function OrderWizard() {
       }
       if (samplesError) throw samplesError;
 
+      await notifyOrderUpdate(user.id, orderNumber, 'received');
+      if (generatePrepaidLabel && shippingLabelId) {
+        await notifyOrderUpdate(user.id, orderNumber, `prepaid label ${shippingLabelId} ready`);
+      }
+
       clearOrderDraft(user.id);
-      navigate('/dashboard?tab=orders');
+      navigate(`/dashboard?tab=orders&label=${encodeURIComponent(shippingLabelId)}`);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to submit order.');
     } finally {
@@ -248,24 +321,23 @@ export default function OrderWizard() {
 
   return (
     <div className="min-h-screen bg-neutral-100 flex flex-col">
-      {/* ILS-style header: logo | title | actions + user */}
-      <header className="bg-white border-b border-atlas-border sticky top-0 z-30">
+      <header className="coa-header-bar sticky top-0 z-30 border-b border-neutral-800">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
-          <AtlasLogo size="sm" />
+          <Link to="/dashboard"><AtlasLogo variant="light" size="sm" /></Link>
           <div className="absolute left-1/2 -translate-x-1/2 text-center hidden sm:block">
-            <p className="font-bold text-black leading-tight">New Testing Order</p>
+            <p className="font-bold leading-tight">New Testing Order</p>
             <p className="text-[11px] text-neutral-500">Client Portal</p>
           </div>
           <div className="flex items-center gap-2 sm:gap-4 ml-auto">
-            <button onClick={discardDraft} className="text-sm text-red-600 hover:text-red-700 flex items-center gap-1">
+            <button onClick={discardDraft} className="text-sm text-red-400 hover:text-red-300 flex items-center gap-1">
               <X size={14} /> <span className="hidden sm:inline">Discard</span>
             </button>
-            <Link to="/dashboard" className="text-sm text-neutral-600 hover:text-black flex items-center gap-1">
-              <ArrowLeft size={14} /> <span className="hidden sm:inline">Back to Dashboard</span>
+            <Link to="/dashboard" className="text-sm text-neutral-400 hover:text-white flex items-center gap-1">
+              <ArrowLeft size={14} /> <span className="hidden sm:inline">Dashboard</span>
             </Link>
-            <div className="flex items-center gap-2 pl-2 border-l border-atlas-border">
+            <div className="flex items-center gap-2 pl-2 border-l border-neutral-700">
               <span className="w-8 h-8 rounded-full bg-brand-500 text-black text-sm font-bold flex items-center justify-center">{userInitial}</span>
-              <span className="text-sm font-medium text-black hidden md:inline max-w-[120px] truncate">{displayName}</span>
+              <span className="text-sm font-medium hidden md:inline max-w-[120px] truncate text-neutral-300">{displayName}</span>
             </div>
           </div>
         </div>
@@ -312,6 +384,21 @@ export default function OrderWizard() {
             {/* ── STEP 1 ── */}
             {step === 1 && (
               <>
+                <OrderCoaProfileSection
+                  userId={user.id}
+                  companies={companies}
+                  selectedId={selectedCompanyId || null}
+                  onSelect={selectCoaProfile}
+                  onCompaniesChange={setCompanies}
+                  onProfileSynced={() => refreshProfile()}
+                />
+
+                {!companiesLoading && companies.length === 0 && (
+                  <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    Create your COA profile above, then add products below.
+                  </p>
+                )}
+
                 <div>
                   <h2 className="text-xl font-bold text-black">Add Your Products</h2>
                   <p className="text-sm text-neutral-500 mt-1">
@@ -477,10 +564,56 @@ export default function OrderWizard() {
                                     <span className="text-xs font-normal text-brand-800 bg-brand-100 px-2 py-0.5 rounded-full ml-2">Recommended</span>
                                   </p>
                                   <p className="text-sm text-neutral-600 mt-1">{FULL_QC_PANEL.description}</p>
+                                  <p className="text-xs text-neutral-500 mt-2">
+                                    Includes conformity testing across {FULL_QC_PANEL.vialsRequired} vials (min. 10 mg each).
+                                  </p>
                                 </div>
                                 <span className="font-bold text-brand-800 whitespace-nowrap">{formatCurrency(FULL_QC_PANEL.price)}</span>
                               </div>
                             </button>
+
+                            {sample.test_mode === 'full_qc' && (
+                              <div className="mb-4 p-4 border border-brand-200 rounded-xl bg-white">
+                                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+                                  <div>
+                                    <p className="font-semibold text-black">Additional Conformity Vials</p>
+                                    <p className="text-sm text-neutral-600 mt-1">
+                                      Submit extra vials from the same batch for expanded sample-to-sample verification beyond the {FULL_QC_PANEL.vialsRequired} included with Full QC.
+                                    </p>
+                                    <p className="text-sm font-medium text-brand-800 mt-2">
+                                      +{formatCurrency(CONFORMITY_PRICE)} per additional vial
+                                    </p>
+                                  </div>
+                                  <div className="flex items-center gap-2 flex-shrink-0">
+                                    <button
+                                      type="button"
+                                      onClick={() => updateSample(sample.id, { conformity_extra: Math.max(0, sample.conformity_extra - 1) })}
+                                      disabled={sample.conformity_extra <= 0}
+                                      className="w-9 h-9 border rounded-lg flex items-center justify-center hover:bg-neutral-50 disabled:opacity-40"
+                                    >
+                                      <Minus size={14} />
+                                    </button>
+                                    <span className="font-bold w-8 text-center text-lg">{sample.conformity_extra}</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => updateSample(sample.id, { conformity_extra: sample.conformity_extra + 1 })}
+                                      className="w-9 h-9 border rounded-lg flex items-center justify-center hover:bg-brand-50 text-brand-800 font-medium"
+                                    >
+                                      <Plus size={14} />
+                                    </button>
+                                  </div>
+                                </div>
+                                <p className="text-xs text-neutral-500 mt-3 pt-3 border-t border-neutral-100">
+                                  Total vials to ship for this sample:{' '}
+                                  <strong className="text-black">{sampleVialCount(sample)}</strong>
+                                  {sample.conformity_extra > 0 && (
+                                    <span className="text-brand-800">
+                                      {' '}(+{formatCurrency(sample.conformity_extra * CONFORMITY_PRICE)} add-on)
+                                    </span>
+                                  )}
+                                </p>
+                              </div>
+                            )}
 
                             <p className="text-sm text-brand-700 font-medium mb-3">Or select individual tests</p>
 
@@ -505,7 +638,8 @@ export default function OrderWizard() {
                             </div>
 
                             <ul className="text-xs text-neutral-500 space-y-1 list-disc pl-4 mt-4">
-                              <li>Full QC Panel: Submit 3 vials (minimum 10 mg each)</li>
+                              <li>Full QC Panel: {FULL_QC_PANEL.vialsRequired} vials (min. 10 mg each) with conformity testing included</li>
+                              <li>Additional conformity vials: {formatCurrency(CONFORMITY_PRICE)} per vial (same batch)</li>
                               <li>Individual tests: Submit 1 vial per test (minimum 10 mg each)</li>
                               <li>
                                 For quantities under 5 mg total, contact us at{' '}
@@ -536,10 +670,13 @@ export default function OrderWizard() {
                 <div className="card p-5 space-y-4">
                   <div>
                     <h3 className="font-bold text-black">Conformity Testing</h3>
-                    <p className="text-sm text-neutral-600 mt-1">Test additional vials from the same batch to verify sample-to-sample consistency.</p>
-                    <p className="text-sm font-medium text-brand-800 mt-1">+{formatCurrency(CONFORMITY_PRICE)} per additional conformity sample</p>
+                    <p className="text-sm text-neutral-600 mt-1">
+                      For individual tests, add extra vials from the same batch to verify sample-to-sample consistency.
+                      Full QC samples configure conformity on the Products step.
+                    </p>
+                    <p className="text-sm font-medium text-brand-800 mt-1">+{formatCurrency(CONFORMITY_PRICE)} per additional vial</p>
                   </div>
-                  {samples.map((sample, idx) => (
+                  {samples.filter(s => s.test_mode === 'individual').map((sample, idx) => (
                     <div key={sample.id} className="flex items-center justify-between py-2 border-t border-atlas-border">
                       <span className="text-sm font-medium">{sample.sample_name || `Sample ${idx + 1}`}</span>
                       <div className="flex items-center gap-2">
@@ -549,6 +686,11 @@ export default function OrderWizard() {
                       </div>
                     </div>
                   ))}
+                  {samples.every(s => s.test_mode === 'full_qc') && (
+                    <p className="text-sm text-neutral-500 border-t border-atlas-border pt-3">
+                      All samples use Full QC — additional conformity vials were set on step 1.
+                    </p>
+                  )}
                 </div>
 
                 <div className="card p-5 space-y-4">
@@ -585,6 +727,21 @@ export default function OrderWizard() {
                           className="input-field text-sm mb-2"
                         />
                       ))}
+                      {companies.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mt-1">
+                          {companies.filter(c => !sample.brand_names.includes(c.name)).slice(0, 6).map(c => (
+                            <button
+                              key={c.id}
+                              type="button"
+                              onClick={() => addBrandFromCompany(sample.id, c.name)}
+                              disabled={sample.brand_names.filter(Boolean).length >= MAX_BRANDS_PER_SAMPLE}
+                              className="text-[11px] px-2 py-1 border border-atlas-border rounded hover:bg-brand-50 hover:border-brand-400 disabled:opacity-40"
+                            >
+                              + {c.name}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -610,20 +767,33 @@ export default function OrderWizard() {
                   </div>
                 </div>
 
-                <div className="card p-5">
-                  <h3 className="font-bold text-black">Shipping Information</h3>
-                  <p className="text-xs text-neutral-500 mt-1 mb-4">Optional — add tracking details if you&apos;ve already shipped your samples.</p>
-                  <div className="grid sm:grid-cols-2 gap-3">
+                <div className="card p-5 space-y-4">
+                  <div className="flex items-start gap-3">
+                    <Truck size={18} className="text-brand-600 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1">
+                      <h3 className="font-bold text-black">Prepaid Shipping Label</h3>
+                      <p className="text-sm text-neutral-600 mt-1">Generate a prepaid FedEx/UPS label to ship samples to our Austin lab. Included with your order.</p>
+                    </div>
+                  </div>
+                  <label className="flex items-center gap-2 text-sm cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={generatePrepaidLabel}
+                      onChange={e => setGeneratePrepaidLabel(e.target.checked)}
+                      className="w-4 h-4 accent-brand-500"
+                    />
+                    Generate prepaid shipping label at checkout
+                  </label>
+                  <div className="grid sm:grid-cols-2 gap-3 pt-2 border-t border-atlas-border">
                     <div>
-                      <label className="label">Carrier</label>
-                      <input value={shippingCarrier} onChange={e => setShippingCarrier(e.target.value)} placeholder="e.g. USPS, FedEx, UPS" className="input-field" />
+                      <label className="label">Carrier (if already shipped)</label>
+                      <input value={shippingCarrier} onChange={e => setShippingCarrier(e.target.value)} placeholder="FedEx, UPS" className="input-field" />
                     </div>
                     <div>
                       <label className="label">Tracking Number</label>
                       <input value={shippingTracking} onChange={e => setShippingTracking(e.target.value)} placeholder="Optional" className="input-field" />
                     </div>
                   </div>
-                  <p className="text-xs text-neutral-400 mt-3">You can also add or update tracking information later from the Orders page in your client portal.</p>
                 </div>
               </>
             )}
@@ -636,6 +806,26 @@ export default function OrderWizard() {
                   <p className="text-sm text-neutral-500 mt-1">Double-check everything before submitting.</p>
                 </div>
 
+                {selectedCompanyId && (
+                  <div className="card p-4 flex items-center gap-3">
+                    {companies.find(c => c.id === selectedCompanyId)?.logo ? (
+                      <img
+                        src={companies.find(c => c.id === selectedCompanyId)!.logo}
+                        alt=""
+                        className="h-10 w-10 rounded object-contain bg-neutral-50 border border-neutral-100"
+                      />
+                    ) : (
+                      <div className="h-10 w-10 rounded bg-neutral-100 flex items-center justify-center">
+                        <Package size={16} className="text-neutral-400" />
+                      </div>
+                    )}
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wider text-neutral-400">COA Profile</p>
+                      <p className="font-semibold text-black">{companyName || '—'}</p>
+                    </div>
+                  </div>
+                )}
+
                 {samples.map(s => (
                   <div key={s.id} className="card p-5 relative">
                     {s.test_mode === 'full_qc' && (
@@ -646,6 +836,13 @@ export default function OrderWizard() {
                     <p className="font-bold text-lg pr-28">{s.sample_name}</p>
                     <p className="text-sm text-neutral-500 mt-1">Batch: {s.batch_number}</p>
                     <p className="text-sm text-neutral-600">{[s.labeled_content, s.vial_size, s.sample_matrix].filter(Boolean).join(' | ')}</p>
+                    {s.test_mode === 'full_qc' && (
+                      <p className="text-sm text-neutral-600 mt-1">
+                        {FULL_QC_PANEL.vialsRequired} vials incl. conformity
+                        {s.conformity_extra > 0 && ` + ${s.conformity_extra} extra (${formatCurrency(s.conformity_extra * CONFORMITY_PRICE)})`}
+                        {' · '}{sampleVialCount(s)} vials total
+                      </p>
+                    )}
                     <div className="flex items-center gap-2 mt-3 text-sm">
                       {editingPeptideId === s.id ? (
                         <>
@@ -689,23 +886,59 @@ export default function OrderWizard() {
                   <textarea value={notes} onChange={e => setNotes(e.target.value)} placeholder="Any special instructions or notes for the lab team..." className="input-field resize-none" rows={3} />
                 </div>
 
-                <div className="card p-5 bg-sky-50 border-sky-200">
-                  <h3 className="font-bold text-black flex items-center gap-2">
-                    Payment Authorization
+                <div className="card p-5 bg-neutral-50">
+                  <h3 className="font-bold text-black flex items-center gap-2 mb-4">
+                    Payment
                   </h3>
-                  <p className="text-xs text-neutral-600 mt-1 mb-4">Required for credit card payments processed via Square.</p>
-                  <label className="label">Cardholder Name</label>
-                  <input value={cardholderName} onChange={e => setCardholderName(e.target.value)} placeholder="Full name as it appears on card" className="input-field mb-4 bg-white" />
-                  <label className="flex items-start gap-2 text-sm cursor-pointer">
-                    <input type="checkbox" checked={paymentAuthorized} onChange={e => setPaymentAuthorized(e.target.checked)} className="mt-1 rounded" />
-                    <span>
-                      I authorize Atlas Analytics to charge my credit card for the total amount shown for analytical testing services.
-                      I agree to the{' '}
-                      <Link to="/trust" className="text-brand-700 hover:underline">Terms of Service</Link>
-                      {' '}and confirm that I am the authorized cardholder or have permission to use this payment method.
-                    </span>
-                  </label>
+                  <div className="flex gap-2 mb-4">
+                    <button
+                      type="button"
+                      onClick={() => { setPaymentMethod('card'); setPaymentAuthorized(false); }}
+                      className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-medium border rounded-md transition-colors ${paymentMethod === 'card' ? 'bg-black text-white border-black' : 'bg-white border-neutral-300 hover:border-neutral-400'}`}
+                    >
+                      <CreditCard size={15} /> Credit Card
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setPaymentMethod('crypto'); setPaymentAuthorized(false); }}
+                      className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-medium border rounded-md transition-colors ${paymentMethod === 'crypto' ? 'bg-black text-white border-black' : 'bg-white border-neutral-300 hover:border-neutral-400'}`}
+                    >
+                      <Bitcoin size={15} /> Cryptocurrency
+                    </button>
+                  </div>
+                  {paymentMethod === 'card' ? (
+                    <>
+                      <p className="text-xs text-neutral-600 mb-4">Processed securely via Square.</p>
+                      <label className="label">Cardholder Name</label>
+                      <input value={cardholderName} onChange={e => setCardholderName(e.target.value)} placeholder="Full name as it appears on card" className="input-field mb-4 bg-white" />
+                      <label className="flex items-start gap-2 text-sm cursor-pointer">
+                        <input type="checkbox" checked={paymentAuthorized} onChange={e => setPaymentAuthorized(e.target.checked)} className="mt-1 rounded accent-brand-500" />
+                        <span>
+                          I authorize Atlas Analytics to charge my credit card for the total shown.
+                          I agree to the <Link to="/trust" className="text-brand-700 hover:underline">Terms of Service</Link>.
+                        </span>
+                      </label>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-xs text-neutral-600 mb-4">Pay with BTC, ETH, or USDC. You will receive wallet instructions after submitting.</p>
+                      <label className="flex items-start gap-2 text-sm cursor-pointer">
+                        <input type="checkbox" checked={paymentAuthorized} onChange={e => setPaymentAuthorized(e.target.checked)} className="mt-1 rounded accent-brand-500" />
+                        <span>
+                          I agree to send the exact order total in cryptocurrency within 24 hours of submission.
+                          Testing begins once payment is confirmed on-chain.
+                        </span>
+                      </label>
+                    </>
+                  )}
                 </div>
+
+                {generatePrepaidLabel && (
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-wider text-neutral-500 mb-2">Label Preview</p>
+                    <PrepaidShippingLabel labelId={previewLabelId} orderNumber="Generated at submit" />
+                  </div>
+                )}
               </>
             )}
           </div>

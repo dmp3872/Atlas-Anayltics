@@ -1,13 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, Navigate, useLocation, useSearchParams } from 'react-router-dom';
 import {
-  Package, ClipboardList, TrendingUp, Timer, Activity, FlaskConical,
-  Truck, Copy, Check, X, Search, Download, FileText, ExternalLink,
-  CheckCircle, XCircle, Clock, LogOut, ShoppingCart, CreditCard,
-  Users, Code, Shield, Bell, Key, Plus, UserPlus, Building2,
+  Package, ClipboardList, Truck, Copy, Check, X, Search, Download, FileText, ExternalLink,
+  CheckCircle, XCircle, Clock, ShoppingCart, CreditCard, FlaskConical,
+  Users, Code, Shield, Bell, Key, UserPlus,
   ChevronDown, ChevronUp,
 } from 'lucide-react';
-import AtlasLogo from '../components/brand/AtlasLogo';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { COA, Order, OrderSample, TestPanel } from '../lib/types';
@@ -23,19 +21,14 @@ import {
 import { loadOrderDraft, draftSummary } from '../lib/orderDraft';
 import { expectedPanelNames, matchCoaForSample } from '../lib/coaPanels';
 import AccountSettings from '../components/account/AccountSettings';
+import ClientPortalLayout from '../components/layout/ClientPortalLayout';
+import GettingStarted from '../components/portal/GettingStarted';
+import PeptideRequests from '../components/portal/PeptideRequests';
+import PortalHome from '../components/portal/PortalHome';
+import PrepaidShippingLabel from '../components/order/PrepaidShippingLabel';
+import { queueNotification } from '../lib/notifications';
 
-type PortalTab = 'coas' | 'samples' | 'orders' | 'invoices' | 'payments' | 'account' | 'widget' | 'team';
-
-const TABS: { id: PortalTab; label: string; icon: typeof FileText }[] = [
-  { id: 'coas', label: 'COAs', icon: FileText },
-  { id: 'samples', label: 'Samples', icon: FlaskConical },
-  { id: 'orders', label: 'Orders', icon: ShoppingCart },
-  { id: 'invoices', label: 'Inv', icon: ClipboardList },
-  { id: 'payments', label: 'Pay', icon: CreditCard },
-  { id: 'account', label: 'Acct', icon: Building2 },
-  { id: 'widget', label: 'Widget', icon: Code },
-  { id: 'team', label: 'Team', icon: Users },
-];
+type PortalTab = 'home' | 'getting-started' | 'peptide-requests' | 'coas' | 'samples' | 'orders' | 'invoices' | 'payments' | 'account' | 'widget' | 'team';
 
 const SHIPPING_ADDRESS = `Atlas Analytics\n1234 Research Blvd\nAustin, TX 78701`;
 
@@ -46,11 +39,11 @@ function ResultBadge({ result }: { result: string }) {
 }
 
 export default function Portal() {
-  const { user, profile, signOut } = useAuth();
+  const { user, profile } = useAuth();
   const location = useLocation();
   const [params, setParams] = useSearchParams();
   const pathTab = location.pathname.includes('/orders') ? 'orders' : location.pathname.includes('/coas') ? 'coas' : null;
-  const tab = (params.get('tab') as PortalTab) || pathTab || 'coas';
+  const tab = (params.get('tab') as PortalTab) || pathTab || 'home';
 
   const [coas, setCoas] = useState<COA[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
@@ -62,7 +55,7 @@ export default function Portal() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [sampleProduct, setSampleProduct] = useState('all');
-  const [selectedCoas, setSelectedCoas] = useState<Set<string>>(new Set());
+  const [coaPeptide, setCoaPeptide] = useState('all');
   const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
 
   const [promoCode, setPromoCode] = useState('');
@@ -90,20 +83,12 @@ export default function Portal() {
     });
   }, [user]);
 
-  const stats = useMemo(() => {
-    const passCount = coas.filter(c => c.overall_result === 'pass').length;
-    const passRate = coas.length ? Math.round((passCount / coas.length) * 100) : 0;
-    const products = new Set(samples.map(s => s.sample_name).filter(Boolean)).size;
-    const inProgress = orders.filter(o => !['complete', 'cancelled'].includes(o.status)).length;
-    const testsRun = coas.reduce((n, c) => n + (Array.isArray(c.panel_results) ? c.panel_results.length : 0), 0);
-    const tats = coas.filter(c => c.order_id).map(c => {
-      const order = orders.find(o => o.id === c.order_id);
-      if (!order) return null;
-      return (new Date(c.issued_at).getTime() - new Date(order.created_at).getTime()) / 86400000;
-    }).filter((d): d is number => d !== null);
-    const avgTat = tats.length ? Math.round(tats.reduce((a, b) => a + b, 0) / tats.length) : 0;
-    return { samples: samples.length, testsRun, passRate, avgTat, inProgress, products };
-  }, [coas, orders, samples]);
+  useEffect(() => {
+    const label = params.get('label');
+    if (!label || orders.length === 0) return;
+    const match = orders.find(o => o.shipping_label_id === label);
+    if (match) setExpandedOrders(prev => new Set(prev).add(match.id));
+  }, [orders, params]);
 
   if (!user) return <Navigate to="/auth" replace />;
 
@@ -112,6 +97,7 @@ export default function Portal() {
     setSearch('');
     setStatusFilter('all');
     setSampleProduct('all');
+    setCoaPeptide('all');
   }
 
   async function copyAddress() {
@@ -125,6 +111,20 @@ export default function Portal() {
     const next = { ...notifs, [key]: !notifs[key] };
     setNotifs(next);
     saveNotificationPrefs(user.id, next);
+    if (next[key]) {
+      const labels: Record<keyof NotificationPrefs, string> = {
+        orderUpdates: 'Order Updates',
+        coaReady: 'COA Ready',
+        paymentReceipts: 'Payment Receipts',
+        promotions: 'Promotions',
+      };
+      queueNotification({
+        userId: user.id,
+        type: key === 'coaReady' ? 'coa_ready' : key === 'paymentReceipts' ? 'payment_receipt' : key === 'promotions' ? 'promotion' : 'order_update',
+        subject: `${labels[key]} enabled`,
+        body: `You will receive email notifications for: ${labels[key]}.`,
+      });
+    }
   }
 
   function inviteMember() {
@@ -141,11 +141,14 @@ export default function Portal() {
     setInviteEmail('');
   }
 
+  const coaPeptides = Array.from(new Set(coas.map(c => c.sample_name).filter(Boolean))).sort();
+
   const filteredCoas = coas.filter(c => {
     const q = search.toLowerCase();
     const matchSearch = !q || [c.sample_name, c.display_name, c.batch_number, c.slug, c.company_name].some(v => v?.toLowerCase().includes(q));
     const matchStatus = statusFilter === 'all' || c.overall_result === statusFilter;
-    return matchSearch && matchStatus;
+    const matchPeptide = coaPeptide === 'all' || c.sample_name === coaPeptide;
+    return matchSearch && matchStatus && matchPeptide;
   });
 
   const sampleProducts = Array.from(new Set(samples.map(s => s.sample_name).filter(Boolean))).sort();
@@ -170,39 +173,10 @@ export default function Portal() {
     return matchSearch && matchStatus;
   });
 
-  const displayName = profile?.company_name || profile?.full_name || user.email?.split('@')[0] || 'Client';
-
   return (
-    <div className="min-h-screen bg-neutral-100">
-      {/* Header */}
-      <header className="bg-white border-b border-atlas-border sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-4 min-w-0">
-            <AtlasLogo size="sm" />
-            <div className="hidden sm:block border-l border-atlas-border pl-4">
-              <p className="font-bold text-black truncate">{displayName}</p>
-              <p className="text-xs text-neutral-500">Client Portal</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setTab('samples')}
-              className="hidden sm:flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-100 rounded-lg"
-            >
-              <FlaskConical size={16} /> Track Samples
-            </button>
-            <Link to="/order-new" className="btn-primary text-sm gap-1.5">
-              <Plus size={16} /> New Order
-            </Link>
-            <button onClick={() => signOut()} className="p-2 text-neutral-500 hover:text-red-600 hover:bg-red-50 rounded-lg" title="Sign out">
-              <LogOut size={18} />
-            </button>
-          </div>
-        </div>
-      </header>
-
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
-        {orderDraft && (
+    <ClientPortalLayout>
+      <div className="space-y-6">
+        {orderDraft && tab === 'home' && (
           <div className="card p-4 flex flex-wrap items-center justify-between gap-3 border-brand-300 bg-brand-50">
             <div>
               <p className="font-semibold text-black">Resume your draft order</p>
@@ -212,72 +186,32 @@ export default function Portal() {
           </div>
         )}
 
-        {/* Shipping banner */}
+        {(tab === 'home' || tab === 'orders') && (
         <div className="card overflow-hidden">
           <button
             onClick={() => setShippingOpen(!shippingOpen)}
-            className="w-full flex items-center justify-between px-5 py-4 bg-brand-50 hover:bg-brand-100/50 transition-colors"
+            className="w-full flex items-center justify-between px-5 py-4 hover:bg-neutral-50 transition-colors"
           >
             <div className="flex items-center gap-3">
-              <Truck size={20} className="text-brand-600" />
-              <span className="font-semibold text-black">Shipping Instructions</span>
+              <Truck size={18} className="text-brand-600" />
+              <span className="font-semibold text-black text-sm">Shipping Instructions</span>
             </div>
-            {shippingOpen ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+            {shippingOpen ? <ChevronUp size={16} className="text-neutral-400" /> : <ChevronDown size={16} className="text-neutral-400" />}
           </button>
           {shippingOpen && (
             <div className="px-5 py-4 border-t border-atlas-border text-sm space-y-3">
-              <p className="text-neutral-600">Ship all samples via <strong>FedEx</strong> or <strong>UPS</strong> only. We receive Monday–Friday.</p>
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div>
-                  <p className="font-semibold text-black">Atlas Analytics</p>
-                  <p className="text-neutral-600">1234 Research Blvd, Austin, TX 78701</p>
-                  <button onClick={copyAddress} className="mt-2 flex items-center gap-1.5 text-brand-700 text-xs font-medium hover:text-brand-600">
-                    {copiedAddr ? <><Check size={12} /> Copied!</> : <><Copy size={12} /> Copy address</>}
-                  </button>
-                </div>
+              <p className="text-neutral-600">Ship via <strong>FedEx</strong> or <strong>UPS</strong>. Prepaid labels are generated at checkout.</p>
+              <div>
+                <p className="font-semibold text-black">Atlas Analytics</p>
+                <p className="text-neutral-600">1234 Research Blvd, Austin, TX 78701</p>
+                <button onClick={copyAddress} className="mt-2 flex items-center gap-1.5 text-brand-700 text-xs font-medium hover:text-brand-600">
+                  {copiedAddr ? <><Check size={12} /> Copied!</> : <><Copy size={12} /> Copy address</>}
+                </button>
               </div>
-              <ul className="list-disc pl-5 text-neutral-600 space-y-1">
-                <li>Bubble wrap all vials individually</li>
-                <li>Use adequate padding in the box</li>
-                <li>Print your order confirmation and include it in the shipment</li>
-              </ul>
             </div>
           )}
         </div>
-
-        {/* Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-          {[
-            { label: 'Samples', value: stats.samples, icon: Package },
-            { label: 'Tests Run', value: stats.testsRun, icon: ClipboardList },
-            { label: 'Pass Rate', value: `${stats.passRate}%`, icon: TrendingUp, accent: stats.passRate >= 90 ? 'text-atlas-success' : '' },
-            { label: 'Avg. TAT', value: `${stats.avgTat || '—'}d`, icon: Timer, sub: 'Business days' },
-            { label: 'In Progress', value: stats.inProgress, icon: Activity },
-            { label: 'Products', value: stats.products, icon: FlaskConical },
-          ].map(s => (
-            <div key={s.label} className="card p-4">
-              <s.icon size={16} className="text-brand-500 mb-2" />
-              <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">{s.label}</p>
-              <p className={`text-2xl font-bold text-black ${s.accent ?? ''}`}>{s.value}</p>
-              {s.sub && <p className="text-[10px] text-neutral-400">{s.sub}</p>}
-            </div>
-          ))}
-        </div>
-
-        {/* Tabs */}
-        <div className="flex gap-1 overflow-x-auto pb-1">
-          {TABS.map(t => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`flex items-center gap-1.5 px-4 py-2.5 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
-                tab === t.id ? 'bg-black text-brand-400' : 'bg-white text-neutral-600 hover:bg-neutral-50 border border-atlas-border'
-              }`}
-            >
-              <t.icon size={14} /> {t.label}
-            </button>
-          ))}
-        </div>
+        )}
 
         {/* Tab content toolbar */}
         {['coas', 'samples', 'orders', 'invoices'].includes(tab) && (
@@ -288,22 +222,34 @@ export default function Portal() {
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 placeholder={
-                  tab === 'coas' ? 'Search certificates...' :
-                  tab === 'samples' ? 'Search by product, lot, order, COA...' :
-                  tab === 'orders' ? 'Search orders...' : 'Search invoices...'
+                  tab === 'coas' ? 'Search by peptide, code, lot, sample, or order #…' :
+                  tab === 'samples' ? 'Search by product, lot, order, COA…' :
+                  tab === 'orders' ? 'Search orders…' : 'Search invoices…'
                 }
                 className="input-field pl-9 py-2 text-sm"
               />
             </div>
+            {tab === 'coas' && (
+              <select value={coaPeptide} onChange={e => setCoaPeptide(e.target.value)} className="input-field py-2 text-sm w-auto">
+                <option value="all">All Peptides</option>
+                {coaPeptides.map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+            )}
             {tab === 'samples' ? (
               <select value={sampleProduct} onChange={e => setSampleProduct(e.target.value)} className="input-field py-2 text-sm w-auto">
                 <option value="all">All Products</option>
                 {sampleProducts.map(p => <option key={p} value={p}>{p}</option>)}
               </select>
-            ) : (
+            ) : tab === 'coas' ? (
+              <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="input-field py-2 text-sm w-auto">
+                <option value="all">All Results</option>
+                <option value="pass">Pass</option>
+                <option value="fail">Fail</option>
+                <option value="pending">Pending</option>
+              </select>
+            ) : tab !== 'coas' && (
               <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="input-field py-2 text-sm w-auto">
                 <option value="all">All Statuses</option>
-                {tab === 'coas' && <><option value="pass">Pass</option><option value="fail">Fail</option><option value="pending">Pending</option></>}
                 {tab === 'orders' && Object.entries(ORDER_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                 {tab === 'invoices' && <><option value="complete">Paid</option><option value="received">Pending</option></>}
               </select>
@@ -317,51 +263,68 @@ export default function Portal() {
               }}
               className="btn-outline text-sm gap-1.5 py-2"
             >
-              <Download size={14} /> Export CSV
+              <Download size={14} /> Export
             </button>
           </div>
         )}
 
-        {loading ? (
-          <div className="card p-12 text-center text-neutral-500">Loading...</div>
+        {loading && !['home', 'getting-started', 'peptide-requests'].includes(tab) ? (
+          <div className="card p-12 text-center text-neutral-500">Loading…</div>
         ) : (
           <>
+            {tab === 'home' && (
+              <PortalHome orders={orders} coaCount={coas.length} loading={loading} />
+            )}
+
+            {tab === 'getting-started' && <GettingStarted />}
+
+            {tab === 'peptide-requests' && <PeptideRequests />}
             {/* COAs Tab */}
             {tab === 'coas' && (
-              <div className="card overflow-hidden">
+              <div className="space-y-4">
+                <div>
+                  <h1 className="portal-page-title">Your COAs</h1>
+                  <p className="portal-page-subtitle">Certificates of analysis from your Atlas Analytics testing.</p>
+                </div>
+                <div className="card overflow-hidden">
                 {filteredCoas.length === 0 ? (
                   <div className="p-12 text-center">
                     <FileText size={32} className="mx-auto mb-3 text-neutral-300" />
                     <p className="font-medium">No certificates yet</p>
-                    <Link to="/order-new" className="btn-primary text-sm mt-4 inline-flex">Place Your First Order</Link>
+                    <Link to="/order-new" className="btn-primary text-sm mt-4 inline-flex">Submit a Sample</Link>
                   </div>
                 ) : (
-                  <div className="divide-y divide-atlas-border">
-                    {filteredCoas.map(coa => (
-                      <div key={coa.id} className="flex items-center gap-4 px-5 py-4 hover:bg-neutral-50">
-                        <input
-                          type="checkbox"
-                          checked={selectedCoas.has(coa.id)}
-                          onChange={() => setSelectedCoas(prev => {
-                            const next = new Set(prev);
-                            next.has(coa.id) ? next.delete(coa.id) : next.add(coa.id);
-                            return next;
-                          })}
-                          className="rounded border-neutral-300"
-                        />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <Link to={`/coa/${coa.slug}`} className="font-semibold text-black hover:text-brand-700">{coa.slug.toUpperCase().slice(0, 16)}</Link>
-                            <ResultBadge result={coa.overall_result} />
-                          </div>
-                          <p className="text-sm text-neutral-600 truncate">{coa.display_name || coa.sample_name}</p>
-                          <p className="text-xs text-neutral-400">{formatDate(coa.issued_at)} · {coa.purity_percent ? `${coa.purity_percent}% purity` : ''}</p>
-                        </div>
-                        <Link to={`/coa/${coa.slug}`} className="btn-outline text-xs py-1.5 gap-1"><ExternalLink size={12} /> View</Link>
-                      </div>
-                    ))}
+                  <div className="overflow-x-auto">
+                    <table className="portal-data-table">
+                      <thead>
+                        <tr className="coa-table-header">
+                          <th className="text-left px-5 py-3">Name</th>
+                          <th className="text-left px-5 py-3">Results</th>
+                          <th className="text-left px-5 py-3">Lot</th>
+                          <th className="text-left px-5 py-3">Date</th>
+                          <th className="px-5 py-3"></th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-atlas-border">
+                        {filteredCoas.map(coa => (
+                          <tr key={coa.id} className="bg-white hover:bg-neutral-50">
+                            <td className="px-5 py-3">
+                              <p className="font-medium text-black">{coa.display_name || coa.sample_name}</p>
+                              <p className="text-xs text-neutral-500 font-mono">{coa.slug.slice(0, 16)}</p>
+                            </td>
+                            <td className="px-5 py-3"><ResultBadge result={coa.overall_result} /></td>
+                            <td className="px-5 py-3 text-neutral-600">{coa.batch_number || '—'}</td>
+                            <td className="px-5 py-3 text-neutral-600">{formatDate(coa.issued_at)}</td>
+                            <td className="px-5 py-3 text-right">
+                              <Link to={`/coa/${coa.slug}`} className="btn-outline text-xs py-1.5 gap-1 inline-flex"><ExternalLink size={12} /> View</Link>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 )}
+                </div>
               </div>
             )}
 
@@ -499,6 +462,17 @@ export default function Portal() {
 
                     {expanded && (
                       <div className="border-t border-atlas-border divide-y divide-atlas-border">
+                        {order.shipping_label_id && (
+                          <div className="p-5 bg-neutral-50">
+                            <p className="text-xs font-bold uppercase tracking-wider text-neutral-500 mb-3">Prepaid Shipping Label</p>
+                            <PrepaidShippingLabel labelId={order.shipping_label_id} orderNumber={order.order_number} />
+                          </div>
+                        )}
+                        {order.payment_method === 'crypto' && (
+                          <p className="px-5 py-3 text-xs text-neutral-600 bg-amber-50 border-b border-amber-100">
+                            Paid via cryptocurrency · transaction confirmed at checkout
+                          </p>
+                        )}
                         {orderSamples.length === 0 ? (
                           <p className="px-5 py-4 text-sm text-neutral-500">No samples recorded for this order.</p>
                         ) : orderSamples.map(s => {
@@ -689,7 +663,7 @@ export default function Portal() {
             )}
           </>
         )}
-      </main>
-    </div>
+      </div>
+    </ClientPortalLayout>
   );
 }

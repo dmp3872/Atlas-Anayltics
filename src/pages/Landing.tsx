@@ -76,42 +76,31 @@ const testimonials = [
 export default function Landing() {
   return (
     <div className="bg-white">
-      <section className="relative bg-black overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-black via-neutral-950 to-black" />
-        <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-brand-600/10 rounded-full blur-3xl translate-x-1/3 -translate-y-1/4" />
-        <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-brand-800/10 rounded-full blur-3xl -translate-x-1/4 translate-y-1/4" />
-
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-20 pb-24 lg:pt-28 lg:pb-32">
+      <section className="relative bg-black border-b border-neutral-800">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-16 pb-20 lg:pt-20 lg:pb-24">
           <div className="max-w-3xl">
-            <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-brand-500/30 bg-brand-500/10 text-brand-400 text-xs font-medium mb-6">
-              <div className="w-1.5 h-1.5 bg-brand-400 rounded-full animate-pulse" />
-              50% off your first order — no code needed
-            </div>
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-white leading-tight tracking-tight text-balance">
-              Peptide testing with <span className="text-brand-400">verifiable results</span>
+            <p className="text-brand-400 text-xs font-bold uppercase tracking-[0.2em] mb-5">
+              Independent peptide testing
+            </p>
+            <h1 className="text-4xl sm:text-5xl font-bold text-white leading-tight tracking-tight">
+              Verifiable results.<br />Permanent certificates.
             </h1>
-            <p className="mt-6 text-lg text-slate-400 leading-relaxed max-w-2xl">
-              Independent third-party analysis. Digital COAs with permanent URLs and cryptographic tamper-proofing.
-              Flat pricing. No minimums. No contracts.
+            <p className="mt-5 text-base text-neutral-400 leading-relaxed max-w-xl">
+              Third-party HPLC, MS, and QC testing with tamper-proof digital COAs. Flat pricing — no minimums, no contracts.
             </p>
             <div className="mt-8 flex flex-col sm:flex-row gap-3">
               <Link to="/order" className="btn-primary text-base px-6 py-3 gap-2.5">
                 Submit Samples <ArrowRight size={18} />
               </Link>
-              <Link to="/pricing" className="inline-flex items-center justify-center gap-2 px-6 py-3 border border-neutral-700 text-slate-300 font-medium rounded-lg hover:bg-slate-800 hover:text-white transition-colors text-base">
+              <Link to="/pricing" className="btn-outline-gold text-base px-6 py-3 border-neutral-700 text-neutral-300 hover:bg-neutral-900 hover:text-white">
                 View Pricing
               </Link>
             </div>
-            <div className="mt-10 flex flex-wrap gap-5">
-              {[
-                'No minimums or contracts',
-                'Flat pricing any peptide',
-                'Digital COA with permanent URL',
-                'First order 50% off',
-              ].map((item) => (
-                <div key={item} className="flex items-center gap-2 text-sm text-slate-400">
-                  <CheckCircle size={15} className="text-brand-500 flex-shrink-0" />
-                  {item}
+            <div className="mt-10 pt-8 border-t border-neutral-800 flex flex-wrap gap-x-8 gap-y-3">
+              {stats.map(s => (
+                <div key={s.label}>
+                  <p className="text-lg font-bold text-brand-400">{s.value}</p>
+                  <p className="text-xs text-neutral-500 uppercase tracking-wide">{s.label}</p>
                 </div>
               ))}
             </div>
@@ -166,7 +155,7 @@ export default function Landing() {
               <div className="mt-8 space-y-6">
                 {[
                   { step: '01', title: 'Submit your samples online', desc: 'Fill out our intake form. Select your test panels. Designate blend vs. single compound. No minimums.' },
-                  { step: '02', title: 'Ship with prepaid label', desc: 'Generate a prepaid Accumark shipping label directly from your portal (coming soon).' },
+                  { step: '02', title: 'Ship with prepaid label', desc: 'Generate a prepaid shipping label at checkout and send samples via FedEx or UPS to our Austin lab.' },
                   { step: '03', title: 'Real-time status updates', desc: 'Track every sample through Received → Analyzing → In Review → Complete in your dashboard.' },
                   { step: '04', title: 'Receive your digital COA', desc: 'Get a permanent COA URL with interactive chromatogram, pass/fail callouts, and cryptographic verification.' },
                 ].map((item) => (

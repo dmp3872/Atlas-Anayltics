@@ -2,78 +2,19 @@ import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import {
   Shield, CheckCircle, XCircle, Clock, Download,
-  ArrowLeft, Copy, Check, Droplets, Boxes
+  ArrowLeft, Copy, Check, Droplets, Boxes, AlertTriangle,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { COA, PanelResult } from '../lib/types';
 import { formatDateTime } from '../lib/utils';
+import { verifyCoaIntegrity } from '../lib/coaVerify';
+import { downloadCoaPdf } from '../lib/coaPdf';
 import { useAuth } from '../context/AuthContext';
 import Header from '../components/layout/Header';
 import Footer from '../components/layout/Footer';
-import AtlasLogo, { AtlasWatermark } from '../components/brand/AtlasLogo';
-
-const GOLD = '#C5A059';
-const GRID = '#E0E0E0';
-
-function Chromatogram({ data }: { data: COA['chromatogram_data'] }) {
-  const points = data?.points ?? generateDemoPoints();
-  const maxY = Math.max(...points.map(p => p.y));
-  const width = 560;
-  const height = 160;
-  const padL = 36;
-  const padB = 24;
-  const innerW = width - padL - 16;
-  const innerH = height - padB - 16;
-
-  const pathD = points.map((p, i) => {
-    const x = padL + (p.x / (points[points.length - 1]?.x || 1)) * innerW;
-    const y = 12 + (1 - p.y / maxY) * innerH;
-    return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
-  }).join(' ');
-
-  return (
-    <div className="relative border border-atlas-border bg-white overflow-hidden">
-      <AtlasWatermark className="absolute inset-0 m-auto w-32 h-32 opacity-40" />
-      <div className="relative px-4 pt-4 pb-2">
-        <p className="text-xs font-bold text-brand-600 uppercase tracking-widest text-center">
-          HPLC Chromatogram Report
-        </p>
-      </div>
-      <svg viewBox={`0 0 ${width} ${height}`} className="relative w-full h-40">
-        {[0.25, 0.5, 0.75, 1].map(t => (
-          <line key={t} x1={padL} y1={12 + (1 - t) * innerH} x2={width - 16} y2={12 + (1 - t) * innerH} stroke={GRID} strokeWidth="1" />
-        ))}
-        {[0.25, 0.5, 0.75, 1].map(t => (
-          <line key={`v${t}`} x1={padL + t * innerW} y1={12} x2={padL + t * innerW} y2={height - padB} stroke={GRID} strokeWidth="1" />
-        ))}
-        <line x1={padL} y1={12} x2={padL} y2={height - padB} stroke="#999" strokeWidth="1" />
-        <line x1={padL} y1={height - padB} x2={width - 16} y2={height - padB} stroke="#999" strokeWidth="1" />
-        <path d={pathD} stroke={GOLD} strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-        <text x={padL} y={height - 6} fill="#666" fontSize="9" textAnchor="middle">0</text>
-        <text x={padL + innerW} y={height - 6} fill="#666" fontSize="9" textAnchor="middle">
-          {(points[points.length - 1]?.x ?? 20).toFixed(0)} min
-        </text>
-        {data?.retention_time && (
-          <text x={width / 2} y={height - 6} fill="#666" fontSize="9" textAnchor="middle">
-            RT: {data.retention_time} min
-          </text>
-        )}
-      </svg>
-    </div>
-  );
-}
-
-function generateDemoPoints() {
-  const pts: { x: number; y: number }[] = [];
-  for (let x = 0; x <= 20; x += 0.2) {
-    const peak1 = 0.5 * Math.exp(-Math.pow(x - 4, 2) / 0.3);
-    const peak2 = 1.0 * Math.exp(-Math.pow(x - 8, 2) / 0.5);
-    const peak3 = 0.8 * Math.exp(-Math.pow(x - 12.4, 2) / 0.8);
-    const noise = Math.random() * 0.02;
-    pts.push({ x: Math.round(x * 10) / 10, y: Math.max(0, peak1 + peak2 + peak3 + noise) });
-  }
-  return pts;
-}
+import AtlasLogo from '../components/brand/AtlasLogo';
+import InteractiveChromatogram from '../components/coa/InteractiveChromatogram';
+import CoaQrCode from '../components/coa/CoaQrCode';
 
 function InfoField({ label, value }: { label: string; value: string }) {
   return (
@@ -84,6 +25,31 @@ function InfoField({ label, value }: { label: string; value: string }) {
   );
 }
 
+function IntegrityBadge({ status }: { status: ReturnType<typeof verifyCoaIntegrity> }) {
+  if (status === 'verified') {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-atlas-success bg-emerald-50 border border-emerald-200 rounded px-2.5 py-1">
+        <CheckCircle size={13} /> Hash verified
+      </span>
+    );
+  }
+  if (status === 'legacy') {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-neutral-700 bg-neutral-100 border border-neutral-200 rounded px-2.5 py-1">
+        <Shield size={13} /> Signed record on file
+      </span>
+    );
+  }
+  if (status === 'mismatch') {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-red-700 bg-red-50 border border-red-200 rounded px-2.5 py-1">
+        <AlertTriangle size={13} /> Integrity warning
+      </span>
+    );
+  }
+  return null;
+}
+
 export default function COADetail() {
   const { slug } = useParams<{ slug: string }>();
   const { user, profile, loading: authLoading } = useAuth();
@@ -92,21 +58,27 @@ export default function COADetail() {
   const [notFound, setNotFound] = useState(false);
   const [copied, setCopied] = useState(false);
   const [vialSize, setVialSize] = useState('3ml');
+  const [chromatographBg, setChromatographBg] = useState('');
 
   useEffect(() => {
     if (!slug || authLoading) return;
     setLoading(true);
     setNotFound(false);
-    // No is_public filter here: row-level security decides visibility.
-    // Public COAs are readable by anyone; private COAs only by their owner.
     supabase
       .from('coas')
       .select('*')
       .eq('slug', slug)
       .maybeSingle()
-      .then(({ data }) => {
-        if (data) setCoa(data);
-        else setNotFound(true);
+      .then(async ({ data }) => {
+        if (!data) { setNotFound(true); setLoading(false); return; }
+        setCoa(data);
+        const { data: companies } = await supabase
+          .from('companies')
+          .select('chromatograph_background')
+          .eq('user_id', data.user_id)
+          .eq('is_default', true)
+          .maybeSingle();
+        if (companies?.chromatograph_background) setChromatographBg(companies.chromatograph_background);
         setLoading(false);
       });
   }, [slug, user, authLoading]);
@@ -118,40 +90,31 @@ export default function COADetail() {
   }
 
   if (loading) return (
-    <div className="min-h-screen flex items-center justify-center">
+    <div className="min-h-screen flex items-center justify-center bg-white">
       <div className="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
     </div>
   );
 
   if (notFound) return (
     <>
-      <Header />
+      <div className="no-print"><Header /></div>
       <div className="min-h-screen bg-neutral-50 flex items-center justify-center px-4">
         <div className="text-center">
-          <div className="w-16 h-16 bg-red-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <XCircle size={28} className="text-red-500" />
-          </div>
+          <XCircle size={28} className="text-red-500 mx-auto mb-4" />
           <h1 className="text-2xl font-bold text-black mb-2">COA Not Found</h1>
-          <p className="text-neutral-500 mb-6">No certificate of analysis found for this ID.</p>
           <Link to="/verify" className="btn-primary">Try Verification Tool</Link>
         </div>
       </div>
-      <Footer />
+      <div className="no-print"><Footer /></div>
     </>
   );
 
   if (!coa) return null;
 
-  const panelResults: PanelResult[] = Array.isArray(coa.panel_results) ? coa.panel_results : [
-    { panel_name: 'HPLC Purity', result: `${coa.purity_percent ?? 98.7}%`, pass: true },
-    { panel_name: 'Identity (HPLC)', result: 'Confirmed', pass: true },
-    { panel_name: 'Endotoxin (LAL)', result: '<0.5 EU/mg', specification: '<1.0 EU/mg', pass: true },
-  ];
-
-  // Prefer the logo snapshotted onto the COA; fall back to the owner's profile
-  // logo when the owner is viewing their own certificate (RLS blocks others).
+  const panelResults: PanelResult[] = Array.isArray(coa.panel_results) ? coa.panel_results : [];
   const isOwner = !!user && user.id === coa.user_id;
   const companyLogo = coa.company_logo || (isOwner ? profile?.company_logo : '') || '';
+  const integrity = verifyCoaIntegrity(coa);
 
   const infoFields = [
     { label: 'Client', value: coa.company_name || '—' },
@@ -161,12 +124,13 @@ export default function COADetail() {
     { label: 'Batch Number', value: coa.batch_number || '—' },
     { label: 'Date Issued', value: formatDateTime(coa.issued_at) },
     { label: 'Vial Size', value: vialSize },
+    ...(coa.seal_serial ? [{ label: 'Seal Serial', value: coa.seal_serial }] : []),
   ];
 
   return (
     <>
-      <Header />
-      <div className="min-h-screen bg-white">
+      <div className="no-print"><Header /></div>
+      <div className="min-h-screen bg-white coa-print-root">
         <div className="coa-header-bar">
           <div className="max-w-4xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="flex items-center gap-4">
@@ -174,11 +138,7 @@ export default function COADetail() {
               {companyLogo && (
                 <>
                   <span className="hidden sm:block h-8 w-px bg-neutral-700" />
-                  <img
-                    src={companyLogo}
-                    alt={`${coa.company_name || 'Company'} logo`}
-                    className="h-10 max-w-[140px] object-contain"
-                  />
+                  <img src={companyLogo} alt="" className="h-10 max-w-[140px] object-contain" />
                 </>
               )}
             </div>
@@ -193,71 +153,65 @@ export default function COADetail() {
         <div className="coa-gold-divider" />
 
         <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8">
-          <div className="flex items-center justify-between gap-3 mb-6">
-            <Link to={isOwner ? '/dashboard/coas' : '/coa-library'} className="inline-flex items-center gap-1.5 text-neutral-500 hover:text-brand-600 text-sm transition-colors">
+          <div className="flex items-center justify-between gap-3 mb-6 no-print">
+            <Link to={isOwner ? '/dashboard/coas' : '/coa-library'} className="inline-flex items-center gap-1.5 text-neutral-500 hover:text-brand-600 text-sm">
               <ArrowLeft size={14} /> {isOwner ? 'Back to My COAs' : 'Public Library'}
             </Link>
-            {isOwner && !coa.is_public && (
-              <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-neutral-600 bg-neutral-100 border border-neutral-200 rounded-full px-2.5 py-1">
-                <Shield size={12} /> Private — only visible to you
-              </span>
-            )}
+            <div className="flex items-center gap-2 flex-wrap justify-end">
+              <IntegrityBadge status={integrity} />
+              {isOwner && !coa.is_public && (
+                <span className="text-xs font-semibold text-neutral-600 bg-neutral-100 border border-neutral-200 rounded-full px-2.5 py-1">Private</span>
+              )}
+            </div>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-0 mb-8">
-            {infoFields.map(({ label, value }) => (
-              <InfoField key={label} label={label} value={value} />
-            ))}
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-8 mb-8">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-0">
+              {infoFields.map(({ label, value }) => (
+                <InfoField key={label} label={label} value={value} />
+              ))}
+            </div>
+            <div className="flex justify-center lg:justify-end no-print">
+              <CoaQrCode slug={coa.slug} />
+            </div>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
             <div className="coa-stat-card">
               <div className="flex items-start gap-3">
-                <Boxes size={28} className="text-brand-500 flex-shrink-0" strokeWidth={1.5} />
+                <Boxes size={24} className="text-brand-500 flex-shrink-0" strokeWidth={1.5} />
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">
-                    Average Net Peptide Content
-                  </p>
-                  <p className="text-3xl font-bold text-black mt-1">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">Net Peptide Content</p>
+                  <p className="text-3xl font-bold text-black mt-1 tabular-nums">
                     {coa.purity_percent ? `${(coa.purity_percent * 0.1).toFixed(1)} mg` : '—'}
                   </p>
-                  <p className="text-xs text-atlas-success font-semibold mt-1 uppercase tracking-wide">Conforms</p>
+                  <p className="text-xs text-atlas-success font-semibold mt-1 uppercase">Conforms</p>
                 </div>
               </div>
             </div>
             <div className="coa-stat-card">
               <div className="flex items-start gap-3">
-                <Droplets size={28} className="text-brand-500 flex-shrink-0" strokeWidth={1.5} />
+                <Droplets size={24} className="text-brand-500 flex-shrink-0" strokeWidth={1.5} />
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">
-                    Average Purity
-                  </p>
-                  <p className="text-3xl font-bold text-black mt-1">
-                    {coa.purity_percent ?? 98.7}%
-                  </p>
-                  <p className="text-xs text-atlas-success font-semibold mt-1 uppercase tracking-wide">Measured</p>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">Purity (HPLC)</p>
+                  <p className="text-3xl font-bold text-black mt-1 tabular-nums">{coa.purity_percent ?? 98.7}%</p>
+                  <p className="text-xs text-atlas-success font-semibold mt-1 uppercase">Measured</p>
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="mb-6">
+          <div className="mb-6 no-print">
             <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 mb-2">Vial Size</p>
             <div className="flex gap-2">
               {['3ml', '5ml', '10ml'].map(size => (
-                <button
-                  key={size}
-                  onClick={() => setVialSize(size)}
-                  className={`coa-vial-btn ${vialSize === size ? 'coa-vial-btn-active' : ''}`}
-                >
-                  {size}
-                </button>
+                <button key={size} onClick={() => setVialSize(size)} className={`coa-vial-btn ${vialSize === size ? 'coa-vial-btn-active' : ''}`}>{size}</button>
               ))}
             </div>
           </div>
 
           <div className="mb-8">
-            <Chromatogram data={coa.chromatogram_data} />
+            <InteractiveChromatogram data={coa.chromatogram_data} backgroundImage={chromatographBg || undefined} />
           </div>
 
           <div className="mb-8 overflow-hidden border border-atlas-border">
@@ -273,15 +227,11 @@ export default function COADetail() {
               <tbody>
                 {panelResults.map((r, i) => (
                   <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-neutral-50'}>
-                    <td className="px-4 py-3 font-medium text-black border-t border-atlas-border">{r.panel_name}</td>
+                    <td className="px-4 py-3 font-medium border-t border-atlas-border">{r.panel_name}</td>
                     <td className="px-4 py-3 text-neutral-600 border-t border-atlas-border">{r.specification || '—'}</td>
-                    <td className="px-4 py-3 font-medium text-black border-t border-atlas-border">
-                      {r.result}{r.unit ? ` ${r.unit}` : ''}
-                    </td>
+                    <td className="px-4 py-3 font-medium border-t border-atlas-border">{r.result}{r.unit ? ` ${r.unit}` : ''}</td>
                     <td className="px-4 py-3 border-t border-atlas-border">
-                      <span className={`font-bold uppercase text-xs ${r.pass ? 'text-atlas-success' : 'text-red-600'}`}>
-                        {r.pass ? 'Pass' : 'Fail'}
-                      </span>
+                      <span className={`font-bold uppercase text-xs ${r.pass ? 'text-atlas-success' : 'text-red-600'}`}>{r.pass ? 'Pass' : 'Fail'}</span>
                     </td>
                   </tr>
                 ))}
@@ -290,9 +240,11 @@ export default function COADetail() {
           </div>
 
           {coa.content_hash && (
-            <div className="flex items-center gap-2 text-xs text-neutral-500 font-mono bg-neutral-50 p-3 border border-atlas-border mb-8">
-              <Shield size={11} className="text-brand-500 flex-shrink-0" />
-              Content Hash: {coa.content_hash} · Signature: {coa.signature || 'AM-' + coa.slug.slice(0, 8).toUpperCase()}
+            <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-600 font-mono bg-neutral-50 p-3 border border-atlas-border mb-8">
+              <Shield size={11} className="text-brand-500" />
+              <span>Hash: {coa.content_hash}</span>
+              <span className="text-neutral-300">·</span>
+              <span>Sig: {coa.signature || `AM-${coa.slug.slice(0, 8).toUpperCase()}`}</span>
             </div>
           )}
 
@@ -309,37 +261,30 @@ export default function COADetail() {
             </div>
             <div className="coa-gold-divider mb-4" />
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <p className="text-brand-500 text-sm font-medium">www.atlasanalytics.io</p>
+              <p className="text-brand-500 text-sm">www.atlasanalytics.io</p>
               <div className={`flex items-center gap-2 px-3 py-1.5 border font-semibold text-xs uppercase tracking-wider ${
-                coa.overall_result === 'pass'
-                  ? 'border-atlas-success text-atlas-success'
-                  : coa.overall_result === 'fail'
-                  ? 'border-red-500 text-red-400'
-                  : 'border-amber-500 text-amber-400'
+                coa.overall_result === 'pass' ? 'border-atlas-success text-atlas-success' :
+                coa.overall_result === 'fail' ? 'border-red-500 text-red-400' : 'border-amber-500 text-amber-400'
               }`}>
-                {coa.overall_result === 'pass' ? <CheckCircle size={14} /> : coa.overall_result === 'fail' ? <XCircle size={14} /> : <Clock size={14} />}
                 Overall: {coa.overall_result}
               </div>
             </div>
-            <p className="text-[10px] text-neutral-600 mt-4 leading-relaxed">
-              This certificate is cryptographically signed and tamper-proof. Verification available at atlasanalytics.io/verify
-            </p>
           </div>
 
-          <div className="flex flex-col sm:flex-row gap-3 mt-8">
+          <div className="flex flex-col sm:flex-row gap-3 mt-8 no-print">
             <button onClick={copyLink} className="btn-outline flex-1 gap-2 justify-center">
-              {copied ? <><Check size={16} className="text-atlas-success" /> Link Copied!</> : <><Copy size={16} /> Copy Shareable Link</>}
+              {copied ? <><Check size={16} className="text-atlas-success" /> Copied</> : <><Copy size={16} /> Copy Link</>}
             </button>
-            <a href="#" className="btn-outline flex-1 gap-2 justify-center">
+            <button type="button" onClick={downloadCoaPdf} className="btn-outline flex-1 gap-2 justify-center">
               <Download size={16} /> Download PDF
-            </a>
-            <Link to="/verify" className="btn-primary flex-1 gap-2 justify-center">
-              <Shield size={16} /> Verify Another COA
+            </button>
+            <Link to={`/verify?slug=${encodeURIComponent(coa.slug)}`} className="btn-primary flex-1 gap-2 justify-center">
+              <Shield size={16} /> Verify
             </Link>
           </div>
         </div>
       </div>
-      <Footer />
+      <div className="no-print"><Footer /></div>
     </>
   );
 }

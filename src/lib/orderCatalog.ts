@@ -43,9 +43,11 @@ export const INDIVIDUAL_TESTS: IndividualTestOption[] = [
 export const FULL_QC_PANEL = {
   id: 'full_qc',
   name: 'Full QC Panel',
-  description: 'Purity, Content ID, Heavy Metals, Endotoxin, Sterility Screen',
+  description: 'Purity, Content ID, Heavy Metals, Endotoxin, Sterility Screen, Conformity',
   price: 500,
   vialsRequired: 3,
+  /** Conformity across the base vial set is included in panel price. */
+  includesConformity: true,
 };
 
 export const CONFORMITY_PRICE = 50;
@@ -101,6 +103,14 @@ export function createEmptySample(partial?: Partial<WizardSample>): WizardSample
 export function sampleTestCount(sample: WizardSample): number {
   if (sample.test_mode === 'full_qc') return 1;
   return sample.individual_tests.length;
+}
+
+/** Vials the client must ship for this sample line. */
+export function sampleVialCount(sample: WizardSample): number {
+  const base = sample.test_mode === 'full_qc'
+    ? FULL_QC_PANEL.vialsRequired
+    : Math.max(1, sample.individual_tests.length);
+  return base + Math.max(0, sample.conformity_extra);
 }
 
 export function sampleChipLabel(sample: WizardSample, index: number): string {

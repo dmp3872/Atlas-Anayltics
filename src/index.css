@@ -15,34 +15,56 @@
 
 @layer components {
   .btn-primary {
-    @apply inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-brand-500 text-black font-semibold rounded-lg hover:bg-brand-400 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-brand-500 text-black font-semibold rounded-md hover:bg-brand-400 transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed;
   }
   .btn-secondary {
-    @apply inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-black text-white font-medium rounded-lg hover:bg-neutral-800 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-black text-white font-medium rounded-md hover:bg-neutral-800 transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed;
   }
   .btn-outline {
-    @apply inline-flex items-center justify-center gap-2 px-5 py-2.5 border border-neutral-300 text-neutral-800 font-medium rounded-lg hover:bg-neutral-50 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center gap-2 px-5 py-2.5 border border-neutral-300 text-neutral-800 font-medium rounded-md hover:bg-neutral-50 transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed;
   }
   .btn-outline-gold {
-    @apply inline-flex items-center justify-center gap-2 px-5 py-2.5 border border-brand-500 text-brand-700 font-medium rounded-lg hover:bg-brand-50 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center gap-2 px-5 py-2.5 border border-brand-500 text-brand-800 font-medium rounded-md hover:bg-brand-50 transition-colors duration-150;
   }
   .btn-ghost {
-    @apply inline-flex items-center justify-center gap-2 px-4 py-2 text-neutral-600 font-medium rounded-lg hover:bg-neutral-100 hover:text-black transition-colors duration-200;
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 text-neutral-600 font-medium rounded-md hover:bg-neutral-100 hover:text-black transition-colors duration-150;
   }
   .card {
-    @apply bg-white rounded-xl border border-atlas-border shadow-sm;
+    @apply bg-white rounded-lg border border-atlas-border;
   }
   .input-field {
-    @apply w-full px-3.5 py-2.5 border border-neutral-300 rounded-lg text-black placeholder-neutral-400 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent transition-colors;
+    @apply w-full px-3.5 py-2.5 border border-neutral-300 rounded-md text-black text-sm placeholder-neutral-400 focus:outline-none focus:ring-1 focus:ring-brand-500 focus:border-brand-500 transition-colors bg-white;
   }
   .label {
-    @apply block text-sm font-medium text-neutral-700 mb-1.5;
+    @apply block text-xs font-semibold uppercase tracking-wide text-neutral-600 mb-1.5;
   }
   .section-title {
-    @apply text-3xl font-bold text-black;
+    @apply text-2xl font-bold text-black tracking-tight;
   }
   .section-subtitle {
-    @apply text-lg text-neutral-500 mt-3 leading-relaxed;
+    @apply text-sm text-neutral-500 mt-2 leading-relaxed;
+  }
+  /* Client portal */
+  .portal-main {
+    @apply p-6 lg:p-8 max-w-6xl;
+  }
+  .portal-page-title {
+    @apply text-2xl font-bold text-black tracking-tight;
+  }
+  .portal-page-subtitle {
+    @apply text-sm text-neutral-500 mt-1.5 max-w-2xl;
+  }
+  .portal-nav-item {
+    @apply flex items-center gap-3 px-3 py-2.5 rounded-md text-sm font-medium text-neutral-600 hover:bg-neutral-100 hover:text-black transition-colors;
+  }
+  .portal-nav-item-active {
+    @apply bg-brand-50 text-brand-900 border-l-2 border-brand-500 pl-[10px] font-semibold;
+  }
+  .portal-stat-card {
+    @apply card p-4;
+  }
+  .portal-data-table {
+    @apply w-full text-sm border border-atlas-border overflow-hidden rounded-lg;
   }
   .badge-pass {
     @apply inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-atlas-success border border-emerald-200;
@@ -85,6 +107,35 @@
   }
   .coa-vial-btn-active {
     @apply bg-black text-white border-black;
+  }
+  .qty-stepper-btn {
+    @apply w-11 h-11 shrink-0 border border-neutral-300 rounded-md flex items-center justify-center text-neutral-700 hover:border-brand-500 hover:bg-brand-50 transition-colors active:scale-95;
+  }
+  .pricing-tier-pill {
+    @apply text-xs px-3 py-2 rounded-md border text-center transition-colors;
+  }
+  .pricing-tier-pill-active {
+    @apply border-brand-500 bg-brand-50 text-brand-800 font-semibold;
+  }
+  .pricing-tier-pill-inactive {
+    @apply border-atlas-border bg-white text-neutral-600;
+  }
+  .pricing-mobile-bar {
+    @apply lg:hidden fixed bottom-0 inset-x-0 z-30 bg-white border-t border-atlas-border px-4 py-3 shadow-[0_-4px_24px_rgba(0,0,0,0.08)];
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  }
+}
+
+@media print {
+  header, footer, .print\\:hidden, .no-print {
+    display: none !important;
+  }
+  body {
+    background: white !important;
+  }
+  .coa-print-root {
+    max-width: none !important;
+    padding: 0 !important;
   }
 }
 

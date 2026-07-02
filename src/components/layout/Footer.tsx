@@ -46,7 +46,7 @@ export default function Footer() {
             <ul className="space-y-2.5 text-sm">
               <li><Link to="/trust" className="hover:text-brand-400 transition-colors">Why Atlas Analytics</Link></li>
               <li><Link to="/roadmap" className="hover:text-brand-400 transition-colors">Roadmap</Link></li>
-              <li><Link to="/dashboard" className="hover:text-brand-400 transition-colors">Client Portal</Link></li>
+              <li><Link to="/auth" state={{ from: '/dashboard' }} className="hover:text-brand-400 transition-colors">Client Portal</Link></li>
               <li><a href="mailto:labs@atlasanalytics.io" className="hover:text-brand-400 transition-colors">Contact Us</a></li>
             </ul>
           </div>
