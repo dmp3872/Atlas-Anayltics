@@ -33,9 +33,9 @@ export default function Header() {
     <>
       <header className="sticky top-0 z-50 bg-black border-b border-neutral-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-14">
-            <Link to="/" onClick={() => setMobileOpen(false)}>
-              <AtlasLogo variant="light" size="sm" />
+          <div className="flex items-center justify-between h-20">
+            <Link to="/" onClick={() => setMobileOpen(false)} className="flex items-center shrink-0 h-full py-1">
+              <AtlasLogo variant="light" size="header" />
             </Link>
 
             <nav className="hidden md:flex items-center gap-1">
@@ -128,8 +128,8 @@ export default function Header() {
             onClick={() => setMobileOpen(false)}
           />
           <div className="absolute inset-y-0 right-0 w-full max-w-sm bg-black border-l border-neutral-800 flex flex-col shadow-2xl">
-            <div className="flex items-center justify-between px-4 h-14 border-b border-neutral-800 shrink-0">
-              <AtlasLogo variant="light" size="sm" />
+            <div className="flex items-center justify-between px-4 h-20 border-b border-neutral-800 shrink-0">
+              <AtlasLogo variant="light" size="header" />
               <button
                 type="button"
                 onClick={() => setMobileOpen(false)}

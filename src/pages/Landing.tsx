@@ -5,9 +5,8 @@ import {
 } from 'lucide-react';
 
 const stats = [
-  { label: 'Samples Tested', value: '12,400+' },
+  { label: 'ISO Certification', value: 'Pending' },
   { label: 'Avg Turnaround', value: '3–5 days' },
-  { label: 'Unique COAs Issued', value: '4,800+' },
   { label: 'First-Order Discount', value: '50% off' },
 ];
 
@@ -110,7 +109,7 @@ export default function Landing() {
 
       <section className="bg-neutral-950 border-y border-neutral-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
             {stats.map((stat) => (
               <div key={stat.label} className="text-center">
                 <p className="text-2xl font-bold text-white">{stat.value}</p>
