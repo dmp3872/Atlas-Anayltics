@@ -1,5 +1,7 @@
 export type UserRole = 'client' | 'admin' | 'reviewer' | 'chemist' | 'verifier';
 
+export type LabPriority = 'normal' | 'high' | 'urgent';
+
 export type SubmissionStatus =
   | 'draft'
   | 'submitted'
@@ -35,6 +37,7 @@ export interface Order {
   order_number: string;
   status: OrderStatus;
   rush_processing: boolean;
+  lab_priority?: LabPriority;
   notes: string;
   subtotal: number;
   discount_amount: number;
@@ -62,6 +65,9 @@ export interface OrderSample {
   status: SampleStatus;
   metadata?: Record<string, unknown> | null;
   analysis_results?: Record<string, unknown>[] | null;
+  assigned_to?: string | null;
+  assigned_at?: string | null;
+  lab_priority?: LabPriority | null;
   created_at: string;
 }
 

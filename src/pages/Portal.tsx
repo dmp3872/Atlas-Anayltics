@@ -19,6 +19,7 @@ import {
   loadTeamMembers, saveTeamMembers, TeamMember, NotificationPrefs,
 } from '../lib/portalPrefs';
 import { loadOrderDraft, draftSummary } from '../lib/orderDraft';
+import { canDiscardOrder, discardOrder } from '../lib/orderDiscard';
 import { expectedPanelNames, matchCoaForSample } from '../lib/coaPanels';
 import AccountSettings from '../components/account/AccountSettings';
 import ClientPortalLayout from '../components/layout/ClientPortalLayout';
@@ -57,6 +58,7 @@ export default function Portal() {
   const [sampleProduct, setSampleProduct] = useState('all');
   const [coaPeptide, setCoaPeptide] = useState('all');
   const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
+  const [discardingOrderId, setDiscardingOrderId] = useState<string | null>(null);
 
   const [promoCode, setPromoCode] = useState('');
   const [promoMsg, setPromoMsg] = useState('');
@@ -172,6 +174,26 @@ export default function Portal() {
     const matchStatus = statusFilter === 'all' || o.status === statusFilter;
     return matchSearch && matchStatus;
   });
+
+  async function handleDiscardOrder(order: Order) {
+    if (!canDiscardOrder(order)) return;
+    if (!confirm(`Discard order ${order.order_number}? This cannot be undone.`)) return;
+    setDiscardingOrderId(order.id);
+    const { error } = await discardOrder(order.id);
+    if (error) {
+      alert(error);
+      setDiscardingOrderId(null);
+      return;
+    }
+    setOrders(prev => prev.filter(o => o.id !== order.id));
+    setSamples(prev => prev.filter(s => s.order_id !== order.id));
+    setExpandedOrders(prev => {
+      const next = new Set(prev);
+      next.delete(order.id);
+      return next;
+    });
+    setDiscardingOrderId(null);
+  }
 
   return (
     <ClientPortalLayout>
@@ -516,6 +538,21 @@ export default function Portal() {
                             </div>
                           );
                         })}
+                        {canDiscardOrder(order) && (
+                          <div className="px-5 py-4 border-t border-atlas-border bg-neutral-50">
+                            <button
+                              type="button"
+                              onClick={() => handleDiscardOrder(order)}
+                              disabled={discardingOrderId === order.id}
+                              className="text-sm text-red-600 hover:text-red-700 font-medium disabled:opacity-50"
+                            >
+                              {discardingOrderId === order.id ? 'Discarding…' : 'Discard order'}
+                            </button>
+                            <p className="text-xs text-neutral-500 mt-1">
+                              Permanently removes this order before lab processing begins.
+                            </p>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

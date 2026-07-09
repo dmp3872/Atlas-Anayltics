@@ -1,7 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { UserRole } from './lib/types';
-import { roleHome, effectiveRole } from './lib/roles';
+import { roleHome, resolveUserRole } from './lib/roles';
 import Header from './components/layout/Header';
 import Footer from './components/layout/Footer';
 import Landing from './pages/Landing';
@@ -50,7 +50,7 @@ function RoleRoute({ allow, children }: { allow: UserRole[]; children: React.Rea
   const { user, profile, loading } = useAuth();
   if (loading) return <Spinner />;
   if (!user) return <Navigate to="/auth" replace state={{ from: window.location.pathname }} />;
-  const role = effectiveRole(profile);
+  const role = resolveUserRole(profile, user.email);
   if (!allow.includes(role)) return <Navigate to={roleHome(role)} replace />;
   return <>{children}</>;
 }

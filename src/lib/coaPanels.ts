@@ -6,6 +6,10 @@ export interface OrderSampleMetadata {
   peptide_identification?: string;
   vial_size?: string;
   sample_matrix?: string;
+  sample_type?: string;
+  blend_compounds?: number;
+  blend_components?: { name: string; amount_mg: string }[];
+  blend_label?: string;
   tests_label?: string;
   test_mode?: string;
   include_fentanyl?: boolean;

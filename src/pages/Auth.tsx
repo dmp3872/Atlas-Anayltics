@@ -3,7 +3,7 @@ import { Navigate, Link, useLocation } from 'react-router-dom';
 import { Eye, EyeOff, AlertCircle, Shield, FileText, Package, LogIn, UserPlus } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { roleHome, effectiveRole } from '../lib/roles';
+import { roleHome, resolveUserRole } from '../lib/roles';
 import AtlasLogo from '../components/brand/AtlasLogo';
 
 type Mode = 'signin' | 'signup';
@@ -11,7 +11,18 @@ type Mode = 'signin' | 'signup';
 export default function Auth() {
   const { user, profile, loading, signIn, signUp } = useAuth();
   const location = useLocation();
-  const from = (location.state as { from?: string } | null)?.from ?? roleHome(effectiveRole(profile));
+  const role = resolveUserRole(profile, user?.email);
+  const home = roleHome(role);
+  // Prefer role home for staff. Only honor deep-links (e.g. /order-new) — never force clients' /dashboard on admins.
+  const requested = (location.state as { from?: string } | null)?.from;
+  const clientOnlyPaths = ['/dashboard', '/dashboard/orders', '/dashboard/coas', '/dashboard/api', '/dashboard/submissions'];
+  const fromStaffOverride =
+    role !== 'client'
+    && requested
+    && clientOnlyPaths.some(p => requested === p || requested.startsWith(`${p}/`) || requested.startsWith(`${p}?`));
+  const destination = fromStaffOverride
+    ? home
+    : (requested?.startsWith('/') ? requested : home);
 
   const [mode, setMode] = useState<Mode>('signin');
   const [email, setEmail] = useState('');
@@ -23,7 +34,8 @@ export default function Auth() {
   const [info, setInfo] = useState('');
   const [resetSent, setResetSent] = useState(false);
 
-  if (loading) {
+  // Wait for profile when signed in so staff land on /admin or /lab, not the client portal.
+  if (loading || (user && !profile)) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-neutral-50">
         <div className="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
@@ -32,7 +44,7 @@ export default function Auth() {
   }
 
   if (user) {
-    return <Navigate to={from.startsWith('/') ? from : roleHome(effectiveRole(profile))} replace />;
+    return <Navigate to={destination} replace />;
   }
 
   async function handleSubmit(e: React.FormEvent) {

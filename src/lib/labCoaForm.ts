@@ -89,8 +89,24 @@ export function casForSampleName(sampleName: string): string {
 
 export function buildLabResultsFromSample(metadata: OrderSample['metadata'], sampleName = ''): LabCoaResults {
   const meta = parseSampleMetadata(metadata);
-  const identification = meta.peptide_identification?.trim() || sampleName.trim();
   const includeFentanyl = orderSampleIncludesFentanyl(metadata);
+  const blendComponents = meta.blend_components?.filter(c => c.name.trim()) ?? [];
+
+  if (meta.sample_type === 'blend' && blendComponents.length > 0) {
+    return {
+      ...EMPTY_LAB_RESULTS,
+      identification: meta.peptide_identification?.trim() || sampleName.trim() || meta.blend_label?.trim() || '',
+      netContent: meta.labeled_content?.trim() ?? '',
+      includeFentanyl,
+      conformityPeptides: blendComponents.map(c => ({
+        name: c.name.trim(),
+        netContent: `${c.amount_mg.trim().replace(/\s*mg\s*$/i, '')}mg`,
+        netPurity: '',
+      })),
+    };
+  }
+
+  const identification = meta.peptide_identification?.trim() || sampleName.trim();
   return {
     ...EMPTY_LAB_RESULTS,
     identification,

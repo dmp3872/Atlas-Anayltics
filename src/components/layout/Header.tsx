@@ -100,7 +100,7 @@ export default function Header() {
                 </div>
               ) : (
                 <>
-                  <Link to="/auth" state={{ from: '/dashboard' }} className="text-sm font-medium text-neutral-400 hover:text-white px-3 py-2">Sign In</Link>
+                  <Link to="/auth" className="text-sm font-medium text-neutral-400 hover:text-white px-3 py-2">Sign In</Link>
                   <Link to="/auth" state={{ from: '/order-new' }} className="btn-primary text-sm py-2">Submit Samples</Link>
                 </>
               )}
@@ -187,11 +187,10 @@ export default function Header() {
                   </Link>
                   <Link
                     to="/auth"
-                    state={{ from: '/dashboard' }}
                     onClick={() => setMobileOpen(false)}
                     className="btn-outline w-full justify-center text-sm border-neutral-700 text-neutral-300 hover:bg-neutral-900"
                   >
-                    Sign In to Portal
+                    Sign In
                   </Link>
                 </>
               )}

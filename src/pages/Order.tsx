@@ -109,6 +109,7 @@ export default function Order() {
         user_id: user.id,
         order_number: orderNumber,
         rush_processing: rushProcessing,
+        lab_priority: rushProcessing ? 'high' : 'normal',
         notes,
         subtotal,
         discount_amount: firstOrderDiscount,

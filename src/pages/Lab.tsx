@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  FlaskConical, Plus, Trash2, CheckCircle, AlertCircle, ExternalLink, ClipboardList,
-  ChevronDown, ChevronUp, ArrowRight,
+  FlaskConical, Plus, Trash2, CheckCircle, AlertCircle, ClipboardList,
+  ArrowRight, RefreshCw,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { COA, Order, OrderSample, OrderStatus, SampleStatus, UserProfile } from '../lib/types';
-import { formatDateTime, ORDER_STATUS_LABELS, SAMPLE_STATUS_LABELS } from '../lib/utils';
+import { COA, LabPriority, Order, OrderSample, SampleStatus, UserProfile } from '../lib/types';
+import { SAMPLE_STATUS_LABELS } from '../lib/utils';
 import { computeCoaContentHash } from '../lib/coaVerify';
 import { notifyCoaReady } from '../lib/notifications';
 import { matchCoaForSample, clientSubmittedLabel, parseSampleMetadata } from '../lib/coaPanels';
@@ -17,7 +17,12 @@ import {
 } from '../lib/labCoaForm';
 import { COA_WORKFLOW_LABELS, coaWorkflowStage, buildWorkflowStagePatch, CoaWorkflowStage } from '../lib/coaWorkflow';
 import CoaWorkflowBoard from '../components/lab/CoaWorkflowBoard';
+import CompanyFilterSearch from '../components/lab/CompanyFilterSearch';
+import TestingQueuePanel from '../components/lab/TestingQueuePanel';
+import QueueFilters, { QueueFilterValues } from '../components/lab/QueueFilters';
+import { buildQueueItems, filterQueueItems, normalizeLabPriority } from '../lib/labQueue';
 import StaffHeader from '../components/layout/StaffHeader';
+import { useAuth } from '../context/AuthContext';
 
 type Message = { type: 'success' | 'error'; text: string; slug?: string } | null;
 type LabTab = 'queue' | 'issue' | 'workflow';
@@ -29,22 +34,30 @@ const BLANK = {
   overallResult: 'pass' as COA['overall_result'],
 };
 
-const ORDER_STATUSES: OrderStatus[] = ['received', 'processing', 'analyzing', 'in_review', 'complete', 'cancelled'];
+
 const SAMPLE_STATUSES: SampleStatus[] = ['received', 'analyzing', 'in_review', 'complete'];
 
+const QUEUE_FILTERS_BLANK: QueueFilterValues = {
+  company: '', priority: 'all', assignment: 'all', search: '',
+};
+
 export default function Lab() {
+  const { user, profile } = useAuth();
+  const isAdmin = profile?.role === 'admin';
   const [tab, setTab] = useState<LabTab>('queue');
   const [clients, setClients] = useState<UserProfile[]>([]);
+  const [chemists, setChemists] = useState<UserProfile[]>([]);
   const [samples, setSamples] = useState<OrderSample[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [coas, setCoas] = useState<COA[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<Message>(null);
-  const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
-  const [queueFilter, setQueueFilter] = useState<'all' | 'pending'>('all');
+  const [queueView, setQueueView] = useState<'pending' | 'all'>('pending');
+  const [queueFilters, setQueueFilters] = useState<QueueFilterValues>({ ...QUEUE_FILTERS_BLANK });
 
   const [movingCoaId, setMovingCoaId] = useState<string | null>(null);
+  const [workflowCompanyFilter, setWorkflowCompanyFilter] = useState('');
   const [form, setForm] = useState({ ...BLANK });
   const [labResults, setLabResults] = useState<LabCoaResults>({ ...EMPTY_LAB_RESULTS });
   const [casSuggestions, setCasSuggestions] = useState<{ name: string; cas: string }[]>([]);
@@ -58,7 +71,10 @@ export default function Lab() {
       supabase.from('orders').select('*').order('created_at', { ascending: false }),
       supabase.from('coas').select('*').order('issued_at', { ascending: false }),
     ]);
-    if (p.data) setClients(p.data.filter(u => (u.role ?? 'client') === 'client'));
+    if (p.data) {
+      setClients(p.data.filter(u => (u.role ?? 'client') === 'client'));
+      setChemists(p.data.filter(u => u.role === 'chemist' || u.role === 'admin'));
+    }
     if (s.data) setSamples(s.data);
     if (o.data) setOrders(o.data);
     if (c.data) setCoas(c.data);
@@ -66,6 +82,16 @@ export default function Lab() {
   }
 
   useEffect(() => { loadAll(); }, []);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel('lab-queue')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'order_samples' }, () => { loadAll(); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => { loadAll(); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'coas' }, () => { loadAll(); })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, []);
 
   const pendingSamples = useMemo(
     () => samples.filter(s => !matchCoaForSample(s, coas)),
@@ -77,11 +103,64 @@ export default function Lab() {
     [coas],
   );
 
-  const filteredOrders = useMemo(() => {
-    if (queueFilter !== 'pending') return orders;
-    const pendingOrderIds = new Set(pendingSamples.map(s => s.order_id));
-    return orders.filter(o => pendingOrderIds.has(o.id));
-  }, [orders, pendingSamples, queueFilter]);
+  const workflowCompanyOptions = useMemo(() => {
+    const names = new Set<string>();
+    for (const coa of coas) {
+      const name = coa.company_name?.trim();
+      if (name) names.add(name);
+    }
+    return [...names].sort((a, b) => a.localeCompare(b));
+  }, [coas]);
+
+  const filteredWorkflowCoas = useMemo(() => {
+    const q = workflowCompanyFilter.trim().toLowerCase();
+    if (!q) return coas;
+    return coas.filter(c => (c.company_name ?? '').toLowerCase().includes(q));
+  }, [coas, workflowCompanyFilter]);
+
+  const pendingQueueCount = useMemo(
+    () => buildQueueItems(
+      samples,
+      orders.map(o => ({ ...o, lab_priority: normalizeLabPriority(o.lab_priority) })),
+      coas,
+      true,
+    ).length,
+    [samples, orders, coas],
+  );
+
+  const queueItems = useMemo(
+    () => buildQueueItems(
+      samples,
+      orders.map(o => ({ ...o, lab_priority: normalizeLabPriority(o.lab_priority) })),
+      coas,
+      queueView === 'pending',
+    ),
+    [samples, orders, coas, queueView],
+  );
+
+  const queueCompanyOptions = useMemo(() => {
+    const names = new Set<string>();
+    for (const order of orders) {
+      const name = order.company_name?.trim();
+      if (name) names.add(name);
+    }
+    return [...names].sort((a, b) => a.localeCompare(b));
+  }, [orders]);
+
+  const filteredQueueItems = useMemo(
+    () => filterQueueItems(queueItems, {
+      priority: queueFilters.priority,
+      company: queueFilters.company,
+      assignedTo: queueFilters.assignment === 'all' ? 'all' : queueFilters.assignment === 'mine' ? (user?.id ?? 'unassigned') : 'unassigned',
+      search: queueFilters.search,
+    }),
+    [queueItems, queueFilters, user?.id],
+  );
+
+  const chemistOptions = useMemo(
+    () => chemists.map(c => ({ id: c.id, name: c.full_name || clientSubmittedLabel(c, c.company_name) })),
+    [chemists],
+  );
 
   function clientLabel(id: string) {
     const c = clients.find(x => x.id === id);
@@ -173,16 +252,41 @@ export default function Lab() {
     await insertCoa(brandPayload);
   }
 
-  async function updateOrderStatus(orderId: string, status: OrderStatus) {
-    const { error } = await supabase.from('orders').update({ status, updated_at: new Date().toISOString() }).eq('id', orderId);
-    if (error) { setMsg({ type: 'error', text: error.message }); return; }
-    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status } : o));
-  }
-
   async function updateSampleStatus(sampleId: string, status: SampleStatus) {
     const { error } = await supabase.from('order_samples').update({ status }).eq('id', sampleId);
     if (error) { setMsg({ type: 'error', text: error.message }); return; }
     setSamples(prev => prev.map(s => s.id === sampleId ? { ...s, status } : s));
+  }
+
+  async function assignSample(sampleId: string, userId: string | null) {
+    const assigned_at = userId ? new Date().toISOString() : null;
+    setSamples(prev => prev.map(s => s.id === sampleId ? { ...s, assigned_to: userId, assigned_at } : s));
+    const { error } = await supabase.from('order_samples').update({ assigned_to: userId, assigned_at }).eq('id', sampleId);
+    if (error) {
+      setMsg({ type: 'error', text: error.message });
+      loadAll();
+    }
+  }
+
+  async function claimSample(sampleId: string) {
+    if (!user) return;
+    await assignSample(sampleId, user.id);
+  }
+
+  async function releaseSample(sampleId: string) {
+    await assignSample(sampleId, null);
+  }
+
+  async function setSamplePriority(sampleId: string, priority: LabPriority | null) {
+    setSamples(prev => prev.map(s => (s.id === sampleId ? { ...s, lab_priority: priority } : s)));
+    const { error } = await supabase
+      .from('order_samples')
+      .update({ lab_priority: priority })
+      .eq('id', sampleId);
+    if (error) {
+      setMsg({ type: 'error', text: error.message });
+      loadAll();
+    }
   }
 
   async function moveCoaToStage(coa: COA, targetStage: CoaWorkflowStage) {
@@ -283,14 +387,24 @@ export default function Lab() {
   }
 
   const tabs: { id: LabTab; label: string; count?: number }[] = [
-    { id: 'queue', label: 'Testing Queue', count: pendingSamples.length || undefined },
+    { id: 'queue', label: 'Testing Queue', count: pendingQueueCount || undefined },
     { id: 'issue', label: 'Issue COA' },
     { id: 'workflow', label: 'COA Workflow', count: workflowActiveCount || undefined },
   ];
 
   return (
     <div className="min-h-screen bg-neutral-100">
-      <StaffHeader title="Lab Console" />
+      <StaffHeader title="Lab Console">
+        <button
+          type="button"
+          onClick={() => loadAll()}
+          disabled={loading}
+          className="p-2 text-neutral-400 hover:text-white hover:bg-neutral-900 rounded-md disabled:opacity-50"
+          title="Refresh queue"
+        >
+          <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
+        </button>
+      </StaffHeader>
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
         <div className="mb-6">
           <h1 className="text-2xl sm:text-3xl font-bold text-black flex items-center gap-2">
@@ -333,90 +447,53 @@ export default function Lab() {
 
         {tab === 'queue' && (
           <div className="space-y-4">
-            <div className="flex flex-wrap gap-2">
-              <button type="button" onClick={() => setQueueFilter('all')} className={`px-3 py-1.5 text-sm rounded-md border ${queueFilter === 'all' ? 'bg-black text-white border-black' : 'border-atlas-border'}`}>All orders ({orders.length})</button>
-              <button type="button" onClick={() => setQueueFilter('pending')} className={`px-3 py-1.5 text-sm rounded-md border ${queueFilter === 'pending' ? 'bg-black text-white border-black' : 'border-atlas-border'}`}>Awaiting COA ({pendingSamples.length})</button>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm text-neutral-600">
+                Work top-down: <span className="text-red-700 font-medium">urgent</span>, then{' '}
+                <span className="text-amber-700 font-medium">high</span>, then normal. Claim a sample to own it.
+                {isAdmin ? (
+                  <> Admins set order priority in <Link to="/admin" className="font-semibold text-brand-700 hover:underline">Admin → Orders</Link>.</>
+                ) : (
+                  <> Lab directors set priority in Admin.</>
+                )}
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setQueueView('pending')}
+                  className={`px-3 py-1.5 text-sm rounded-md border ${queueView === 'pending' ? 'bg-black text-white border-black' : 'border-atlas-border'}`}
+                >
+                  Awaiting work ({pendingSamples.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setQueueView('all')}
+                  className={`px-3 py-1.5 text-sm rounded-md border ${queueView === 'all' ? 'bg-black text-white border-black' : 'border-atlas-border'}`}
+                >
+                  All samples
+                </button>
+              </div>
             </div>
 
-            {loading ? (
-              <div className="card p-8 text-center text-neutral-500">Loading…</div>
-            ) : filteredOrders.length === 0 ? (
-              <div className="card p-8 text-center text-neutral-500">No orders in this view.</div>
-            ) : (
-              filteredOrders.map(order => {
-                const orderSamples = samples.filter(s => s.order_id === order.id);
-                const expanded = expandedOrders.has(order.id);
-                return (
-                  <div key={order.id} className="card overflow-hidden">
-                    <button
-                      type="button"
-                      onClick={() => setExpandedOrders(prev => {
-                        const next = new Set(prev);
-                        next.has(order.id) ? next.delete(order.id) : next.add(order.id);
-                        return next;
-                      })}
-                      className="w-full text-left p-5 hover:bg-neutral-50 transition-colors"
-                    >
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div className="flex items-start gap-3">
-                          {expanded ? <ChevronUp size={18} className="text-neutral-400 mt-0.5" /> : <ChevronDown size={18} className="text-neutral-400 mt-0.5" />}
-                          <div>
-                            <p className="font-bold text-black">{order.order_number}</p>
-                            <p className="text-xs text-neutral-500">{clientLabel(order.user_id)} · {formatDateTime(order.created_at)} · {orderSamples.length} sample{orderSamples.length === 1 ? '' : 's'}</p>
-                          </div>
-                        </div>
-                        <select
-                          value={order.status}
-                          onClick={e => e.stopPropagation()}
-                          onChange={e => updateOrderStatus(order.id, e.target.value as OrderStatus)}
-                          className="input-field py-1.5 text-xs w-auto"
-                        >
-                          {ORDER_STATUSES.map(s => <option key={s} value={s}>{ORDER_STATUS_LABELS[s]}</option>)}
-                        </select>
-                      </div>
-                    </button>
-                    {expanded && (
-                      <div className="border-t border-atlas-border divide-y divide-atlas-border">
-                        {orderSamples.map(s => {
-                          const coa = matchCoaForSample(s, coas);
-                          const stage = coa ? coaWorkflowStage(coa) : null;
-                          return (
-                            <div key={s.id} className="px-5 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                              <div className="min-w-0 flex-1">
-                                <p className="font-semibold text-black">{s.display_name || s.sample_name}</p>
-                                <p className="text-xs text-neutral-500 capitalize">{s.sample_type} · {s.vial_count} vial{s.vial_count === 1 ? '' : 's'}</p>
-                                {coa && (
-                                  <p className="text-xs text-brand-700 mt-1">
-                                    COA: {COA_WORKFLOW_LABELS[stage!]}
-                                    {coa.is_public && ' · Public'}
-                                  </p>
-                                )}
-                              </div>
-                              <div className="flex flex-wrap items-center gap-2">
-                                <select
-                                  value={s.status}
-                                  onChange={e => updateSampleStatus(s.id, e.target.value as SampleStatus)}
-                                  className="input-field py-1.5 text-xs"
-                                >
-                                  {SAMPLE_STATUSES.map(st => <option key={st} value={st}>{SAMPLE_STATUS_LABELS[st]}</option>)}
-                                </select>
-                                {!coa ? (
-                                  <button type="button" onClick={() => prefillFromSample(s)} className="btn-primary text-xs py-1.5 gap-1">
-                                    Issue COA <ArrowRight size={12} />
-                                  </button>
-                                ) : (
-                                  <Link to={`/coa/${coa.slug}`} className="btn-outline text-xs py-1.5 gap-1"><ExternalLink size={12} /> View</Link>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                );
-              })
-            )}
+            <QueueFilters
+              values={queueFilters}
+              onChange={patch => setQueueFilters(prev => ({ ...prev, ...patch }))}
+              companies={queueCompanyOptions}
+              hasCurrentUser={!!user}
+            />
+
+            <TestingQueuePanel
+              items={filteredQueueItems}
+              loading={loading}
+              onIssueCoa={prefillFromSample}
+              onUpdateStatus={updateSampleStatus}
+              chemists={chemistOptions}
+              currentUserId={user?.id}
+              onClaim={claimSample}
+              onRelease={releaseSample}
+              onAssign={isAdmin ? assignSample : undefined}
+              onSetSamplePriority={isAdmin ? setSamplePriority : undefined}
+            />
           </div>
         )}
 
@@ -637,11 +714,18 @@ export default function Lab() {
         )}
 
         {tab === 'workflow' && (
-          <CoaWorkflowBoard
-            coas={coas}
-            onMoveCoa={moveCoaToStage}
-            movingId={movingCoaId}
-          />
+          <div className="space-y-4">
+            <CompanyFilterSearch
+              value={workflowCompanyFilter}
+              onChange={setWorkflowCompanyFilter}
+              companies={workflowCompanyOptions}
+            />
+            <CoaWorkflowBoard
+              coas={filteredWorkflowCoas}
+              onMoveCoa={moveCoaToStage}
+              movingId={movingCoaId}
+            />
+          </div>
         )}
       </main>
     </div>

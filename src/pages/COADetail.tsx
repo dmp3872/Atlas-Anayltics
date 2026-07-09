@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { COA, PanelResult } from '../lib/types';
+import { COA_CHEMISTS, COA_MEDICAL_DIRECTOR } from '../lib/coaSignatories';
 import { formatDateTime } from '../lib/utils';
 import { verifyCoaIntegrity } from '../lib/coaVerify';
 import { downloadCoaPdf } from '../lib/coaPdf';
@@ -251,12 +252,14 @@ export default function COADetail() {
           <div className="bg-black text-white px-6 py-8">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 mb-6">
               <div>
-                <p className="font-script text-2xl text-brand-500">Anthony Burke</p>
-                <p className="text-xs text-neutral-400 mt-1">Lab Director</p>
+                <p className="text-xs text-neutral-400 mb-2 uppercase tracking-wider">Chemist</p>
+                {COA_CHEMISTS.map(name => (
+                  <p key={name} className="font-script text-2xl text-brand-500 leading-snug">{name}</p>
+                ))}
               </div>
               <div>
-                <p className="font-script text-2xl text-brand-500">Dr. Levi Friedle</p>
-                <p className="text-xs text-neutral-400 mt-1">Quality Assurance</p>
+                <p className="text-xs text-neutral-400 mb-2 uppercase tracking-wider">{COA_MEDICAL_DIRECTOR.title}</p>
+                <p className="font-script text-2xl text-brand-500 leading-snug">{COA_MEDICAL_DIRECTOR.name}</p>
               </div>
             </div>
             <div className="coa-gold-divider mb-4" />
