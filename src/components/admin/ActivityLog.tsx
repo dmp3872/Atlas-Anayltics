@@ -1,12 +1,34 @@
 import { Clock, ArrowRight } from 'lucide-react';
-import { StatusHistoryEntry } from '../../lib/types';
-import { SUBMISSION_STATUS_LABELS } from '../../lib/submissionUtils';
 import { formatDateTime } from '../../lib/utils';
 
-export default function ActivityLog({ entries }: { entries: StatusHistoryEntry[] }) {
+export interface ActivityLogEntry {
+  id: string;
+  from_status?: string | null;
+  to_status: string;
+  note?: string | null;
+  created_at: string;
+}
+
+interface Props {
+  entries: ActivityLogEntry[];
+  /** Map status codes → display labels. Falls back to raw status string. */
+  labels?: Record<string, string>;
+}
+
+function labelFor(status: string, labels?: Record<string, string>): string {
+  if (!status) return '—';
+  if (labels?.[status]) return labels[status];
+  if (status.startsWith('payment:')) {
+    const p = status.slice('payment:'.length);
+    return labels?.[p] || `Payment: ${p}`;
+  }
+  return status.replace(/_/g, ' ');
+}
+
+export default function ActivityLog({ entries, labels }: Props) {
   if (entries.length === 0) {
     return (
-      <div className="text-sm text-slate-500 text-center py-6">
+      <div className="text-sm text-neutral-500 text-center py-6">
         No activity recorded yet.
       </div>
     );
@@ -20,24 +42,24 @@ export default function ActivityLog({ entries }: { entries: StatusHistoryEntry[]
             <div className="w-7 h-7 rounded-full bg-brand-50 border border-brand-200 flex items-center justify-center flex-shrink-0">
               <Clock size={12} className="text-brand-600" />
             </div>
-            {i < entries.length - 1 && <div className="w-px flex-1 bg-slate-200 mt-1" />}
+            {i < entries.length - 1 && <div className="w-px flex-1 bg-neutral-200 mt-1" />}
           </div>
           <div className="flex-1 min-w-0 pb-2">
             <div className="flex items-center gap-2 flex-wrap">
               {entry.from_status && (
                 <>
-                  <span className="text-xs text-slate-500">
-                    {SUBMISSION_STATUS_LABELS[entry.from_status]}
+                  <span className="text-xs text-neutral-500">
+                    {labelFor(entry.from_status, labels)}
                   </span>
-                  <ArrowRight size={12} className="text-slate-400" />
+                  <ArrowRight size={12} className="text-neutral-400" />
                 </>
               )}
               <span className="text-xs font-semibold text-brand-700">
-                {SUBMISSION_STATUS_LABELS[entry.to_status]}
+                {labelFor(entry.to_status, labels)}
               </span>
             </div>
-            {entry.note && <p className="text-sm text-slate-700 mt-0.5">{entry.note}</p>}
-            <p className="text-xs text-slate-400 mt-1">{formatDateTime(entry.created_at)}</p>
+            {entry.note && <p className="text-sm text-neutral-700 mt-0.5">{entry.note}</p>}
+            <p className="text-xs text-neutral-400 mt-1">{formatDateTime(entry.created_at)}</p>
           </div>
         </div>
       ))}

@@ -321,7 +321,7 @@ export default function AdminSubmissionDetail() {
 
         <div className="card p-6">
           <h2 className="font-semibold text-slate-900 mb-4">Activity Log</h2>
-          <ActivityLog entries={history} />
+          <ActivityLog entries={history} labels={SUBMISSION_STATUS_LABELS} />
         </div>
       </div>
     </AdminLayout>

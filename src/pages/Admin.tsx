@@ -3,15 +3,20 @@ import { CheckCircle, AlertCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { COA, Order, OrderSample, UserProfile, UserRole, LabPriority } from '../lib/types';
 import { normalizeLabPriority } from '../lib/labQueue';
+import { computeCoaContentHash } from '../lib/coaVerify';
+import { markOrderPaid } from '../lib/services/orderWorkflow';
+import { useAuth } from '../context/AuthContext';
 import AdminShell, { AdminSection } from '../components/admin/AdminShell';
 import AdminCommandCenter from '../components/admin/AdminCommandCenter';
 import AdminOrdersPanel from '../components/admin/AdminOrdersPanel';
 import AdminCoaRegistry from '../components/admin/AdminCoaRegistry';
 import AdminUsersPanel from '../components/admin/AdminUsersPanel';
 import OpsDashboard from '../components/admin/OpsDashboard';
+import LabManagerDashboard from '../components/admin/LabManagerDashboard';
 
 const SECTION_META: Record<AdminSection, { title: string; subtitle: string }> = {
   command: { title: 'Command Center', subtitle: 'Live lab status, alerts, and recent intake.' },
+  lab: { title: 'Lab Manager', subtitle: 'Chemist workload, turnaround, and COA control.' },
   operations: { title: 'Lab Analytics', subtitle: 'Intake trends, test volume, and turnaround.' },
   orders: { title: 'Orders & Priority', subtitle: 'Queue control — set priority for chemists.' },
   coas: { title: 'COA Registry', subtitle: 'All certificates across every workflow stage.' },
@@ -19,6 +24,7 @@ const SECTION_META: Record<AdminSection, { title: string; subtitle: string }> = 
 };
 
 export default function Admin() {
+  const { user } = useAuth();
   const [section, setSection] = useState<AdminSection>('command');
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [coas, setCoas] = useState<COA[]>([]);
@@ -28,6 +34,7 @@ export default function Admin() {
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [savingOrderId, setSavingOrderId] = useState<string | null>(null);
+  const [savingPaymentId, setSavingPaymentId] = useState<string | null>(null);
 
   async function loadAll() {
     setLoading(true);
@@ -45,6 +52,16 @@ export default function Admin() {
   }
 
   useEffect(() => { loadAll(); }, []);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel('admin-live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'order_samples' }, () => { loadAll(); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => { loadAll(); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'coas' }, () => { loadAll(); })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, []);
 
   async function changeRole(id: string, role: UserRole) {
     setSavingId(id);
@@ -75,9 +92,73 @@ export default function Admin() {
     setSavingOrderId(null);
   }
 
+  async function handleMarkPaid(orderId: string, opts?: { note?: string; waived?: boolean }) {
+    const order = orders.find(o => o.id === orderId);
+    if (!order) return;
+    setSavingPaymentId(orderId);
+    setMsg(null);
+    const { error, order: updated } = await markOrderPaid(order, {
+      note: opts?.note,
+      waived: opts?.waived,
+      changedBy: user?.id,
+    });
+    if (error) {
+      setMsg({ type: 'error', text: error.message });
+    } else {
+      if (updated) setOrders(prev => prev.map(o => (o.id === orderId ? updated : o)));
+      setMsg({ type: 'success', text: opts?.waived ? 'Payment waived.' : 'Payment confirmed.' });
+    }
+    setSavingPaymentId(null);
+  }
+
+  async function assignSample(sampleId: string, userId: string | null) {
+    const assigned_at = userId ? new Date().toISOString() : null;
+    setSamples(prev => prev.map(s => (s.id === sampleId ? { ...s, assigned_to: userId, assigned_at } : s)));
+    const { error } = await supabase.from('order_samples').update({ assigned_to: userId, assigned_at }).eq('id', sampleId);
+    if (error) {
+      setMsg({ type: 'error', text: error.message });
+      loadAll();
+    }
+  }
+
+  async function updateCoa(coaId: string, patch: Partial<COA>) {
+    setMsg(null);
+    const current = coas.find(c => c.id === coaId);
+    if (!current) return;
+
+    const merged = { ...current, ...patch };
+    const fullPatch: Partial<COA> = { ...patch };
+
+    const integrityFieldsChanged = ['sample_name', 'batch_number', 'purity_percent', 'panel_results'].some(
+      key => key in patch,
+    );
+    if (integrityFieldsChanged) {
+      fullPatch.content_hash = computeCoaContentHash({
+        sample_name: merged.sample_name,
+        batch_number: merged.batch_number,
+        purity_percent: merged.purity_percent,
+        panel_results: merged.panel_results,
+      });
+    }
+
+    const { error } = await supabase.from('coas').update(fullPatch).eq('id', coaId);
+    if (error) {
+      setMsg({ type: 'error', text: error.message });
+      return;
+    }
+    const updated = { ...merged, ...fullPatch } as COA;
+    setCoas(prev => prev.map(c => (c.id === coaId ? updated : c)));
+    setMsg({ type: 'success', text: 'Certificate updated.' });
+  }
+
   const normalizedOrders = useMemo(
     () => orders.map(o => ({ ...o, lab_priority: normalizeLabPriority(o.lab_priority) })),
     [orders],
+  );
+
+  const chemists = useMemo(
+    () => users.filter(u => u.role === 'chemist' || u.role === 'admin'),
+    [users],
   );
 
   const meta = SECTION_META[section];
@@ -111,6 +192,17 @@ export default function Admin() {
           />
         )}
 
+        {section === 'lab' && (
+          <LabManagerDashboard
+            samples={samples}
+            orders={normalizedOrders}
+            coas={coas}
+            chemists={chemists}
+            onRefresh={loadAll}
+            onAssignSample={assignSample}
+          />
+        )}
+
         {section === 'operations' && (
           <OpsDashboard samples={samples} orders={normalizedOrders} coas={coas} />
         )}
@@ -122,11 +214,13 @@ export default function Admin() {
             coas={coas}
             savingOrderId={savingOrderId}
             onSetPriority={setOrderPriority}
+            onMarkPaid={handleMarkPaid}
+            savingPaymentId={savingPaymentId}
           />
         )}
 
         {section === 'coas' && (
-          <AdminCoaRegistry coas={coas} />
+          <AdminCoaRegistry coas={coas} onSave={updateCoa} />
         )}
 
         {section === 'users' && (

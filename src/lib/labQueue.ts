@@ -3,7 +3,8 @@ import {
   ATLAS_PRO_PANEL, FULL_QC_PANEL, FENTANYL_OPTION_LABEL,
   INDIVIDUAL_TESTS, TestMode,
 } from './orderCatalog';
-import { parseSampleMetadata, orderSampleIncludesFentanyl, matchCoaForSample } from './coaPanels';
+import { parseSampleMetadata, orderSampleIncludesFentanyl, matchCoaForSample, hasIssuedCoaForSample } from './coaPanels';
+import { orderIsPayable } from './utils';
 
 export type { LabPriority };
 
@@ -126,6 +127,29 @@ export function testsLabelForSample(sample: OrderSample): string {
   return testsForSample(sample).join(', ');
 }
 
+/**
+ * True when a sample's metadata actually specifies what to test — a package
+ * mode (atlas_pro/full_qc), an individual mode with at least one test picked,
+ * or a non-empty tests_label that isn't the "Tests not specified" placeholder.
+ * Used to block sample creation and COA issuance without tests on record.
+ */
+export function sampleHasTestsSpecified(sample: Pick<OrderSample, 'metadata'>): boolean {
+  const meta = sample.metadata as Record<string, unknown> | null;
+  if (!meta) return false;
+
+  const mode = meta.test_mode as TestMode | undefined;
+  if (mode === 'atlas_pro' || mode === 'full_qc') return true;
+  if (mode === 'individual') {
+    const ids = Array.isArray(meta.individual_tests) ? meta.individual_tests : [];
+    if (ids.length > 0) return true;
+  }
+
+  const testsLabel = typeof meta.tests_label === 'string' ? meta.tests_label.trim() : '';
+  if (testsLabel && testsLabel !== 'Tests not specified') return true;
+
+  return false;
+}
+
 export interface QueueSampleItem {
   sample: OrderSample;
   order: Order;
@@ -137,6 +161,15 @@ export interface QueueSampleItem {
   ageHours: number;
   assigned_to?: string | null;
   assigned_at?: string | null;
+  overdue: boolean;
+  dueAt?: string | null;
+}
+
+/** Samples eligible for the chemist testing queue: paid + physically received. */
+export function sampleReadyForTesting(sample: OrderSample, order: Order): boolean {
+  if (!orderIsPayable(order.payment_status)) return false;
+  if (sample.status === 'awaiting_sample') return false;
+  return true;
 }
 
 export function buildQueueItems(
@@ -150,13 +183,23 @@ export function buildQueueItems(
   const items: QueueSampleItem[] = [];
 
   for (const sample of samples) {
-    const hasCoa = !!matchCoaForSample(sample, coas);
-    if (pendingOnly && (hasCoa || sample.status === 'complete')) continue;
-
     const order = orderMap.get(sample.order_id);
     if (!order) continue;
 
+    // Gate: unpaid / in-transit samples never appear in the testing queue.
+    if (!sampleReadyForTesting(sample, order)) continue;
+
+    // Queue visibility uses the strict sample_id-only check so fuzzy
+    // batch/name matches never hide a sample that's still awaiting its COA.
+    const issued = hasIssuedCoaForSample(sample, coas);
+    if (pendingOnly && (issued || sample.status === 'complete')) continue;
+
+    const hasCoa = issued || !!matchCoaForSample(sample, coas);
+
     const ageMs = Date.now() - new Date(sample.created_at).getTime();
+    const dueAt = order.due_at ?? null;
+    const overdue = !!dueAt && new Date(dueAt).getTime() < Date.now() && !issued && sample.status !== 'complete';
+
     items.push({
       sample,
       order,
@@ -168,6 +211,8 @@ export function buildQueueItems(
       ageHours: Math.max(0, ageMs / (1000 * 60 * 60)),
       assigned_to: sample.assigned_to,
       assigned_at: sample.assigned_at,
+      overdue,
+      dueAt,
     });
   }
 

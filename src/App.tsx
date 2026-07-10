@@ -21,12 +21,7 @@ import Roadmap from './pages/Roadmap';
 import Lab from './pages/Lab';
 import Admin from './pages/Admin';
 import VerifyPortal from './pages/VerifyPortal';
-import SubmissionList from './pages/submissions/SubmissionList';
-import SubmissionNew from './pages/submissions/SubmissionNew';
-import SubmissionDetail from './pages/submissions/SubmissionDetail';
-import SubmissionConfirm from './pages/submissions/SubmissionConfirm';
-import AdminDashboard from './pages/admin/AdminDashboard';
-import AdminSubmissionDetail from './pages/admin/AdminSubmissionDetail';
+import AdminOrderDetail from './pages/admin/AdminOrderDetail';
 
 function PublicLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -78,11 +73,8 @@ export default function App() {
           <Route path="/dashboard/coas" element={<RoleRoute allow={['client', 'admin']}><Portal /></RoleRoute>} />
           <Route path="/dashboard/api" element={<RoleRoute allow={['client', 'admin']}><APIKeys /></RoleRoute>} />
 
-          {/* Kyle submission workflow — client */}
-          <Route path="/dashboard/submissions" element={<RoleRoute allow={['client', 'admin']}><SubmissionList /></RoleRoute>} />
-          <Route path="/dashboard/submissions/new" element={<RoleRoute allow={['client', 'admin']}><SubmissionNew /></RoleRoute>} />
-          <Route path="/dashboard/submissions/:id" element={<RoleRoute allow={['client', 'admin']}><SubmissionDetail /></RoleRoute>} />
-          <Route path="/dashboard/submissions/:id/confirm" element={<RoleRoute allow={['client', 'admin']}><SubmissionConfirm /></RoleRoute>} />
+          {/* Kyle submission workflow — client (superseded by unified orders) */}
+          <Route path="/dashboard/submissions/*" element={<Navigate to="/dashboard/orders" replace />} />
 
           {/* Chemist lab console */}
           <Route path="/lab" element={<RoleRoute allow={['chemist', 'admin']}><Lab /></RoleRoute>} />
@@ -90,10 +82,13 @@ export default function App() {
           {/* Verifier portal */}
           <Route path="/verify-portal" element={<RoleRoute allow={['verifier', 'admin']}><VerifyPortal /></RoleRoute>} />
 
-          {/* Admin console + Kyle submission ops */}
+          {/* Admin console */}
           <Route path="/admin" element={<RoleRoute allow={['admin']}><Admin /></RoleRoute>} />
-          <Route path="/admin/submissions" element={<RoleRoute allow={['admin', 'reviewer']}><AdminDashboard /></RoleRoute>} />
-          <Route path="/admin/submissions/:id" element={<RoleRoute allow={['admin', 'reviewer']}><AdminSubmissionDetail /></RoleRoute>} />
+          <Route path="/admin/orders/:id" element={<RoleRoute allow={['admin']}><AdminOrderDetail /></RoleRoute>} />
+
+          {/* Kyle submission ops — superseded by unified orders */}
+          <Route path="/admin/submissions" element={<Navigate to="/admin" replace />} />
+          <Route path="/admin/submissions/:id" element={<Navigate to="/admin" replace />} />
 
           <Route path="/account" element={<Navigate to="/dashboard?tab=account" replace />} />
           <Route path="/support" element={<Support />} />

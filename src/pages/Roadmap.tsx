@@ -93,7 +93,7 @@ export default function Roadmap() {
               <a href="mailto:labs@accumark.io?subject=Feature Request" className="btn-primary gap-2 text-sm">
                 <ArrowRight size={15} /> Email Us
               </a>
-              <Link to="/order" className="inline-flex items-center justify-center gap-2 px-5 py-2.5 border border-neutral-700 text-slate-300 font-medium rounded-lg hover:bg-slate-800 transition-colors text-sm">
+              <Link to="/order-new" className="inline-flex items-center justify-center gap-2 px-5 py-2.5 border border-neutral-700 text-slate-300 font-medium rounded-lg hover:bg-slate-800 transition-colors text-sm">
                 Submit Samples
               </Link>
             </div>

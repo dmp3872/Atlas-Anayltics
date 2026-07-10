@@ -1,13 +1,14 @@
 import { Link } from 'react-router-dom';
 import {
   Activity, BarChart3, ClipboardList, ExternalLink, FlaskConical,
-  LayoutGrid, LogOut, Shield, ShoppingCart, Users,
+  LayoutGrid, LogOut, Shield, Users,
 } from 'lucide-react';
 import AtlasLogo from '../brand/AtlasLogo';
 import { useAuth } from '../../context/AuthContext';
 
 export type AdminSection =
   | 'command'
+  | 'lab'
   | 'operations'
   | 'orders'
   | 'coas'
@@ -22,6 +23,7 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { id: 'command', label: 'Command Center', desc: 'Live lab status', icon: LayoutGrid },
+  { id: 'lab', label: 'Lab Manager', desc: 'Chemist workload & COA control', icon: FlaskConical },
   { id: 'operations', label: 'Lab Analytics', desc: 'Intake & turnaround', icon: BarChart3 },
   { id: 'orders', label: 'Orders & Priority', desc: 'Queue control', icon: ClipboardList },
   { id: 'coas', label: 'COA Registry', desc: 'All certificates', icon: Shield },
@@ -30,7 +32,6 @@ const NAV: NavItem[] = [
 
 const EXTERNAL = [
   { to: '/lab', label: 'Chemist Console', icon: FlaskConical },
-  { to: '/admin/submissions', label: 'Submissions Pipeline', icon: ShoppingCart },
   { to: '/verify-portal', label: 'Verification Portal', icon: Shield },
 ];
 

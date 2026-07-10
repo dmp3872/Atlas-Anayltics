@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import {
-  FlaskConical, Shield, Zap, CheckCircle, ArrowRight, Lock, Globe,
+  Shield, Zap, CheckCircle, ArrowRight, Lock, Globe,
   BarChart3, Star, ChevronRight, Clock, Package, Award, FileCheck
 } from 'lucide-react';
 
@@ -89,7 +89,7 @@ export default function Landing() {
               Third-party HPLC, MS, and QC testing with tamper-proof digital COAs. Flat pricing — no minimums, no contracts.
             </p>
             <div className="mt-8 flex flex-col sm:flex-row gap-3">
-              <Link to="/order" className="btn-primary text-base px-6 py-3 gap-2.5">
+              <Link to="/order-new" className="btn-primary text-base px-6 py-3 gap-2.5">
                 Submit Samples <ArrowRight size={18} />
               </Link>
               <Link to="/pricing" className="btn-outline-gold text-base px-6 py-3 border-neutral-700 text-neutral-300 hover:bg-neutral-900 hover:text-white">
@@ -171,7 +171,7 @@ export default function Landing() {
                 ))}
               </div>
               <div className="mt-8">
-                <Link to="/order" className="btn-secondary gap-2">
+                <Link to="/order-new" className="btn-secondary gap-2">
                   Get Started <ArrowRight size={16} />
                 </Link>
               </div>
@@ -299,7 +299,7 @@ export default function Landing() {
           <h2 className="text-3xl sm:text-4xl font-bold text-white mb-4">Ready to get started?</h2>
           <p className="text-lg text-slate-400 mb-8">No account required to get a quote. Your first order is 50% off — automatically applied at checkout.</p>
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
-            <Link to="/order" className="btn-primary text-base px-7 py-3 gap-2">
+            <Link to="/order-new" className="btn-primary text-base px-7 py-3 gap-2">
               Submit Your First Samples <ArrowRight size={18} />
             </Link>
             <Link to="/verify" className="inline-flex items-center justify-center gap-2 px-7 py-3 border border-neutral-700 text-slate-300 font-medium rounded-lg hover:bg-slate-800 transition-colors text-base">

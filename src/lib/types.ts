@@ -14,8 +14,24 @@ export type SubmissionStatus =
 
 export type SubmissionUrgency = 'standard' | 'rush';
 
-export type OrderStatus = 'received' | 'processing' | 'analyzing' | 'in_review' | 'complete' | 'cancelled';
-export type SampleStatus = 'received' | 'analyzing' | 'in_review' | 'complete';
+export type PaymentStatus = 'unpaid' | 'paid' | 'waived' | 'refunded';
+
+export type OrderStatus =
+  | 'received'
+  | 'awaiting_sample'
+  | 'processing'
+  | 'analyzing'
+  | 'in_review'
+  | 'complete'
+  | 'cancelled';
+
+export type SampleStatus =
+  | 'awaiting_sample'
+  | 'received'
+  | 'analyzing'
+  | 'in_review'
+  | 'complete';
+
 export type COAResult = 'pass' | 'fail' | 'pending';
 export type SampleType = 'single' | 'blend';
 
@@ -47,6 +63,11 @@ export interface Order {
   prepaid_shipping: boolean;
   shipping_label_id?: string;
   payment_method?: 'card' | 'crypto';
+  payment_status?: PaymentStatus;
+  paid_at?: string | null;
+  paid_by?: string | null;
+  payment_note?: string;
+  due_at?: string | null;
   company_name: string;
   created_at: string;
   updated_at: string;
@@ -68,6 +89,7 @@ export interface OrderSample {
   assigned_to?: string | null;
   assigned_at?: string | null;
   lab_priority?: LabPriority | null;
+  accession_number?: string | null;
   created_at: string;
 }
 
@@ -96,10 +118,23 @@ export interface COA {
   signature: string;
   pdf_url: string;
   seal_serial?: string;
+  accession_number?: string;
   coa_workflow_stage?: CoaWorkflowStage;
   verified_at?: string | null;
+  verified_by?: string | null;
   published_at?: string | null;
   issued_at: string;
+  created_at: string;
+}
+
+export interface OrderStatusHistoryEntry {
+  id: string;
+  order_id: string;
+  sample_id?: string | null;
+  from_status: string | null;
+  to_status: string;
+  changed_by?: string | null;
+  note?: string;
   created_at: string;
 }
 
@@ -116,6 +151,7 @@ export interface ChromatogramData {
   retention_time?: number;
   peak_area?: number;
   points?: { x: number; y: number }[];
+  vial_size?: string;
 }
 
 export interface ApiKey {

@@ -12,6 +12,7 @@ export interface OrderSampleMetadata {
   blend_label?: string;
   tests_label?: string;
   test_mode?: string;
+  conformity_extra?: number;
   include_fentanyl?: boolean;
 }
 
@@ -62,6 +63,9 @@ export function clientSubmittedLabel(
   return name || company || 'Unknown client';
 }
 
+/** Canonical panel name for the combined sample-to-sample conformity row. */
+export const CONFORMITY_PANEL_NAME = 'Conformity (Sample-to-Sample)';
+
 // Canonical QC sections shown on a certificate when a sample doesn't have an
 // explicit panel list (matches the 8-section full QC panel used in seed COAs).
 export const QC_PANELS = [
@@ -72,7 +76,7 @@ export const QC_PANELS = [
   'Heavy Metals (ICP-MS)',
   'Sterility (PCR)',
   'Microbial Screen',
-  'Conformity (Sample-to-Sample)',
+  CONFORMITY_PANEL_NAME,
 ];
 
 // Resolve the list of test section names ordered for a sample. Prefers explicit
@@ -88,24 +92,39 @@ export function expectedPanelNames(sample: OrderSample, panels: TestPanel[]): st
   return QC_PANELS;
 }
 
+// Strict check used by queue logic: only a direct sample_id link counts as
+// "issued" for a sample. Fuzzy batch/name matches are too easy to collide
+// across unrelated samples and must never hide a queue item.
+export function hasIssuedCoaForSample(sample: OrderSample, coas: COA[]): boolean {
+  return coas.some(c => c.sample_id === sample.id);
+}
+
 // Find the certificate for a sample. Prefers the direct sample_id link, then
 // falls back to batch number, then sample/display name — because some COAs are
-// created without a sample_id link.
+// created without a sample_id link. The fuzzy fallback is always scoped to the
+// same user_id (and narrowed further to the same order_id when possible) to
+// avoid matching another client's identically-named sample or batch number.
 export function matchCoaForSample(sample: OrderSample, coas: COA[]): COA | undefined {
   const direct = coas.find(c => c.sample_id === sample.id);
   if (direct) return direct;
 
+  const sameUser = coas.filter(c => c.user_id === sample.user_id);
+  if (sameUser.length === 0) return undefined;
+
+  const sameOrder = sample.order_id ? sameUser.filter(c => c.order_id === sample.order_id) : [];
+  const pool = sameOrder.length ? sameOrder : sameUser;
+
   const meta = sample.metadata as { batch_number?: string } | null;
   const batch = meta?.batch_number?.trim();
   if (batch) {
-    const byBatch = coas.find(c => (c.batch_number || '').trim() === batch);
+    const byBatch = pool.find(c => (c.batch_number || '').trim() === batch);
     if (byBatch) return byBatch;
   }
 
   const names = [sample.display_name, sample.sample_name]
     .filter(Boolean)
     .map(n => n.toLowerCase().trim());
-  return coas.find(c =>
+  return pool.find(c =>
     names.includes((c.display_name || '').toLowerCase().trim()) ||
     names.includes((c.sample_name || '').toLowerCase().trim())
   );

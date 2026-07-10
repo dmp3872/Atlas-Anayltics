@@ -1,11 +1,16 @@
 import { useMemo, useState } from 'react';
-import { AlertTriangle, Zap } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { AlertTriangle, CheckCircle2, Clock, Zap } from 'lucide-react';
 import { COA, Order, OrderSample, LabPriority } from '../../lib/types';
-import { formatDateTime, ORDER_STATUS_LABELS } from '../../lib/utils';
+import {
+  formatDateTime, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS, normalizePaymentStatus,
+} from '../../lib/utils';
 import {
   LAB_PRIORITIES, LAB_PRIORITY_LABELS, LAB_PRIORITY_STYLES, normalizeLabPriority,
 } from '../../lib/labQueue';
-import { matchCoaForSample } from '../../lib/coaPanels';
+import { hasIssuedCoaForSample } from '../../lib/coaPanels';
+
+type OrdersFilter = 'active' | 'unpaid' | 'awaiting_sample' | 'overdue' | 'urgent' | 'rush' | 'all';
 
 interface Props {
   orders: Order[];
@@ -13,6 +18,8 @@ interface Props {
   coas?: COA[];
   savingOrderId?: string | null;
   onSetPriority: (orderId: string, priority: LabPriority) => void;
+  onMarkPaid?: (orderId: string, opts?: { note?: string; waived?: boolean }) => void;
+  savingPaymentId?: string | null;
 }
 
 interface OrderQueueStats {
@@ -21,8 +28,16 @@ interface OrderQueueStats {
   oldestPendingHours: number;
 }
 
-export default function AdminOrdersPanel({ orders, samples = [], coas = [], savingOrderId, onSetPriority }: Props) {
-  const [filter, setFilter] = useState<'active' | 'all' | 'urgent' | 'rush'>('active');
+function isOverdue(order: Order): boolean {
+  if (!order.due_at) return false;
+  if (order.status === 'complete' || order.status === 'cancelled') return false;
+  return new Date(order.due_at).getTime() < Date.now();
+}
+
+export default function AdminOrdersPanel({
+  orders, samples = [], coas = [], savingOrderId, onSetPriority, onMarkPaid, savingPaymentId,
+}: Props) {
+  const [filter, setFilter] = useState<OrdersFilter>('active');
   const [search, setSearch] = useState('');
 
   const statsByOrder = useMemo(() => {
@@ -30,8 +45,9 @@ export default function AdminOrdersPanel({ orders, samples = [], coas = [], savi
     for (const sample of samples) {
       const stats = map.get(sample.order_id) ?? { sampleCount: 0, pendingCount: 0, oldestPendingHours: 0 };
       stats.sampleCount += 1;
-      const hasCoa = !!matchCoaForSample(sample, coas);
-      const isPending = sample.status !== 'complete' && !hasCoa;
+      // Strict sample_id match — matches the queue's pending logic so a fuzzy
+      // batch/name hit elsewhere never hides a still-pending sample here.
+      const isPending = sample.status !== 'complete' && !hasIssuedCoaForSample(sample, coas);
       if (isPending) {
         const ageHours = Math.max(0, (Date.now() - new Date(sample.created_at).getTime()) / (1000 * 60 * 60));
         stats.pendingCount += 1;
@@ -45,6 +61,9 @@ export default function AdminOrdersPanel({ orders, samples = [], coas = [], savi
   const filtered = useMemo(() => {
     let list = [...orders];
     if (filter === 'active') list = list.filter(o => o.status !== 'complete' && o.status !== 'cancelled');
+    if (filter === 'unpaid') list = list.filter(o => normalizePaymentStatus(o.payment_status) === 'unpaid');
+    if (filter === 'awaiting_sample') list = list.filter(o => o.status === 'awaiting_sample');
+    if (filter === 'overdue') list = list.filter(o => isOverdue(o));
     if (filter === 'urgent') list = list.filter(o => normalizeLabPriority(o.lab_priority) === 'urgent');
     if (filter === 'rush') list = list.filter(o => o.rush_processing);
     const q = search.trim().toLowerCase();
@@ -65,6 +84,16 @@ export default function AdminOrdersPanel({ orders, samples = [], coas = [], savi
       .sort((a, b) => b.stats.oldestPendingHours - a.stats.oldestPendingHours)
       .slice(0, 5);
   }, [orders, statsByOrder]);
+
+  const FILTERS: { id: OrdersFilter; label: string }[] = [
+    { id: 'active', label: 'Active' },
+    { id: 'unpaid', label: 'Unpaid' },
+    { id: 'awaiting_sample', label: 'Awaiting Sample' },
+    { id: 'overdue', label: 'Overdue' },
+    { id: 'urgent', label: 'Urgent' },
+    { id: 'rush', label: 'Rush' },
+    { id: 'all', label: 'All' },
+  ];
 
   return (
     <div className="space-y-4">
@@ -122,16 +151,16 @@ export default function AdminOrdersPanel({ orders, samples = [], coas = [], savi
           Set order priority here — chemists see a numbered, color-coded queue in the Lab Console. Rush orders auto-start as High.
         </p>
         <div className="flex flex-wrap gap-2">
-          {(['active', 'urgent', 'rush', 'all'] as const).map(f => (
+          {FILTERS.map(f => (
             <button
-              key={f}
+              key={f.id}
               type="button"
-              onClick={() => setFilter(f)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md border capitalize ${
-                filter === f ? 'bg-black text-white border-black' : 'border-atlas-border'
+              onClick={() => setFilter(f.id)}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md border ${
+                filter === f.id ? 'bg-black text-white border-black' : 'border-atlas-border'
               }`}
             >
-              {f === 'active' ? 'Active' : f}
+              {f.label}
             </button>
           ))}
         </div>
@@ -152,6 +181,8 @@ export default function AdminOrdersPanel({ orders, samples = [], coas = [], savi
                 <th className="text-left px-5 py-3">Order</th>
                 <th className="text-left px-5 py-3">Company</th>
                 <th className="text-left px-5 py-3">Status</th>
+                <th className="text-left px-5 py-3">Payment</th>
+                <th className="text-left px-5 py-3">Due</th>
                 <th className="text-left px-5 py-3">Rush</th>
                 <th className="text-left px-5 py-3">Samples</th>
                 <th className="text-left px-5 py-3">Pending</th>
@@ -162,16 +193,56 @@ export default function AdminOrdersPanel({ orders, samples = [], coas = [], savi
             </thead>
             <tbody className="divide-y divide-atlas-border">
               {filtered.length === 0 ? (
-                <tr><td colSpan={9} className="px-5 py-8 text-center text-neutral-500">No orders match this filter.</td></tr>
+                <tr><td colSpan={11} className="px-5 py-8 text-center text-neutral-500">No orders match this filter.</td></tr>
               ) : filtered.map(order => {
                 const priority = normalizeLabPriority(order.lab_priority);
                 const styles = LAB_PRIORITY_STYLES[priority];
                 const stats = statsByOrder.get(order.id);
+                const payment = normalizePaymentStatus(order.payment_status);
+                const paid = payment === 'paid' || payment === 'waived';
+                const overdue = isOverdue(order);
                 return (
                   <tr key={order.id} className={`hover:bg-neutral-50 ${styles.bg}`}>
-                    <td className="px-5 py-3 font-semibold text-black">{order.order_number}</td>
+                    <td className="px-5 py-3 font-semibold text-black">
+                      <Link to={`/admin/orders/${order.id}`} className="hover:text-brand-600 hover:underline">
+                        {order.order_number}
+                      </Link>
+                    </td>
                     <td className="px-5 py-3 text-neutral-600">{order.company_name || '—'}</td>
                     <td className="px-5 py-3 text-neutral-600">{ORDER_STATUS_LABELS[order.status]}</td>
+                    <td className="px-5 py-3">
+                      <div className="flex items-center gap-1.5">
+                        <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border flex items-center gap-1 w-fit ${
+                          paid
+                            ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                            : 'bg-amber-50 text-amber-900 border-amber-200'
+                        }`}>
+                          {paid && <CheckCircle2 size={10} />}
+                          {PAYMENT_STATUS_LABELS[payment]}
+                        </span>
+                        {!paid && onMarkPaid && (
+                          <button
+                            type="button"
+                            disabled={savingPaymentId === order.id}
+                            onClick={() => onMarkPaid(order.id)}
+                            className="px-2 py-0.5 text-[10px] font-bold uppercase rounded-md border bg-white text-neutral-700 border-atlas-border hover:bg-neutral-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            Mark Paid
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-5 py-3 whitespace-nowrap">
+                      {order.due_at ? (
+                        <span className={`text-xs flex items-center gap-1 ${overdue ? 'text-red-700 font-semibold' : 'text-neutral-500'}`}>
+                          {overdue && <AlertTriangle size={11} />}
+                          {!overdue && <Clock size={11} className="text-neutral-400" />}
+                          {formatDateTime(order.due_at)}
+                        </span>
+                      ) : (
+                        <span className="text-neutral-400">—</span>
+                      )}
+                    </td>
                     <td className="px-5 py-3">
                       {order.rush_processing ? (
                         <span className="text-[10px] font-bold uppercase text-purple-700 bg-purple-50 px-2 py-0.5 rounded-full border border-purple-200 flex items-center gap-0.5 w-fit">

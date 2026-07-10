@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import {
-  Shield, CheckCircle, XCircle, Clock, Download,
+  Shield, CheckCircle, XCircle, Download,
   ArrowLeft, Copy, Check, Droplets, Boxes, AlertTriangle,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
@@ -9,6 +9,7 @@ import { COA, PanelResult } from '../lib/types';
 import { COA_CHEMISTS, COA_MEDICAL_DIRECTOR } from '../lib/coaSignatories';
 import { formatDateTime } from '../lib/utils';
 import { verifyCoaIntegrity } from '../lib/coaVerify';
+import { getPanelResult, VIAL_SIZE_OPTIONS } from '../lib/labCoaForm';
 import { downloadCoaPdf } from '../lib/coaPdf';
 import { useAuth } from '../context/AuthContext';
 import Header from '../components/layout/Header';
@@ -73,6 +74,8 @@ export default function COADetail() {
       .then(async ({ data }) => {
         if (!data) { setNotFound(true); setLoading(false); return; }
         setCoa(data);
+        const chromVialSize = data.chromatogram_data?.vial_size;
+        if (chromVialSize) setVialSize(chromVialSize);
         const { data: companies } = await supabase
           .from('companies')
           .select('chromatograph_background')
@@ -117,9 +120,18 @@ export default function COADetail() {
   const companyLogo = coa.company_logo || (isOwner ? profile?.company_logo : '') || '';
   const integrity = verifyCoaIntegrity(coa);
 
+  // Net Content / Net Purity may hold comma-separated multi-peptide or
+  // multi-vial conformity values (e.g. "10 mg, 10.1 mg, 10.2 mg") — read them
+  // straight from panel_results rather than deriving from purity_percent.
+  const netContentResult = getPanelResult(panelResults, ['Net Content', 'Net Content (Weight)'])?.result?.trim();
+  const netPurityResult = getPanelResult(panelResults, ['Net Purity', 'Purity & Quantitation (HPLC)'])?.result?.trim();
+  const netContentDisplay = netContentResult || '—';
+  const netPurityDisplay = netPurityResult || (coa.purity_percent != null ? `${coa.purity_percent}%` : '—');
+
   const infoFields = [
     { label: 'Client', value: coa.company_name || '—' },
     { label: 'Sample Code', value: coa.slug },
+    ...(coa.accession_number ? [{ label: 'Accession', value: coa.accession_number }] : []),
     { label: 'Sample Name', value: coa.sample_name },
     { label: 'Display Name', value: coa.display_name || coa.sample_name },
     { label: 'Batch Number', value: coa.batch_number || '—' },
@@ -183,8 +195,8 @@ export default function COADetail() {
                 <Boxes size={24} className="text-brand-500 flex-shrink-0" strokeWidth={1.5} />
                 <div>
                   <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">Net Peptide Content</p>
-                  <p className="text-3xl font-bold text-black mt-1 tabular-nums">
-                    {coa.purity_percent ? `${(coa.purity_percent * 0.1).toFixed(1)} mg` : '—'}
+                  <p className="text-2xl font-bold text-black mt-1 tabular-nums break-words">
+                    {netContentDisplay}
                   </p>
                   <p className="text-xs text-atlas-success font-semibold mt-1 uppercase">Conforms</p>
                 </div>
@@ -195,7 +207,7 @@ export default function COADetail() {
                 <Droplets size={24} className="text-brand-500 flex-shrink-0" strokeWidth={1.5} />
                 <div>
                   <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">Purity (HPLC)</p>
-                  <p className="text-3xl font-bold text-black mt-1 tabular-nums">{coa.purity_percent ?? 98.7}%</p>
+                  <p className="text-2xl font-bold text-black mt-1 tabular-nums break-words">{netPurityDisplay}</p>
                   <p className="text-xs text-atlas-success font-semibold mt-1 uppercase">Measured</p>
                 </div>
               </div>
@@ -205,7 +217,7 @@ export default function COADetail() {
           <div className="mb-6 no-print">
             <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 mb-2">Vial Size</p>
             <div className="flex gap-2">
-              {['3ml', '5ml', '10ml'].map(size => (
+              {VIAL_SIZE_OPTIONS.map(size => (
                 <button key={size} onClick={() => setVialSize(size)} className={`coa-vial-btn ${vialSize === size ? 'coa-vial-btn-active' : ''}`}>{size}</button>
               ))}
             </div>

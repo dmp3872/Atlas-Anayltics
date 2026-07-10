@@ -1,4 +1,4 @@
-import { OrderStatus, SampleStatus } from './types';
+import { OrderStatus, PaymentStatus, SampleStatus } from './types';
 
 export function formatCurrency(amount: number): string {
   return new Intl.NumberFormat('en-US', {
@@ -26,31 +26,64 @@ export function formatDateTime(dateString: string): string {
 }
 
 export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
-  received: 'Received',
-  processing: 'Processing',
-  analyzing: 'Analyzing',
-  in_review: 'In Review',
+  received: 'Order confirmed',
+  awaiting_sample: 'Awaiting sample',
+  processing: 'Sample received',
+  analyzing: 'In testing',
+  in_review: 'In review',
   complete: 'Complete',
   cancelled: 'Cancelled',
 };
 
 export const SAMPLE_STATUS_LABELS: Record<SampleStatus, string> = {
+  awaiting_sample: 'Awaiting sample',
   received: 'Received',
   analyzing: 'Analyzing',
   in_review: 'In Review',
   complete: 'Complete',
 };
 
+export const PAYMENT_STATUS_LABELS: Record<PaymentStatus, string> = {
+  unpaid: 'Unpaid',
+  paid: 'Paid',
+  waived: 'Waived',
+  refunded: 'Refunded',
+};
+
+/** Client-visible pipeline (excludes cancelled). */
 export const ORDER_STATUS_STEPS: OrderStatus[] = [
-  'received',
+  'awaiting_sample',
   'processing',
   'analyzing',
   'in_review',
   'complete',
 ];
 
+/** Standard TAT days from physical receipt → due_at. */
+export const STANDARD_TAT_DAYS = 7;
+export const RUSH_TAT_DAYS = 3;
+
 export function getStatusStep(status: OrderStatus): number {
-  return ORDER_STATUS_STEPS.indexOf(status);
+  if (status === 'received') return 0;
+  const idx = ORDER_STATUS_STEPS.indexOf(status);
+  return idx >= 0 ? idx : 0;
+}
+
+export function computeDueAt(from: Date, rush: boolean): string {
+  const days = rush ? RUSH_TAT_DAYS : STANDARD_TAT_DAYS;
+  const d = new Date(from);
+  d.setDate(d.getDate() + days);
+  return d.toISOString();
+}
+
+export function normalizePaymentStatus(value: unknown): PaymentStatus {
+  if (value === 'paid' || value === 'waived' || value === 'refunded' || value === 'unpaid') return value;
+  return 'unpaid';
+}
+
+export function orderIsPayable(status: PaymentStatus | undefined | null): boolean {
+  const p = normalizePaymentStatus(status);
+  return p === 'paid' || p === 'waived';
 }
 
 export function generateOrderNumber(): string {
@@ -58,6 +91,14 @@ export function generateOrderNumber(): string {
   const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
   const rand = Math.floor(Math.random() * 9000 + 1000);
   return `ATL-${dateStr}-${rand}`;
+}
+
+/** Order number for lab-initiated intake (staff adding a sample directly). */
+export function generateLabOrderNumber(): string {
+  const date = new Date();
+  const dateStr = date.toISOString().slice(0, 10).replace(/-/g, '');
+  const rand = Math.floor(Math.random() * 9000 + 1000);
+  return `LAB-${dateStr}-${rand}`;
 }
 
 export function hashContent(content: string): string {

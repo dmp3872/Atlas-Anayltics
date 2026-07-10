@@ -2,17 +2,17 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   FlaskConical, Plus, Trash2, CheckCircle, AlertCircle, ClipboardList,
-  ArrowRight, RefreshCw,
+  RefreshCw,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { COA, LabPriority, Order, OrderSample, SampleStatus, UserProfile } from '../lib/types';
-import { SAMPLE_STATUS_LABELS } from '../lib/utils';
 import { computeCoaContentHash } from '../lib/coaVerify';
-import { notifyCoaReady } from '../lib/notifications';
-import { matchCoaForSample, clientSubmittedLabel, parseSampleMetadata } from '../lib/coaPanels';
+import { notifyCoaReady, notifyOrderUpdate } from '../lib/notifications';
+import { clientSubmittedLabel, parseSampleMetadata } from '../lib/coaPanels';
 import {
   EMPTY_LAB_RESULTS, LabCoaResults, VIAL_SIZE_OPTIONS, VialSizeOption,
   HEAVY_METAL_NAMES, buildLabResultsFromSample, labResultsToPanelResults,
+  joinConformityMg, joinConformityPurity,
   parsePurityPercent, parseMolecularWeight, lookupCas, casForSampleName,
 } from '../lib/labCoaForm';
 import { COA_WORKFLOW_LABELS, coaWorkflowStage, buildWorkflowStagePatch, CoaWorkflowStage } from '../lib/coaWorkflow';
@@ -20,22 +20,24 @@ import CoaWorkflowBoard from '../components/lab/CoaWorkflowBoard';
 import CompanyFilterSearch from '../components/lab/CompanyFilterSearch';
 import TestingQueuePanel from '../components/lab/TestingQueuePanel';
 import QueueFilters, { QueueFilterValues } from '../components/lab/QueueFilters';
-import { buildQueueItems, filterQueueItems, normalizeLabPriority } from '../lib/labQueue';
+import { buildQueueItems, filterQueueItems, normalizeLabPriority, sampleHasTestsSpecified } from '../lib/labQueue';
+import { setSampleStatus } from '../lib/services/orderWorkflow';
+import LabSampleIntake from '../components/lab/LabSampleIntake';
+import ReceivingDesk from '../components/lab/ReceivingDesk';
 import StaffHeader from '../components/layout/StaffHeader';
 import { useAuth } from '../context/AuthContext';
 
 type Message = { type: 'success' | 'error'; text: string; slug?: string } | null;
-type LabTab = 'queue' | 'issue' | 'workflow';
+type LabTab = 'receive' | 'queue' | 'intake' | 'issue' | 'workflow';
 
 const BLANK = {
   clientId: '', sampleId: '', orderId: '',
   sampleName: '', displayName: '', companyName: '',
   batchNumber: '', casNumber: '', vialSize: '3ml' as VialSizeOption,
   overallResult: 'pass' as COA['overall_result'],
+  accessionNumber: '', sealSerial: '',
 };
 
-
-const SAMPLE_STATUSES: SampleStatus[] = ['received', 'analyzing', 'in_review', 'complete'];
 
 const QUEUE_FILTERS_BLANK: QueueFilterValues = {
   company: '', priority: 'all', assignment: 'all', search: '',
@@ -46,6 +48,7 @@ export default function Lab() {
   const isAdmin = profile?.role === 'admin';
   const [tab, setTab] = useState<LabTab>('queue');
   const [clients, setClients] = useState<UserProfile[]>([]);
+  const [allProfiles, setAllProfiles] = useState<UserProfile[]>([]);
   const [chemists, setChemists] = useState<UserProfile[]>([]);
   const [samples, setSamples] = useState<OrderSample[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
@@ -72,6 +75,7 @@ export default function Lab() {
       supabase.from('coas').select('*').order('issued_at', { ascending: false }),
     ]);
     if (p.data) {
+      setAllProfiles(p.data);
       setClients(p.data.filter(u => (u.role ?? 'client') === 'client'));
       setChemists(p.data.filter(u => u.role === 'chemist' || u.role === 'admin'));
     }
@@ -93,10 +97,19 @@ export default function Lab() {
     return () => { supabase.removeChannel(channel); };
   }, []);
 
-  const pendingSamples = useMemo(
-    () => samples.filter(s => !matchCoaForSample(s, coas)),
-    [samples, coas],
+  const normalizedOrders = useMemo(
+    () => orders.map(o => ({ ...o, lab_priority: normalizeLabPriority(o.lab_priority) })),
+    [orders],
   );
+
+  // Single source of truth for "awaiting COA" — used for the queue tab badge,
+  // the Awaiting work button, the Issue COA sidebar, and the Workflow lane.
+  const pendingQueueItems = useMemo(
+    () => buildQueueItems(samples, normalizedOrders, coas, true),
+    [samples, normalizedOrders, coas],
+  );
+  const pendingQueueCount = pendingQueueItems.length;
+  const pendingSamples = useMemo(() => pendingQueueItems.map(i => i.sample), [pendingQueueItems]);
 
   const workflowActiveCount = useMemo(
     () => coas.filter(c => coaWorkflowStage(c) !== 'published').length,
@@ -109,8 +122,12 @@ export default function Lab() {
       const name = coa.company_name?.trim();
       if (name) names.add(name);
     }
+    for (const item of pendingQueueItems) {
+      const name = item.order.company_name?.trim();
+      if (name) names.add(name);
+    }
     return [...names].sort((a, b) => a.localeCompare(b));
-  }, [coas]);
+  }, [coas, pendingQueueItems]);
 
   const filteredWorkflowCoas = useMemo(() => {
     const q = workflowCompanyFilter.trim().toLowerCase();
@@ -118,24 +135,15 @@ export default function Lab() {
     return coas.filter(c => (c.company_name ?? '').toLowerCase().includes(q));
   }, [coas, workflowCompanyFilter]);
 
-  const pendingQueueCount = useMemo(
-    () => buildQueueItems(
-      samples,
-      orders.map(o => ({ ...o, lab_priority: normalizeLabPriority(o.lab_priority) })),
-      coas,
-      true,
-    ).length,
-    [samples, orders, coas],
-  );
+  const filteredPendingQueueItems = useMemo(() => {
+    const q = workflowCompanyFilter.trim().toLowerCase();
+    if (!q) return pendingQueueItems;
+    return pendingQueueItems.filter(item => (item.order.company_name ?? '').toLowerCase().includes(q));
+  }, [pendingQueueItems, workflowCompanyFilter]);
 
   const queueItems = useMemo(
-    () => buildQueueItems(
-      samples,
-      orders.map(o => ({ ...o, lab_priority: normalizeLabPriority(o.lab_priority) })),
-      coas,
-      queueView === 'pending',
-    ),
-    [samples, orders, coas, queueView],
+    () => (queueView === 'pending' ? pendingQueueItems : buildQueueItems(samples, normalizedOrders, coas, false)),
+    [samples, normalizedOrders, coas, queueView, pendingQueueItems],
   );
 
   const queueCompanyOptions = useMemo(() => {
@@ -173,6 +181,13 @@ export default function Lab() {
   }
 
   function prefillFromSample(s: OrderSample) {
+    if (!sampleHasTestsSpecified(s)) {
+      setMsg({
+        type: 'error',
+        text: `${s.display_name || s.sample_name} has no tests specified. Fix the sample's tests before issuing a COA.`,
+      });
+      return;
+    }
     const meta = parseSampleMetadata(s.metadata);
     const client = clients.find(c => c.id === s.user_id);
     const order = orders.find(o => o.id === s.order_id);
@@ -238,24 +253,33 @@ export default function Lab() {
   const linkedOrder = form.orderId ? orders.find(o => o.id === form.orderId) : null;
   const linkedClient = form.clientId ? clients.find(c => c.id === form.clientId) : undefined;
 
+  const conformityMgPreview = useMemo(() => joinConformityMg(labResults.conformityPeptides), [labResults.conformityPeptides]);
+  const conformityPurityPreview = useMemo(() => joinConformityPurity(labResults.conformityPeptides), [labResults.conformityPeptides]);
+
   async function insertCoa(payload: Record<string, unknown>) {
     return supabase.from('coas').insert(payload).select('slug, display_name, sample_name, user_id').single();
   }
 
-  async function issueCoaForBrand(
-    base: Record<string, unknown>,
-    brandName: string,
-    clientId: string,
-    sampleName: string,
-  ) {
+  async function issueCoaForBrand(base: Record<string, unknown>, brandName: string) {
     const brandPayload = { ...base, company_name: brandName, sample_id: null };
-    await insertCoa(brandPayload);
+    const { error } = await insertCoa(brandPayload);
+    return error;
   }
 
   async function updateSampleStatus(sampleId: string, status: SampleStatus) {
-    const { error } = await supabase.from('order_samples').update({ status }).eq('id', sampleId);
+    const sample = samples.find(s => s.id === sampleId);
+    if (!sample) return;
+    const order = orders.find(o => o.id === sample.order_id);
+    const { error, sample: updated } = await setSampleStatus(sample, status, {
+      changedBy: user?.id,
+      order,
+      note: `Status → ${status}`,
+    });
     if (error) { setMsg({ type: 'error', text: error.message }); return; }
-    setSamples(prev => prev.map(s => s.id === sampleId ? { ...s, status } : s));
+    if (updated) setSamples(prev => prev.map(s => s.id === sampleId ? updated : s));
+    if (order && status === 'analyzing') {
+      setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: 'analyzing' } : o));
+    }
   }
 
   async function assignSample(sampleId: string, userId: string | null) {
@@ -265,6 +289,14 @@ export default function Lab() {
     if (error) {
       setMsg({ type: 'error', text: error.message });
       loadAll();
+      return;
+    }
+    // Claiming work moves sample into analyzing when still at received
+    if (userId) {
+      const sample = samples.find(s => s.id === sampleId);
+      if (sample && sample.status === 'received') {
+        await updateSampleStatus(sampleId, 'analyzing');
+      }
     }
   }
 
@@ -296,6 +328,9 @@ export default function Lab() {
     setMsg(null);
 
     const patch = buildWorkflowStagePatch(coa, targetStage);
+    if (targetStage === 'verified' && user?.id) {
+      patch.verified_by = user.id;
+    }
     const { error } = await supabase.from('coas').update(patch).eq('id', coa.id);
 
     if (error) {
@@ -305,7 +340,30 @@ export default function Lab() {
     }
 
     if (targetStage === 'published' && !coa.published_at) {
-      await notifyCoaReady(coa.user_id, coa.display_name || coa.sample_name, coa.slug);
+      const notifyErr = await notifyCoaReady(coa.user_id, coa.display_name || coa.sample_name, coa.slug);
+      if (notifyErr) console.warn('COA ready notify failed:', notifyErr);
+      const order = orders.find(o => o.id === coa.order_id);
+      if (order) await notifyOrderUpdate(coa.user_id, order.order_number, 'COA published');
+    }
+
+    if (targetStage === 'published') {
+      if (coa.sample_id) {
+        await supabase.from('order_samples').update({ status: 'complete' }).eq('id', coa.sample_id);
+        setSamples(prev => prev.map(s => (s.id === coa.sample_id ? { ...s, status: 'complete' } : s)));
+      }
+
+      if (coa.order_id) {
+        const orderSamples = samples.filter(s => s.order_id === coa.order_id);
+        const allSamplesDone = orderSamples.length > 0 && orderSamples.every(s => {
+          if (s.id === coa.sample_id) return true;
+          if (s.status === 'complete') return true;
+          return coas.some(c => c.sample_id === s.id && coaWorkflowStage(c) === 'published');
+        });
+        if (allSamplesDone) {
+          await supabase.from('orders').update({ status: 'complete' }).eq('id', coa.order_id);
+          setOrders(prev => prev.map(o => o.id === coa.order_id ? { ...o, status: 'complete' } : o));
+        }
+      }
     }
 
     setCoas(prev => prev.map(c => (c.id === coa.id ? { ...c, ...patch } as COA : c)));
@@ -321,6 +379,17 @@ export default function Lab() {
     e.preventDefault();
     if (!form.clientId) { setMsg({ type: 'error', text: 'Select the client this COA belongs to.' }); return; }
     if (!form.sampleName.trim()) { setMsg({ type: 'error', text: 'Enter a sample name.' }); return; }
+    if (form.sampleId && coas.some(c => c.sample_id === form.sampleId)) {
+      setMsg({ type: 'error', text: 'A COA has already been issued for this sample. Manage it from COA Workflow instead of issuing a duplicate.' });
+      return;
+    }
+    if (form.sampleId) {
+      const linked = samples.find(s => s.id === form.sampleId);
+      if (linked && !sampleHasTestsSpecified(linked)) {
+        setMsg({ type: 'error', text: 'This sample has no tests specified. Fix the sample before issuing a COA.' });
+        return;
+      }
+    }
 
     setSaving(true);
     setMsg(null);
@@ -350,6 +419,8 @@ export default function Lab() {
       panel_results: cleanPanels,
       chromatogram_data: { vial_size: form.vialSize },
       overall_result: form.overallResult,
+      accession_number: form.accessionNumber.trim(),
+      seal_serial: form.sealSerial.trim(),
       is_public: false,
       coa_workflow_stage: 'issued',
       content_hash,
@@ -365,9 +436,15 @@ export default function Lab() {
     }
 
     const linkedSample = form.sampleId ? samples.find(s => s.id === form.sampleId) : null;
-    const brandNames = (linkedSample?.metadata as { brand_names?: string[] } | null)?.brand_names?.filter(Boolean) ?? [];
+    const primaryCompany = form.companyName.trim().toLowerCase();
+    const brandNames = (linkedSample?.metadata as { brand_names?: string[] } | null)?.brand_names
+      ?.filter(Boolean)
+      .filter(brand => brand.trim().toLowerCase() !== primaryCompany) ?? [];
+
+    const brandErrors: string[] = [];
     for (const brand of brandNames) {
-      await issueCoaForBrand({ ...payload, coa_workflow_stage: 'issued' }, brand, form.clientId, form.sampleName.trim());
+      const brandError = await issueCoaForBrand({ ...payload, coa_workflow_stage: 'issued' }, brand);
+      if (brandError) brandErrors.push(`${brand}: ${brandError.message}`);
     }
 
     if (form.sampleId) {
@@ -380,17 +457,41 @@ export default function Lab() {
     setLabResults({ ...EMPTY_LAB_RESULTS });
     setCasSuggestions([]);
     setShowCasSuggestions(false);
-    setMsg({ type: 'success', text: 'COA issued (private). Verify it, then publish for the client.', slug: data?.slug });
+    const baseText = 'COA issued (private). Verify it, then publish for the client.';
+    setMsg({
+      type: brandErrors.length ? 'error' : 'success',
+      text: brandErrors.length
+        ? `${baseText} Some brand COAs failed to issue: ${brandErrors.join('; ')}`
+        : baseText,
+      slug: data?.slug,
+    });
     setSaving(false);
+    setWorkflowCompanyFilter('');
     setTab('workflow');
     loadAll();
   }
 
+  const receiveCount = useMemo(() => {
+    return samples.filter(s => {
+      const order = orders.find(o => o.id === s.order_id);
+      if (!order || order.status === 'cancelled' || order.status === 'complete') return false;
+      return s.status === 'awaiting_sample' || order.payment_status === 'unpaid' || !order.payment_status;
+    }).length;
+  }, [samples, orders]);
+
   const tabs: { id: LabTab; label: string; count?: number }[] = [
+    { id: 'receive', label: 'Receive', count: receiveCount || undefined },
     { id: 'queue', label: 'Testing Queue', count: pendingQueueCount || undefined },
+    { id: 'intake', label: 'Add Sample' },
     { id: 'issue', label: 'Issue COA' },
     { id: 'workflow', label: 'COA Workflow', count: workflowActiveCount || undefined },
   ];
+
+  function handleSampleCreated(successText: string) {
+    setMsg({ type: 'success', text: successText });
+    setTab('queue');
+    loadAll();
+  }
 
   return (
     <div className="min-h-screen bg-neutral-100">
@@ -411,7 +512,7 @@ export default function Lab() {
             <FlaskConical size={24} className="text-brand-500" /> Lab Console
           </h1>
           <p className="text-sm text-neutral-500 mt-1">
-            Manage testing orders → Issue COA → Verify → Publish public for clients.
+            Receive samples → Testing queue → Issue COA → Verify → Publish for clients.
           </p>
         </div>
 
@@ -443,6 +544,15 @@ export default function Lab() {
               {msg.slug && <> <Link to={`/coa/${msg.slug}`} className="font-semibold underline">View COA</Link></>}
             </span>
           </div>
+        )}
+
+        {tab === 'receive' && (
+          <ReceivingDesk
+            orders={orders}
+            samples={samples}
+            clients={clients}
+            onChanged={loadAll}
+          />
         )}
 
         {tab === 'queue' && (
@@ -494,6 +604,16 @@ export default function Lab() {
               onAssign={isAdmin ? assignSample : undefined}
               onSetSamplePriority={isAdmin ? setSamplePriority : undefined}
             />
+          </div>
+        )}
+
+        {tab === 'intake' && (
+          <div className="space-y-4">
+            <p className="text-sm text-neutral-600">
+              Add a sample for a client who wasn&apos;t already in the system — e.g. a walk-in drop-off or mailed-in
+              vial that never went through the client portal. Tests are required; samples can never be created without them.
+            </p>
+            <LabSampleIntake clients={clients} chemists={chemistOptions} onCreated={handleSampleCreated} />
           </div>
         )}
 
@@ -564,6 +684,16 @@ export default function Lab() {
                   <select value={form.overallResult} onChange={e => update({ overallResult: e.target.value as COA['overall_result'] })} className="input-field">
                     <option value="pass">Pass</option><option value="fail">Fail</option><option value="pending">Pending</option>
                   </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="label">Accession Number</label>
+                  <input value={form.accessionNumber} onChange={e => update({ accessionNumber: e.target.value })} className="input-field" placeholder="Lab accession / sample ID" />
+                </div>
+                <div>
+                  <label className="label">Seal Serial</label>
+                  <input value={form.sealSerial} onChange={e => update({ sealSerial: e.target.value })} className="input-field" placeholder="Tamper seal serial #" />
                 </div>
               </div>
               <div className="relative">
@@ -668,23 +798,32 @@ export default function Lab() {
                   </div>
                   <div>
                     <div className="flex items-center justify-between mb-2">
-                      <label className="label mb-0">Conformity (multiple peptides)</label>
+                      <label className="label mb-0">Conformity (multiple peptides / vials)</label>
                       <button type="button" onClick={addConformityPeptide} className="text-xs text-brand-700 font-medium inline-flex items-center gap-1">
-                        <Plus size={13} /> Add peptide
+                        <Plus size={13} /> Add row
                       </button>
                     </div>
                     {labResults.conformityPeptides.length === 0 ? (
                       <p className="text-xs text-neutral-500">Add rows for sample-to-sample conformity results.</p>
                     ) : (
                       <div className="space-y-2">
+                        <p className="text-xs text-neutral-500">
+                          These rows stay on this ONE certificate as comma-separated Net Content / Net Purity values — they never create separate COAs.
+                        </p>
                         {labResults.conformityPeptides.map((row, i) => (
                           <div key={i} className="grid grid-cols-12 gap-2 items-center">
-                            <input value={row.name} onChange={e => updateConformityPeptide(i, { name: e.target.value })} className="input-field col-span-4 py-1.5 text-sm" placeholder="Peptide" />
+                            <input value={row.name} onChange={e => updateConformityPeptide(i, { name: e.target.value })} className="input-field col-span-4 py-1.5 text-sm" placeholder="Peptide / vial" />
                             <input value={row.netContent} onChange={e => updateConformityPeptide(i, { netContent: e.target.value })} className="input-field col-span-3 py-1.5 text-sm" placeholder="Net content" />
                             <input value={row.netPurity} onChange={e => updateConformityPeptide(i, { netPurity: e.target.value })} className="input-field col-span-3 py-1.5 text-sm" placeholder="Net purity %" />
                             <button type="button" onClick={() => removeConformityPeptide(i)} className="col-span-2 text-neutral-400 hover:text-red-600 flex justify-center"><Trash2 size={15} /></button>
                           </div>
                         ))}
+                        {(conformityMgPreview || conformityPurityPreview) && (
+                          <div className="text-xs bg-white border border-atlas-border rounded-md px-3 py-2 space-y-1">
+                            {conformityMgPreview && <p><span className="font-semibold">Net Content on COA:</span> {conformityMgPreview}</p>}
+                            {conformityPurityPreview && <p><span className="font-semibold">Net Purity on COA:</span> {conformityPurityPreview}</p>}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -715,6 +854,10 @@ export default function Lab() {
 
         {tab === 'workflow' && (
           <div className="space-y-4">
+            <p className="text-sm text-neutral-600">
+              Workflow covers issued COAs plus samples still awaiting issuance — work the Awaiting COA lane first,
+              then move issued certificates through review to Published.
+            </p>
             <CompanyFilterSearch
               value={workflowCompanyFilter}
               onChange={setWorkflowCompanyFilter}
@@ -724,6 +867,12 @@ export default function Lab() {
               coas={filteredWorkflowCoas}
               onMoveCoa={moveCoaToStage}
               movingId={movingCoaId}
+              pendingSamples={filteredPendingQueueItems}
+              onIssueCoa={prefillFromSample}
+              chemists={chemistOptions}
+              clients={allProfiles}
+              orders={orders}
+              samples={samples}
             />
           </div>
         )}

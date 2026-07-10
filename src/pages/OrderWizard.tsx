@@ -215,6 +215,7 @@ export default function OrderWizard() {
     setSamples(prev => prev.map(s => {
       const names = s.brand_names.filter(Boolean);
       if (names.some(n => n.toLowerCase() === primary.toLowerCase())) return s;
+      // Keep the included COA profile brand in metadata; billing/UI filters it from additional brands.
       return { ...s, brand_names: [primary, ...names].slice(0, MAX_BRANDS_PER_SAMPLE) };
     }));
   }
@@ -263,9 +264,16 @@ export default function OrderWizard() {
   }
 
   async function submitOrder() {
+    if (!user) return;
     setError('');
     if (!selectedCompanyId || !companies.some(c => c.id === selectedCompanyId)) {
       setValidationError('Select a COA profile before submitting.');
+      return;
+    }
+    const step1Error = validateStep1(samples);
+    if (step1Error) {
+      setValidationError(step1Error);
+      setStep(1);
       return;
     }
     if (!paymentAuthorized) {
@@ -291,6 +299,8 @@ export default function OrderWizard() {
       const orderPayload: Record<string, unknown> = {
         user_id: user.id,
         order_number: orderNumber,
+        status: 'awaiting_sample',
+        payment_status: 'unpaid',
         rush_processing: anyRush,
         lab_priority: anyRush ? 'high' : 'normal',
         notes: notes ? `${notes}\n\n---\n${JSON.stringify(orderMeta)}` : JSON.stringify(orderMeta),
@@ -320,14 +330,14 @@ export default function OrderWizard() {
         sample_type: s.sample_type,
         vial_count: sampleVialCount(s),
         panel_ids: [],
+        status: 'awaiting_sample',
         metadata: sampleMetadataPayload(s, companyName),
       }));
 
-      let { error: samplesError } = await supabase.from('order_samples').insert(sampleRows);
-      if (samplesError?.message?.includes('metadata')) {
-        const fallback = sampleRows.map(({ metadata: _m, ...row }) => row);
-        ({ error: samplesError } = await supabase.from('order_samples').insert(fallback));
-      }
+      // Metadata carries test_mode/tests_label — every sample MUST persist it.
+      // Never retry without metadata; a sample with no tests on record must
+      // fail loudly instead of silently landing in the queue untested.
+      const { error: samplesError } = await supabase.from('order_samples').insert(sampleRows);
       if (samplesError) throw samplesError;
 
       await notifyOrderUpdate(user.id, orderNumber, 'received');
@@ -1034,6 +1044,10 @@ export default function OrderWizard() {
                       </label>
                     </>
                   )}
+                  <div className="mt-4 pt-4 border-t border-neutral-200 space-y-1 text-xs text-neutral-600">
+                    <p>Pay by wire or crypto — lab staff will mark your order paid before testing begins.</p>
+                    <p className="text-neutral-400">Card checkout (Stripe) coming soon.</p>
+                  </div>
                 </div>
 
                 {generatePrepaidLabel && (

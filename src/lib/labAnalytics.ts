@@ -1,5 +1,5 @@
-import { COA, OrderSample } from './types';
-import { testsForSample } from './labQueue';
+import { COA, Order, OrderSample, UserProfile } from './types';
+import { buildQueueItems, testsForSample } from './labQueue';
 
 export interface DailyIntakePoint {
   date: string;
@@ -122,4 +122,91 @@ export function testTurnaroundStats(samples: OrderSample[], coas: COA[]): TestTu
 
 export function intakeSparklineMax(points: DailyIntakePoint[]): number {
   return Math.max(1, ...points.map(p => p.count));
+}
+
+export interface ChemistWorkloadStat {
+  chemistId: string;
+  name: string;
+  assignedCount: number;
+  inProgressCount: number;
+  completedCount: number;
+  avgTurnaroundDays: number | null;
+  samplesPerDay: number;
+  currentSamples: {
+    sample: OrderSample;
+    order: Order;
+    ageHours: number;
+    priority: string;
+  }[];
+}
+
+/** Per-chemist workload snapshot: queue assignments, in-progress counts, and completed-sample turnaround. */
+export function chemistWorkloadStats(
+  samples: OrderSample[],
+  orders: Order[],
+  coas: COA[],
+  chemists: UserProfile[],
+): ChemistWorkloadStat[] {
+  const coaBySample = new Map<string, COA>();
+  for (const coa of coas) {
+    if (coa.sample_id) coaBySample.set(coa.sample_id, coa);
+  }
+
+  const pendingItems = buildQueueItems(samples, orders, coas, true);
+  const pendingByChemist = new Map<string, typeof pendingItems>();
+  for (const item of pendingItems) {
+    if (!item.assigned_to) continue;
+    const list = pendingByChemist.get(item.assigned_to) ?? [];
+    list.push(item);
+    pendingByChemist.set(item.assigned_to, list);
+  }
+
+  const cutoff30 = Date.now() - 30 * DAY_MS;
+
+  return chemists.map(chemist => {
+    const pending = pendingByChemist.get(chemist.id) ?? [];
+    const inProgress = pending.filter(
+      item => item.sample.status === 'analyzing' || item.sample.status === 'in_review',
+    );
+
+    const assignedSamples = samples.filter(s => s.assigned_to === chemist.id);
+
+    let sumDays = 0;
+    let turnaroundCount = 0;
+    let completedCount = 0;
+    let completed30d = 0;
+
+    for (const sample of assignedSamples) {
+      const coa = coaBySample.get(sample.id);
+      if (!coa?.issued_at) continue;
+
+      completedCount += 1;
+      const issuedMs = new Date(coa.issued_at).getTime();
+      if (issuedMs >= cutoff30) completed30d += 1;
+
+      const arrival = new Date(sample.created_at).getTime();
+      if (issuedMs > arrival) {
+        sumDays += (issuedMs - arrival) / DAY_MS;
+        turnaroundCount += 1;
+      }
+    }
+
+    return {
+      chemistId: chemist.id,
+      name: chemist.full_name || 'Chemist',
+      assignedCount: pending.length,
+      inProgressCount: inProgress.length,
+      completedCount,
+      avgTurnaroundDays: turnaroundCount > 0 ? Math.round((sumDays / turnaroundCount) * 10) / 10 : null,
+      samplesPerDay: Math.round((completed30d / 30) * 100) / 100,
+      currentSamples: pending
+        .sort((a, b) => a.priorityScore - b.priorityScore)
+        .map(item => ({
+          sample: item.sample,
+          order: item.order,
+          ageHours: item.ageHours,
+          priority: item.priority,
+        })),
+    };
+  });
 }

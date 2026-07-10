@@ -102,7 +102,7 @@ export default function COALibrary() {
                 : 'Try a different search term.'}
             </p>
             {coas.length === 0 && (
-              <Link to="/order" className="btn-primary text-sm">Submit Samples</Link>
+              <Link to="/order-new" className="btn-primary text-sm">Submit Samples</Link>
             )}
           </div>
         ) : view === 'grid' ? (

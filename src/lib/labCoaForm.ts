@@ -1,5 +1,6 @@
 import { OrderSample, PanelResult } from './types';
-import { OrderSampleMetadata, parseSampleMetadata, orderSampleIncludesFentanyl } from './coaPanels';
+import { OrderSampleMetadata, parseSampleMetadata, orderSampleIncludesFentanyl, CONFORMITY_PANEL_NAME } from './coaPanels';
+import { panelVialsRequired, TestMode } from './orderCatalog';
 
 export const VIAL_SIZE_OPTIONS = ['3ml', '5ml', '10ml'] as const;
 export type VialSizeOption = (typeof VIAL_SIZE_OPTIONS)[number];
@@ -87,26 +88,70 @@ export function casForSampleName(sampleName: string): string {
   return hit?.cas ?? '';
 }
 
+/** Normalizes a free-typed mg amount into "10 mg" (space before unit, trimmed). */
+export function formatMgAmount(raw: string): string {
+  const numeric = raw.trim().replace(/\s*mg\s*$/i, '').trim();
+  return numeric ? `${numeric} mg` : '';
+}
+
+/** Normalizes a free-typed percent amount into "9.8%" (no space before unit). */
+export function formatPurityPercent(raw: string): string {
+  const numeric = raw.trim().replace(/%\s*$/, '').trim();
+  return numeric ? `${numeric}%` : '';
+}
+
+/** Joins conformity row net-content amounts into one comma-separated string, e.g. "10 mg, 10.1 mg, 10.2 mg". */
+export function joinConformityMg(rows: ConformityPeptideRow[]): string {
+  return rows.map(r => formatMgAmount(r.netContent)).filter(Boolean).join(', ');
+}
+
+/** Joins conformity row net-purity amounts into one comma-separated string, e.g. "9.8%, 9.7%, 9.9%". */
+export function joinConformityPurity(rows: ConformityPeptideRow[]): string {
+  return rows.map(r => formatPurityPercent(r.netPurity)).filter(Boolean).join(', ');
+}
+
 export function buildLabResultsFromSample(metadata: OrderSample['metadata'], sampleName = ''): LabCoaResults {
   const meta = parseSampleMetadata(metadata);
   const includeFentanyl = orderSampleIncludesFentanyl(metadata);
   const blendComponents = meta.blend_components?.filter(c => c.name.trim()) ?? [];
 
   if (meta.sample_type === 'blend' && blendComponents.length > 0) {
+    const conformityPeptides: ConformityPeptideRow[] = blendComponents.map(c => ({
+      name: c.name.trim(),
+      netContent: formatMgAmount(c.amount_mg),
+      netPurity: '',
+    }));
     return {
       ...EMPTY_LAB_RESULTS,
       identification: meta.peptide_identification?.trim() || sampleName.trim() || meta.blend_label?.trim() || '',
-      netContent: meta.labeled_content?.trim() ?? '',
+      netContent: joinConformityMg(conformityPeptides) || meta.labeled_content?.trim() || '',
       includeFentanyl,
-      conformityPeptides: blendComponents.map(c => ({
-        name: c.name.trim(),
-        netContent: `${c.amount_mg.trim().replace(/\s*mg\s*$/i, '')}mg`,
-        netPurity: '',
-      })),
+      conformityPeptides,
     };
   }
 
   const identification = meta.peptide_identification?.trim() || sampleName.trim();
+  const isPackageTestMode = meta.test_mode === 'atlas_pro' || meta.test_mode === 'full_qc';
+
+  if (isPackageTestMode && identification) {
+    // Package modes (Atlas Safety Pro / Full QC) test conformity across multiple
+    // vials — pre-create one empty row per vial for the chemist to fill in,
+    // rather than a single row that misrepresents multi-vial conformity as one sample.
+    const vialCount = panelVialsRequired(meta.test_mode as TestMode) + Math.max(0, meta.conformity_extra ?? 0);
+    const conformityPeptides: ConformityPeptideRow[] = Array.from({ length: vialCount }, (_, i) => ({
+      name: `Vial ${i + 1}`,
+      netContent: '',
+      netPurity: '',
+    }));
+    return {
+      ...EMPTY_LAB_RESULTS,
+      identification,
+      netContent: meta.labeled_content?.trim() ?? '',
+      includeFentanyl,
+      conformityPeptides,
+    };
+  }
+
   return {
     ...EMPTY_LAB_RESULTS,
     identification,
@@ -119,10 +164,21 @@ export function buildLabResultsFromSample(metadata: OrderSample['metadata'], sam
 }
 
 export function labResultsToPanelResults(results: LabCoaResults): PanelResult[] {
+  // Conformity peptides stay on ONE certificate as comma-separated values —
+  // never as a separate COA or an exploded "Conformity — {name}" row per peptide.
+  const conformityRows = results.conformityPeptides.filter(
+    r => r.name.trim() || r.netContent.trim() || r.netPurity.trim(),
+  );
+  const conformityMg = joinConformityMg(conformityRows);
+  const conformityPurity = joinConformityPurity(conformityRows);
+
+  const netContentDisplay = conformityMg || results.netContent;
+  const netPurityDisplay = conformityPurity || (results.netPurity ? `${results.netPurity}%` : '');
+
   const rows: PanelResult[] = [
     { panel_name: 'Identification', specification: 'Peptide ID', result: results.identification, pass: !!results.identification.trim() },
-    { panel_name: 'Net Content', specification: 'Label claim', result: results.netContent, pass: !!results.netContent.trim() },
-    { panel_name: 'Net Purity', specification: '≥95.0%', result: results.netPurity ? `${results.netPurity}%` : '', pass: true },
+    { panel_name: 'Net Content', specification: 'Label claim', result: netContentDisplay, pass: !!netContentDisplay.trim() },
+    { panel_name: 'Net Purity', specification: '≥95.0%', result: netPurityDisplay, pass: true },
     { panel_name: 'Molecular Weight (Da)', specification: '± 2 Da', result: results.molecularWeight, pass: !!results.molecularWeight.trim() },
     { panel_name: 'Sterility', specification: 'Pass / Fail', result: results.sterilityPass ? 'Pass' : 'Fail', pass: results.sterilityPass },
     { panel_name: 'Endotoxin', specification: 'EU/mg', result: results.endotoxinEuMg, pass: !!results.endotoxinEuMg.trim() },
@@ -146,17 +202,22 @@ export function labResultsToPanelResults(results: LabCoaResults): PanelResult[] 
     });
   }
 
-  for (const row of results.conformityPeptides) {
-    if (!row.name.trim()) continue;
+  if (conformityRows.length > 0 && (conformityMg || conformityPurity)) {
     rows.push({
-      panel_name: `Conformity — ${row.name.trim()}`,
-      specification: 'Content / Purity',
-      result: [row.netContent, row.netPurity ? `${row.netPurity}%` : ''].filter(Boolean).join(' · '),
+      panel_name: CONFORMITY_PANEL_NAME,
+      specification: 'Sample-to-sample content / purity',
+      result: [conformityMg, conformityPurity].filter(Boolean).join('; '),
       pass: true,
     });
   }
 
   return rows;
+}
+
+/** Finds a panel result row by name (case-insensitive, first match wins). Accepts alternate names for legacy panel sets. */
+export function getPanelResult(panelResults: PanelResult[], names: string | string[]): PanelResult | undefined {
+  const candidates = (Array.isArray(names) ? names : [names]).map(n => n.trim().toLowerCase());
+  return panelResults.find(r => candidates.includes(r.panel_name.trim().toLowerCase()));
 }
 
 export function parsePurityPercent(netPurity: string): number | null {

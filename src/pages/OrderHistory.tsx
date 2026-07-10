@@ -7,8 +7,8 @@ import {
 import DashboardLayout from '../components/layout/DashboardLayout';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
-import { Order, OrderSample } from '../lib/types';
-import { formatCurrency, formatDateTime, ORDER_STATUS_LABELS, ORDER_STATUS_STEPS } from '../lib/utils';
+import { Order, OrderSample, OrderStatus } from '../lib/types';
+import { formatCurrency, formatDateTime, ORDER_STATUS_LABELS, ORDER_STATUS_STEPS, getStatusStep } from '../lib/utils';
 
 type AnalysisTest = {
   test: string;
@@ -19,22 +19,12 @@ type AnalysisTest = {
 };
 
 type OrderSampleWithAnalysis = OrderSample & { analysis_results?: AnalysisTest[] | null };
-
-const PIPELINE_STAGES = [
-  { key: 'received', label: 'Received' },
-  { key: 'processing', label: 'Processing' },
-  { key: 'analyzing', label: 'Analyzing' },
-  { key: 'in_review', label: 'In Review' },
-  { key: 'complete', label: 'Complete' },
-];
-
-function stageIndex(status: string): number {
-  return PIPELINE_STAGES.findIndex(s => s.key === status);
-}
+type OrderWithAnalysisSamples = Omit<Order, 'order_samples'> & { order_samples?: OrderSampleWithAnalysis[] };
 
 function StatusBadge({ status }: { status: string }) {
   const colors: Record<string, string> = {
     received: 'bg-slate-100 text-slate-700',
+    awaiting_sample: 'bg-amber-100 text-amber-800',
     processing: 'bg-brand-100 text-brand-800',
     analyzing: 'bg-amber-100 text-amber-700',
     in_review: 'bg-orange-100 text-orange-700',
@@ -49,12 +39,9 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 function OrderPipeline({ status }: { status: string }) {
-  const steps = ORDER_STATUS_STEPS.filter(s => s !== 'cancelled');
-  const currentIdx = stageIndex(status);
-  const labels: Record<string, string> = {
-    received: 'Received', processing: 'Processing', analyzing: 'Analyzing',
-    in_review: 'In Review', complete: 'Complete',
-  };
+  const steps = ORDER_STATUS_STEPS;
+  const currentIdx = getStatusStep(status as OrderStatus);
+  const labels = ORDER_STATUS_LABELS;
   return (
     <div className="flex items-center">
       {steps.map((step, i) => {
@@ -203,7 +190,7 @@ export default function OrderHistory() {
   const { user } = useAuth();
   const [searchParams] = useSearchParams();
   const newOrderId = searchParams.get('new');
-  const [orders, setOrders] = useState<(Order & { order_samples?: OrderSampleWithAnalysis[] })[]>([]);
+  const [orders, setOrders] = useState<OrderWithAnalysisSamples[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [expandedOrder, setExpandedOrder] = useState<string | null>(newOrderId);
@@ -216,7 +203,7 @@ export default function OrderHistory() {
       .eq('user_id', user.id)
       .order('created_at', { ascending: false })
       .then(({ data }) => {
-        if (data) setOrders(data);
+        if (data) setOrders(data as OrderWithAnalysisSamples[]);
         setLoading(false);
       });
   }, [user]);
@@ -233,14 +220,14 @@ export default function OrderHistory() {
             <h1 className="text-2xl font-bold text-slate-900">Orders</h1>
             <p className="text-slate-500 text-sm mt-0.5">{orders.length} total order{orders.length !== 1 ? 's' : ''}</p>
           </div>
-          <Link to="/order" className="btn-primary text-sm gap-1.5">
+          <Link to="/order-new" className="btn-primary text-sm gap-1.5">
             <Package size={15} /> New Order
           </Link>
         </div>
 
         <div className="flex items-center gap-2 mb-5 overflow-x-auto pb-1">
           <Filter size={14} className="text-slate-400 flex-shrink-0" />
-          {['all', 'received', 'processing', 'analyzing', 'in_review', 'complete'].map((s) => (
+          {['all', 'awaiting_sample', 'processing', 'analyzing', 'in_review', 'complete'].map((s) => (
             <button
               key={s}
               onClick={() => setStatusFilter(s)}
@@ -264,7 +251,7 @@ export default function OrderHistory() {
             <p className="text-sm text-slate-500 mb-4">
               {statusFilter === 'all' ? "You haven't submitted any orders yet." : `No orders with status "${statusFilter}".`}
             </p>
-            <Link to="/order" className="btn-primary text-sm">Submit Your First Samples</Link>
+            <Link to="/order-new" className="btn-primary text-sm">Submit Your First Samples</Link>
           </div>
         ) : (
           <div className="space-y-4">

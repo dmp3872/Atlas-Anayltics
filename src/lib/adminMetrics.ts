@@ -39,7 +39,7 @@ export function computeAdminAlerts(
       level: 'warning',
       message: `${queue.length} samples in the testing queue — consider assigning priority or staffing.`,
       actionLabel: 'Open lab queue',
-      actionSection: 'operations',
+      actionSection: 'orders',
     });
   }
   if (issued.length + awaiting.length > 0) {

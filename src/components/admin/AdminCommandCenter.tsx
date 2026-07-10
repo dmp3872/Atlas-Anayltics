@@ -116,8 +116,8 @@ export default function AdminCommandCenter({ samples, orders, coas, users, onNav
             <h3 className="font-bold text-black mb-3">COA workflow pipeline</h3>
             <div className="space-y-2">
               {([
-                ['issued', FlaskConical],
                 ['awaiting_info', MessageCircle],
+                ['issued', FlaskConical],
                 ['verified', Shield],
                 ['published', Globe],
               ] as const).map(([stage, Icon]) => (

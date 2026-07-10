@@ -1,5 +1,5 @@
 import {
-  ArrowRight, Clock, FlaskConical, Zap, UserPlus, UserMinus, UserCircle2,
+  ArrowRight, Clock, FlaskConical, Zap, UserPlus, UserMinus, UserCircle2, AlertTriangle,
 } from 'lucide-react';
 import { LabPriority, OrderSample, SampleStatus } from '../../lib/types';
 import { SAMPLE_STATUS_LABELS } from '../../lib/utils';
@@ -82,20 +82,26 @@ export default function TestingQueuePanel({
             {unassignedCount} unassigned
           </span>
         )}
+        {items.filter(i => i.overdue).length > 0 && (
+          <span className="px-2.5 py-1 rounded-full bg-red-100 text-red-800 font-semibold border border-red-200">
+            {items.filter(i => i.overdue).length} overdue
+          </span>
+        )}
       </div>
 
       <div className="space-y-3">
         {items.map((item, idx) => {
-          const { sample, order, tests, testsLabel, priority, ageHours, assigned_to: assignedTo } = item;
+          const { sample, order, tests, testsLabel, priority, ageHours, assigned_to: assignedTo, overdue, dueAt } = item;
           const meta = parseSampleMetadata(sample.metadata);
           const styles = LAB_PRIORITY_STYLES[priority];
           const isMine = !!currentUserId && assignedTo === currentUserId;
           const assignmentLabel = !assignedTo ? 'Unassigned' : isMine ? 'You' : chemistName(assignedTo);
+          const testsMissing = testsLabel.trim() === 'Tests not specified' || testsLabel.trim() === '';
 
           return (
             <article
               key={sample.id}
-              className={`card overflow-hidden border-l-4 ${styles.border} ${styles.bg}`}
+              className={`card overflow-hidden border-l-4 ${overdue ? 'border-red-500' : styles.border} ${overdue ? 'bg-red-50/40' : styles.bg}`}
             >
               <div className="p-4 sm:p-5">
                 <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
@@ -129,6 +135,21 @@ export default function TestingQueuePanel({
                         }`}>
                           <UserCircle2 size={11} /> {assignmentLabel}
                         </span>
+                        {testsMissing && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-red-100 text-red-800 border border-red-200">
+                            <AlertTriangle size={10} /> Tests not specified
+                          </span>
+                        )}
+                        {overdue && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-red-100 text-red-800 border border-red-300">
+                            <AlertTriangle size={10} /> Overdue{dueAt ? ` · due ${new Date(dueAt).toLocaleDateString()}` : ''}
+                          </span>
+                        )}
+                        {sample.accession_number && (
+                          <span className="text-[10px] font-mono text-neutral-500 border border-atlas-border px-2 py-0.5 rounded-full">
+                            Acc {sample.accession_number}
+                          </span>
+                        )}
                       </div>
 
                       <div>
@@ -227,7 +248,9 @@ export default function TestingQueuePanel({
                     <button
                       type="button"
                       onClick={() => onIssueCoa(sample)}
-                      className="btn-primary text-xs py-2 gap-1 justify-center"
+                      disabled={testsMissing}
+                      title={testsMissing ? 'Fix this sample\'s tests before issuing a COA' : undefined}
+                      className="btn-primary text-xs py-2 gap-1 justify-center disabled:opacity-40 disabled:cursor-not-allowed"
                     >
                       Issue COA <ArrowRight size={12} />
                     </button>
