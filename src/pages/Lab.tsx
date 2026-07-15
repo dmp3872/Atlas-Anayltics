@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   FlaskConical, Plus, Trash2, CheckCircle, AlertCircle, ExternalLink, ClipboardList,
-  ChevronDown, ChevronUp, ArrowRight, FileText,
+  ChevronDown, ChevronUp, ArrowRight,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { COA, Company, Order, OrderSample, OrderStatus, SampleStatus, UserProfile } from '../lib/types';
@@ -17,7 +17,7 @@ import {
   parsePurityPercent, parseMolecularWeight, lookupCas, casForSampleName,
   ENDOTOXIN_SPEC_EU_ML, STERILITY_METHOD_LABELS,
 } from '../lib/labCoaForm';
-import { COA_WORKFLOW_LABELS, coaWorkflowStage, buildWorkflowStagePatch, CoaWorkflowStage } from '../lib/coaWorkflow';
+import { COA_WORKFLOW_LABELS, canPrepareCoa, coaWorkflowStage, buildWorkflowStagePatch, CoaWorkflowStage } from '../lib/coaWorkflow';
 import CoaWorkflowBoard from '../components/lab/CoaWorkflowBoard';
 import StaffHeader from '../components/layout/StaffHeader';
 import LogoDropzone from '../components/account/LogoDropzone';
@@ -28,10 +28,9 @@ import {
   resolveImageAsDataUrl,
 } from '../lib/coaImages';
 import CoaPdfPrepModal from '../components/lab/CoaPdfPrepModal';
-import { openCoaPrintView } from '../lib/coaPdf';
 import { COA_LIST_COLUMNS } from '../lib/coaSelect';
 
-const MAX_COA_IMAGE_BYTES = 2 * 1024 * 1024;
+const MAX_COA_IMAGE_BYTES = 1024 * 1024;
 
 type Message = { type: 'success' | 'error'; text: string; slug?: string } | null;
 type LabTab = 'queue' | 'issue' | 'workflow';
@@ -312,10 +311,13 @@ export default function Lab() {
 
     const headerLogoRaw = applyHeaderLogo ? (profile?.logo || '') : '';
     const watermarkRaw = applyWatermark ? (profile?.chromatograph_background || '') : '';
-    const [companyLogo, watermarkImage] = await Promise.all([
+    const [companyLogoRaw, watermarkRawResolved] = await Promise.all([
       headerLogoRaw ? resolveImageAsDataUrl(headerLogoRaw) : Promise.resolve(''),
       watermarkRaw ? resolveImageAsDataUrl(watermarkRaw) : Promise.resolve(''),
     ]);
+    // resolveImageAsDataUrl already re-compresses oversized payloads
+    const companyLogo = companyLogoRaw;
+    const watermarkImage = watermarkRawResolved;
 
     const payload = {
       user_id: form.clientId,
@@ -437,23 +439,28 @@ export default function Lab() {
                     type="button"
                     className="font-semibold underline"
                     onClick={() => {
-                      if (msg.slug) openCoaPrintView(msg.slug);
+                      if (msg.slug) window.open(`/coa/${encodeURIComponent(msg.slug)}`, '_blank', 'noopener,noreferrer');
                     }}
                   >
-                    View PDF
+                    Open certificate
                   </button>
                   {' · '}
-                  <button
-                    type="button"
-                    className="font-semibold underline"
-                    onClick={() => {
-                      const issued = coas.find(c => c.slug === msg.slug);
-                      if (issued) setPrepCoa(issued);
-                    }}
-                  >
-                    Prepare
-                  </button>
-                  {' · '}
+                  {(() => {
+                    const issued = coas.find(c => c.slug === msg.slug);
+                    if (!issued || !canPrepareCoa(issued)) return null;
+                    return (
+                      <>
+                        <button
+                          type="button"
+                          className="font-semibold underline"
+                          onClick={() => setPrepCoa(issued)}
+                        >
+                          Prepare
+                        </button>
+                        {' · '}
+                      </>
+                    );
+                  })()}
                   <Link to={`/coa/${msg.slug}`} className="font-semibold underline">Web view</Link>
                 </>
               )}
@@ -553,21 +560,16 @@ export default function Lab() {
                                   </button>
                                 ) : (
                                   <>
-                                    <button
-                                      type="button"
-                                      onClick={() => openCoaPrintView(coa.slug)}
-                                      className="btn-primary text-xs py-1.5 gap-1"
-                                    >
-                                      <FileText size={12} /> View PDF
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => setPrepCoa(coa)}
-                                      className="btn-outline text-xs py-1.5 gap-1"
-                                    >
-                                      Prepare
-                                    </button>
-                                    <Link to={`/coa/${coa.slug}`} className="btn-outline text-xs py-1.5 gap-1"><ExternalLink size={12} /> Web view</Link>
+                                    {canPrepareCoa(coa) && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setPrepCoa(coa)}
+                                        className="btn-outline text-xs py-1.5 gap-1"
+                                      >
+                                        Prepare
+                                      </button>
+                                    )}
+                                    <Link to={`/coa/${coa.slug}`} className="btn-primary text-xs py-1.5 gap-1"><ExternalLink size={12} /> Open & download PNG</Link>
                                   </>
                                 )}
                               </div>

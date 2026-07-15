@@ -2,16 +2,18 @@ import { useEffect, useState } from 'react';
 import { useParams, Link, useSearchParams } from 'react-router-dom';
 import {
   Shield, CheckCircle, XCircle,
-  ArrowLeft, Copy, Check, Droplets, Boxes, AlertTriangle, Printer,
+  ArrowLeft, Copy, Check, Droplets, Boxes, AlertTriangle, Download,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { COA, PanelResult } from '../lib/types';
 import { formatDate, formatDateTime } from '../lib/utils';
 import { verifyCoaIntegrity } from '../lib/coaVerify';
-import { hydrateCoaImages, readCoaPdfStats, resolveCoaHeaderLogo, resolveCoaWatermark } from '../lib/coaImages';
+import { hydrateCoaImages, readCoaPdfStats, resolveCoaHeaderLogo, resolveCoaWatermark, trimImageWhitespace } from '../lib/coaImages';
 import { partitionCoaPanels } from '../lib/coaDisplayPanels';
 import { COA_DETAIL_COLUMNS, COA_IMAGE_COLUMNS } from '../lib/coaSelect';
 import { casForSampleName } from '../lib/labCoaForm';
+import { compressImageDataUrl } from '../lib/imageCompress';
+import { coaPngFilename, downloadCoaPngFromElement } from '../lib/coaPdf';
 import { useAuth } from '../context/AuthContext';
 import Header from '../components/layout/Header';
 import Footer from '../components/layout/Footer';
@@ -65,6 +67,8 @@ export default function COADetail() {
   const { slug } = useParams<{ slug: string }>();
   const [searchParams] = useSearchParams();
   const autoPrint = searchParams.get('print') === '1';
+  const exportMode = searchParams.get('export') === '1';
+  const hideChrome = autoPrint || exportMode;
   const { user, loading: authLoading } = useAuth();
   const [coa, setCoa] = useState<COA | null>(null);
   const [loading, setLoading] = useState(true);
@@ -72,9 +76,12 @@ export default function COADetail() {
   const [copied, setCopied] = useState(false);
   const [logoWatermark, setLogoWatermark] = useState('');
   const [clientLogo, setClientLogo] = useState('');
+  const [downloadingPng, setDownloadingPng] = useState(false);
 
   useEffect(() => {
-    if (!slug || authLoading) return;
+    if (!slug) return;
+    // Export iframe should not wait on auth — public slug fetch is enough and avoids remount races.
+    if (authLoading && !exportMode) return;
     let cancelled = false;
     setLoading(true);
     setNotFound(false);
@@ -104,7 +111,8 @@ export default function COADetail() {
         setClientLogo(hydrated.company_logo || '');
         setLoading(false);
 
-        // Phase 2: images + profile fallbacks (non-blocking).
+        // Phase 2: images + profile fallbacks (non-blocking). Compress before state so a
+        // leftover multi‑MB base64 row cannot freeze the tab / IDE embedded browser.
         const [{ data: images }, header, watermark] = await Promise.all([
           supabase.from('coas').select(COA_IMAGE_COLUMNS).eq('id', hydrated.id).maybeSingle(),
           resolveCoaHeaderLogo(hydrated),
@@ -113,20 +121,31 @@ export default function COADetail() {
         if (cancelled) return;
 
         const imgRow = images as Pick<COA, 'vial_image' | 'chromatogram_image' | 'company_logo'> | null;
-        const vial = imgRow?.vial_image || '';
-        const chrom = imgRow?.chromatogram_image || '';
-        const logoCol = imgRow?.company_logo || '';
-        const nextHeader = header || logoCol || hydrated.company_logo || '';
-        const nextWatermark = watermark || chrom || '';
+        const rawVial = imgRow?.vial_image || '';
+        // Crop empty margins so the vial spans the frame as large as possible.
+        const trimmedVial = rawVial
+          ? (await trimImageWhitespace(rawVial, { padRatio: 0.04 })) || rawVial
+          : '';
+        const [vial, chrom, logoCol, nextHeader, nextWatermark] = await Promise.all([
+          compressImageDataUrl(trimmedVial),
+          compressImageDataUrl(imgRow?.chromatogram_image || ''),
+          compressImageDataUrl(imgRow?.company_logo || ''),
+          compressImageDataUrl(header || ''),
+          compressImageDataUrl(watermark || ''),
+        ]);
+        if (cancelled) return;
 
-        if (nextWatermark) setLogoWatermark(nextWatermark);
-        if (nextHeader) setClientLogo(nextHeader);
-        if (vial || chrom || logoCol || nextHeader || nextWatermark) {
+        const resolvedHeader = nextHeader || logoCol || '';
+        const resolvedWatermark = nextWatermark || chrom || '';
+
+        if (resolvedWatermark) setLogoWatermark(resolvedWatermark);
+        if (resolvedHeader) setClientLogo(resolvedHeader);
+        if (vial || chrom || logoCol || resolvedHeader || resolvedWatermark) {
           setCoa(prev => prev ? {
             ...prev,
             vial_image: vial || prev.vial_image,
-            chromatogram_image: nextWatermark || chrom || prev.chromatogram_image,
-            company_logo: nextHeader || logoCol || prev.company_logo,
+            chromatogram_image: resolvedWatermark || chrom || prev.chromatogram_image,
+            company_logo: resolvedHeader || logoCol || prev.company_logo,
           } : prev);
         }
       } catch {
@@ -140,43 +159,36 @@ export default function COADetail() {
     return () => {
       cancelled = true;
     };
-  }, [slug, user, authLoading]);
+  }, [slug, authLoading, exportMode]);
 
   useEffect(() => {
+    // print=1 used to auto-open the browser print dialog; keep param harmless.
     if (!autoPrint || loading || !coa) return;
-    let cancelled = false;
-
-    async function printWhenReady() {
-      await document.fonts.ready;
-      const root = document.querySelector('.coa-print-root');
-      const imgs = root ? Array.from(root.querySelectorAll('img')) : [];
-      await Promise.all(
-        imgs.map((img) =>
-          img.complete
-            ? Promise.resolve()
-            : new Promise<void>((resolve) => {
-                img.addEventListener('load', () => resolve(), { once: true });
-                img.addEventListener('error', () => resolve(), { once: true });
-              }),
-        ),
-      );
-      await new Promise<void>((resolve) => {
-        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
-      });
-      if (cancelled) return;
-      window.print();
-      const url = new URL(window.location.href);
-      if (url.searchParams.has('print')) {
-        url.searchParams.delete('print');
-        window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
-      }
+    const url = new URL(window.location.href);
+    if (url.searchParams.has('print')) {
+      url.searchParams.delete('print');
+      window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
     }
-
-    void printWhenReady();
-    return () => {
-      cancelled = true;
-    };
   }, [autoPrint, loading, coa]);
+
+  async function downloadPng() {
+    const root = document.querySelector('.coa-print-root');
+    if (!(root instanceof HTMLElement) || !coa) return;
+    setDownloadingPng(true);
+    try {
+      document.querySelectorAll('.no-print').forEach(el => {
+        (el as HTMLElement).dataset._pngHide = '1';
+        (el as HTMLElement).style.display = 'none';
+      });
+      await downloadCoaPngFromElement(root, coaPngFilename(coa));
+    } finally {
+      document.querySelectorAll('[data-_png-hide="1"]').forEach(el => {
+        (el as HTMLElement).style.display = '';
+        delete (el as HTMLElement).dataset._pngHide;
+      });
+      setDownloadingPng(false);
+    }
+  }
 
   async function copyLink() {
     await navigator.clipboard.writeText(window.location.href);
@@ -290,7 +302,7 @@ export default function COADetail() {
 
   return (
     <>
-      {!autoPrint && (
+      {!hideChrome && (
         <div className="no-print"><Header /></div>
       )}
       <div className="min-h-screen bg-white coa-print-root flex flex-col">
@@ -369,15 +381,17 @@ export default function COADetail() {
 
           <div
             className={`mb-3 grid gap-2 items-stretch coa-print-media flex-1 min-h-[11rem] ${
-              coa.vial_image ? 'grid-cols-1 sm:grid-cols-[72px_1fr]' : 'grid-cols-1'
+              coa.vial_image ? 'grid-cols-1 sm:grid-cols-[104px_1fr]' : 'grid-cols-1'
             }`}
           >
             {coa.vial_image ? (
-              <div className="coa-print-vial flex flex-col gap-1 w-[72px] h-full min-h-0">
-                <div className="border border-black bg-white flex-1 min-h-0 p-px">
-                  <div className="bg-white flex items-center justify-center h-full min-h-[7.5rem] overflow-hidden">
-                    <img src={coa.vial_image} alt="Sample vial" className="max-h-full max-w-full object-contain" />
-                  </div>
+              <div className="coa-print-vial flex flex-col gap-1 w-full sm:w-[104px] h-full min-h-0">
+                <div className="border border-black bg-white flex-1 min-h-[7.5rem] p-0.5 flex items-stretch justify-stretch overflow-hidden">
+                  <img
+                    src={coa.vial_image}
+                    alt="Sample vial"
+                    className="block w-full h-full min-h-[7.5rem] object-contain object-center"
+                  />
                 </div>
                 {vialSizeBadge ? (
                   <div className="border border-black bg-white px-1 py-0.5 text-center shrink-0">
@@ -571,8 +585,13 @@ export default function COADetail() {
           </div>
 
           <div className="flex flex-col sm:flex-row gap-3 mt-6 no-print">
-            <button type="button" onClick={() => window.print()} className="btn-outline flex-1 gap-2 justify-center">
-              <Printer size={16} /> Save / Print PDF
+            <button
+              type="button"
+              onClick={() => void downloadPng()}
+              disabled={downloadingPng}
+              className="btn-outline flex-1 gap-2 justify-center"
+            >
+              <Download size={16} /> {downloadingPng ? 'Saving…' : 'Download PNG'}
             </button>
             <button type="button" onClick={copyLink} className="btn-outline flex-1 gap-2 justify-center">
               {copied ? <><Check size={16} className="text-atlas-success" /> Copied</> : <><Copy size={16} /> Copy Link</>}
@@ -583,7 +602,7 @@ export default function COADetail() {
           </div>
         </div>
       </div>
-      {!autoPrint && (
+      {!hideChrome && (
         <div className="no-print"><Footer /></div>
       )}
     </>

@@ -100,6 +100,180 @@ function coaFilename(coa: COA): string {
   return `${slug}-coa.pdf`;
 }
 
+export function coaPngFilename(coa: Pick<COA, 'slug'> | string): string {
+  const slug = (typeof coa === 'string' ? coa : coa.slug || 'coa').replace(/[^\w.-]+/g, '_');
+  return `${slug}-coa.png`;
+}
+
+function triggerBrowserDownload(href: string, filename: string) {
+  const a = document.createElement('a');
+  a.href = href;
+  a.download = filename;
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+function sleep(ms: number) {
+  return new Promise<void>(resolve => setTimeout(resolve, ms));
+}
+
+function certificateTitleReady(text: string): boolean {
+  return text.includes('CERTIFICATE') || text.includes('Certificate of Analysis');
+}
+
+async function waitForIframeLoad(iframe: HTMLIFrameElement, timeoutMs: number): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const finish = (fn: () => void) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      fn();
+    };
+    const timer = window.setTimeout(
+      () => finish(() => reject(new Error('Certificate load timed out'))),
+      timeoutMs,
+    );
+    iframe.addEventListener('load', () => finish(resolve), { once: true });
+    iframe.addEventListener('error', () => finish(() => reject(new Error('Failed to load certificate'))), {
+      once: true,
+    });
+    // Cached navigations can finish before listeners attach.
+    try {
+      if (iframe.contentDocument?.readyState === 'complete') finish(resolve);
+    } catch {
+      /* ignore cross-document access races */
+    }
+  });
+}
+
+/** Wait until the live certificate layout is mounted and images have finished loading. */
+async function waitForCertificateRoot(iframe: HTMLIFrameElement, timeoutMs = 45000): Promise<HTMLElement> {
+  await waitForIframeLoad(iframe, timeoutMs);
+
+  const started = Date.now();
+  let stableHits = 0;
+  let lastRoot: HTMLElement | null = null;
+
+  while (Date.now() - started < timeoutMs) {
+    const doc = iframe.contentDocument;
+    if (!doc?.body) {
+      await sleep(120);
+      continue;
+    }
+
+    const text = doc.body.innerText || '';
+    if (text.includes('COA Not Found')) throw new Error('COA not found');
+
+    const root = doc.querySelector('.coa-print-root');
+    if (root instanceof HTMLElement && certificateTitleReady(text)) {
+      const imgs = Array.from(root.querySelectorAll('img'));
+      const imgsReady = imgs.every(img => img.complete);
+      if (imgsReady) {
+        if (root === lastRoot) stableHits += 1;
+        else {
+          lastRoot = root;
+          stableHits = 1;
+        }
+        // Auth / phase-2 image hydration can remount the tree once — require two stable polls.
+        if (stableHits >= 2) {
+          try {
+            await doc.fonts.ready;
+          } catch {
+            /* ignore */
+          }
+          await sleep(150);
+          const fresh = doc.querySelector('.coa-print-root');
+          if (fresh instanceof HTMLElement && certificateTitleReady(doc.body.innerText || '')) {
+            return fresh;
+          }
+          stableHits = 0;
+          lastRoot = null;
+        }
+      } else {
+        stableHits = 0;
+      }
+    } else {
+      stableHits = 0;
+      lastRoot = null;
+    }
+    await sleep(120);
+  }
+  throw new Error('Certificate load timed out');
+}
+
+/** Capture a certificate DOM node to a PNG download (no print dialog). */
+export async function downloadCoaPngFromElement(root: HTMLElement, filename: string): Promise<void> {
+  const { toPng } = await import('html-to-image');
+  // Clone into the parent document so React remounts in the iframe cannot yank the node mid-capture.
+  const clone = root.cloneNode(true) as HTMLElement;
+  clone.querySelectorAll('.no-print').forEach(el => {
+    (el as HTMLElement).style.display = 'none';
+  });
+  clone.style.cssText = [
+    'position:fixed',
+    'left:0',
+    'top:0',
+    'width:816px',
+    'background:#ffffff',
+    'z-index:2147483646',
+    'pointer-events:none',
+    'opacity:1',
+  ].join(';');
+  document.body.appendChild(clone);
+  try {
+    const imgs = Array.from(clone.querySelectorAll('img'));
+    await Promise.all(
+      imgs.map(img =>
+        img.complete
+          ? Promise.resolve()
+          : new Promise<void>(resolve => {
+              img.addEventListener('load', () => resolve(), { once: true });
+              img.addEventListener('error', () => resolve(), { once: true });
+            }),
+      ),
+    );
+    const dataUrl = await toPng(clone, {
+      pixelRatio: 2,
+      cacheBust: true,
+      backgroundColor: '#ffffff',
+      width: clone.scrollWidth || 816,
+      height: clone.scrollHeight,
+    });
+    triggerBrowserDownload(dataUrl, filename);
+  } finally {
+    clone.remove();
+  }
+}
+
+/**
+ * Load the live portal COA in a hidden iframe and download it as a PNG.
+ * Preferred chemist export — avoids the print dialog and matches the web certificate.
+ */
+export async function downloadCoaPng(slug: string, filename?: string): Promise<void> {
+  const iframe = document.createElement('iframe');
+  iframe.setAttribute('aria-hidden', 'true');
+  iframe.title = 'COA export';
+  // Keep on-screen (opacity 0) so layout/fonts compute; offscreen iframes often never paint.
+  iframe.style.cssText =
+    'position:fixed;left:0;top:0;width:900px;height:1400px;border:0;opacity:0;pointer-events:none;z-index:-1;';
+  iframe.src = `/coa/${encodeURIComponent(slug)}?export=1`;
+  document.body.appendChild(iframe);
+
+  try {
+    const root = await waitForCertificateRoot(iframe);
+    await downloadCoaPngFromElement(root, filename || coaPngFilename(slug));
+  } finally {
+    iframe.remove();
+  }
+}
+
+export async function downloadCoaPngForCoa(coa: COA): Promise<void> {
+  await downloadCoaPng(coa.slug, coaPngFilename(coa));
+}
+
 function drawContainedImage(
   page: PDFPage,
   image: PDFImage,
@@ -357,11 +531,11 @@ export async function buildCoaPdfBytes(coa: COA): Promise<Uint8Array> {
 }
 
 /**
- * Open the live portal COA page and trigger the browser print / Save as PDF dialog.
- * This is the canonical download path so certificates match what clients see on the web.
+ * Open the live portal COA page (web view, no auto-print).
+ * Prefer {@link downloadCoaPng} for chemist file export.
  */
 export function openCoaPrintView(slug: string): void {
-  const path = `/coa/${encodeURIComponent(slug)}?print=1`;
+  const path = `/coa/${encodeURIComponent(slug)}`;
   window.open(path, '_blank', 'noopener,noreferrer');
 }
 
@@ -374,9 +548,9 @@ export function openCoaPdfPreviewWindow(): Window | null {
   return preview;
 }
 
-/** Open the portal COA print view (matches on-screen certificate). */
+/** Open the portal COA web view. */
 export async function openCoaPdf(coa: COA, previewWindow?: Window | null): Promise<void> {
-  const path = `/coa/${encodeURIComponent(coa.slug)}?print=1`;
+  const path = `/coa/${encodeURIComponent(coa.slug)}`;
   if (previewWindow && !previewWindow.closed) {
     previewWindow.location.href = path;
     return;
@@ -384,9 +558,9 @@ export async function openCoaPdf(coa: COA, previewWindow?: Window | null): Promi
   openCoaPrintView(coa.slug);
 }
 
-/** Download / print via the portal COA view (Save as PDF in the print dialog). */
+/** Download the certificate as a PNG (chemist / client export). */
 export async function downloadCoaPdf(coa: COA): Promise<void> {
-  openCoaPrintView(coa.slug);
+  await downloadCoaPngForCoa(coa);
 }
 
 /** @deprecated Template blob generation is no longer used for downloads. */

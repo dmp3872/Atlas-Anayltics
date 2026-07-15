@@ -11,7 +11,7 @@ import { ENDOTOXIN_SPEC_EU_ML, SterilityMethod, STERILITY_METHOD_LABELS } from '
 import { openCoaPrintView } from '../../lib/coaPdf';
 import LogoDropzone from '../account/LogoDropzone';
 
-const MAX_COA_IMAGE_BYTES = 2 * 1024 * 1024;
+const MAX_COA_IMAGE_BYTES = 1024 * 1024;
 
 interface Props {
   coa: COA;
@@ -97,8 +97,9 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
         return;
       }
       onSaved?.(saved);
-      openCoaPrintView(saved.slug);
       onClose();
+      // PNG download happens on the live certificate page — open it after save.
+      openCoaPrintView(saved.slug);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save the certificate.');
     } finally {
@@ -131,7 +132,7 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
         <div className="px-5 py-4 space-y-5">
           <p className="text-sm text-neutral-600">
             Upload the vial photo and fill Average Net Peptide Content.
-            After save, the live portal certificate opens for print / Save as PDF.
+            After save, the live certificate opens — use Download PNG there.
           </p>
 
           {(headerLogo || watermark) && (
@@ -302,7 +303,7 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
           <div>
             <label className="label mb-2 block">Vial photo</label>
             <p className="text-xs text-neutral-500 mb-2">
-              Empty background is auto-cropped so only the vial prints.
+              Empty background is auto-cropped so the vial fills the certificate frame.
             </p>
             <LogoDropzone
               value={vialImage}
@@ -310,7 +311,7 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
               onError={setError}
               maxBytes={MAX_COA_IMAGE_BYTES}
               prompt="a vial photo"
-              hint="JPG or PNG, up to 2 MB"
+              hint="JPG or PNG, up to 1 MB"
             />
           </div>
 
@@ -325,7 +326,7 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
           </button>
           <button type="button" onClick={() => void handleGenerate()} disabled={busy} className="btn-primary gap-2">
             <FileText size={16} />
-            {busy ? 'Saving…' : 'Save & print'}
+            {busy ? 'Saving…' : 'Save'}
           </button>
         </div>
       </div>

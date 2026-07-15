@@ -32,6 +32,12 @@ export function coaWorkflowStage(coa: Pick<COA, 'coa_workflow_stage' | 'is_publi
   return 'issued';
 }
 
+/** Prepare (vial + panel stats) is only allowed before verify / publish. */
+export function canPrepareCoa(coa: Pick<COA, 'coa_workflow_stage' | 'is_public'>): boolean {
+  const stage = coaWorkflowStage(coa);
+  return stage === 'issued' || stage === 'awaiting_info';
+}
+
 export function workflowStepIndex(stage: CoaWorkflowStage): number {
   return COA_WORKFLOW_BOARD_COLUMNS.indexOf(stage);
 }

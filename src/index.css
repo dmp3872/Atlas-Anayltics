@@ -213,7 +213,7 @@
 
   .coa-print-media {
     display: grid !important;
-    grid-template-columns: 78px 1fr !important;
+    grid-template-columns: 104px 1fr !important;
     gap: 0.35rem !important;
     align-items: stretch !important;
     flex: 1 1 auto !important;
@@ -225,12 +225,16 @@
   }
 
   .coa-print-vial {
-    width: 78px !important;
+    width: 104px !important;
     height: 100% !important;
   }
 
   .coa-print-vial img {
-    max-height: 100% !important;
+    width: 100% !important;
+    height: 100% !important;
+    max-height: none !important;
+    object-fit: contain !important;
+    object-position: center !important;
   }
 
   .coa-print-chromatogram {

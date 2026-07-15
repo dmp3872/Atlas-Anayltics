@@ -1,40 +1,9 @@
 import { useRef, useState } from 'react';
 import { UploadCloud, Trash2 } from 'lucide-react';
+import { compressImageFile, MAX_COA_IMAGE_DATA_URL_CHARS } from '../../lib/imageCompress';
 
 export const MAX_LOGO_BYTES = 1024 * 1024; // 1 MB file before compress
 export const ACCEPTED_LOGO_TYPES = ['image/jpeg', 'image/png'];
-
-/** Keep stored data URLs small so COA pages don't freeze. */
-const MAX_DATA_URL_CHARS = 400_000;
-const MAX_EDGE_PX = 1200;
-
-async function compressToDataUrl(file: File): Promise<string> {
-  const bitmap = await createImageBitmap(file);
-  const scale = Math.min(1, MAX_EDGE_PX / Math.max(bitmap.width, bitmap.height));
-  const width = Math.max(1, Math.round(bitmap.width * scale));
-  const height = Math.max(1, Math.round(bitmap.height * scale));
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) {
-    bitmap.close();
-    throw new Error('Could not process image');
-  }
-  ctx.drawImage(bitmap, 0, 0, width, height);
-  bitmap.close();
-
-  let quality = 0.85;
-  let dataUrl = canvas.toDataURL('image/jpeg', quality);
-  while (dataUrl.length > MAX_DATA_URL_CHARS && quality > 0.45) {
-    quality -= 0.1;
-    dataUrl = canvas.toDataURL('image/jpeg', quality);
-  }
-  if (dataUrl.length > MAX_DATA_URL_CHARS) {
-    throw new Error('Image is still too large after compression. Try a smaller photo.');
-  }
-  return dataUrl;
-}
 
 interface LogoDropzoneProps {
   value: string;
@@ -63,9 +32,12 @@ export default function LogoDropzone({
       onError?.(`Image must be ${maxMb} MB or smaller.`);
       return;
     }
-    void compressToDataUrl(file)
+    void compressImageFile(file, { maxChars: MAX_COA_IMAGE_DATA_URL_CHARS })
       .then(onChange)
-      .catch(() => onError?.('Could not read that image. Try another file.'));
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : 'Could not read that image. Try another file.';
+        onError?.(msg);
+      });
   }
 
   function handleDrop(e: React.DragEvent<HTMLDivElement>) {

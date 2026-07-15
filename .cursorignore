@@ -1,0 +1,8 @@
+# Keep Cursor from indexing heavy / generated paths (prevents IDE freezes).
+.bin/
+tmp/
+node_modules/
+dist/
+*.pdf
+**/*-raw.txt
+**/*.dataurl.txt

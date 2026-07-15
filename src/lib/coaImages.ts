@@ -6,6 +6,7 @@ import {
   STERILITY_METHOD_LABELS,
   sterilitySpecLabel,
 } from './labCoaForm';
+import { compressImageDataUrl } from './imageCompress';
 
 export type FentanylDetectionMark = '' | 'none_detected' | 'detected';
 
@@ -160,13 +161,17 @@ export async function resolveImageAsDataUrl(src: string): Promise<string> {
   const value = (src || '').trim();
   if (!value) return '';
 
-  if (/^data:image\/(png|jpeg|jpg);base64,/i.test(value)) return value;
+  // Already a JPEG/PNG data URL — re-compress if oversized so callers never embed multi‑MB blobs.
+  if (/^data:image\/(png|jpeg|jpg);base64,/i.test(value)) {
+    return compressImageDataUrl(value);
+  }
 
   if (value.startsWith('data:image/')) {
     try {
       const res = await fetch(value);
       const blob = await res.blob();
-      return await blobToPngDataUrl(blob);
+      const png = await blobToPngDataUrl(blob);
+      return compressImageDataUrl(png);
     } catch {
       return '';
     }
@@ -178,14 +183,16 @@ export async function resolveImageAsDataUrl(src: string): Promise<string> {
     if (!res.ok) return '';
     const blob = await res.blob();
     if (/^image\/(png|jpeg|jpg)$/i.test(blob.type)) {
-      return await new Promise((resolve, reject) => {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
         reader.onerror = () => reject(new Error('read failed'));
         reader.readAsDataURL(blob);
       });
+      return compressImageDataUrl(dataUrl);
     }
-    return await blobToPngDataUrl(blob);
+    const png = await blobToPngDataUrl(blob);
+    return compressImageDataUrl(png);
   } catch {
     return '';
   }
@@ -414,8 +421,15 @@ export async function saveCoaPdfPrep(
   const hydrated = hydrateCoaImages(coa);
   const { panel_results, molecular_weight } = applyPrepToCoaPanels(coa, prep);
   // Keep snapshotted header logo / watermark from issue time; prep only updates vial + stats.
-  const companyLogo = hydrated.company_logo || '';
-  const watermark = hydrated.chromatogram_image || '';
+  // Trim empty studio margins so the vial fills the certificate frame, then compress.
+  const trimmedVial = prep.vial_image
+    ? (await trimImageWhitespace(prep.vial_image, { padRatio: 0.04 })) || prep.vial_image
+    : '';
+  const [vialImage, companyLogo, watermark] = await Promise.all([
+    compressImageDataUrl(trimmedVial),
+    compressImageDataUrl(hydrated.company_logo || ''),
+    compressImageDataUrl(hydrated.chromatogram_image || ''),
+  ]);
 
   const baseSummary = {
     ...((coa.result_summary && typeof coa.result_summary === 'object' ? coa.result_summary : {}) as Record<string, unknown>),
@@ -440,7 +454,7 @@ export async function saveCoaPdfPrep(
 
   const next: COA = {
     ...hydrated,
-    vial_image: prep.vial_image,
+    vial_image: vialImage,
     chromatogram_image: watermark,
     company_logo: companyLogo || hydrated.company_logo || '',
     result_summary: baseSummary,
@@ -449,7 +463,7 @@ export async function saveCoaPdfPrep(
   };
 
   const direct = {
-    vial_image: prep.vial_image || '',
+    vial_image: vialImage || '',
     chromatogram_image: watermark,
     company_logo: companyLogo || hydrated.company_logo || '',
     result_summary: baseSummary,

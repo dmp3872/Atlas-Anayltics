@@ -28,7 +28,6 @@ import PortalHome from '../components/portal/PortalHome';
 import PrepaidShippingLabel from '../components/order/PrepaidShippingLabel';
 import { queueNotification } from '../lib/notifications';
 import { hydrateCoaImages } from '../lib/coaImages';
-import { openCoaPrintView } from '../lib/coaPdf';
 import { COA_LIST_COLUMNS } from '../lib/coaSelect';
 import { useUserRole } from '../hooks/useUserRole';
 
@@ -55,7 +54,6 @@ export default function Portal() {
   const [samples, setSamples] = useState<OrderSample[]>([]);
   const [panels, setPanels] = useState<TestPanel[]>([]);
   const [loading, setLoading] = useState(true);
-  const canDownloadCoaPdf = role === 'client';
   const [shippingOpen, setShippingOpen] = useState(true);
   const [copiedAddr, setCopiedAddr] = useState(false);
   const [search, setSearch] = useState('');
@@ -88,12 +86,6 @@ export default function Portal() {
       setLoading(false);
     });
   }, [user]);
-
-  /** Opens the live portal COA view and triggers the browser print / Save as PDF dialog. */
-  function handleDownloadCoaPdf(coa: COA) {
-    if (!canDownloadCoaPdf) return;
-    openCoaPrintView(coa.slug);
-  }
 
   useEffect(() => {
     const label = params.get('label');
@@ -296,7 +288,7 @@ export default function Portal() {
               <div className="space-y-4">
                 <div>
                   <h1 className="portal-page-title">Your COAs</h1>
-                  <p className="portal-page-subtitle">Certificates of analysis from your Atlas Analytics testing. Download opens the certificate — use Save as PDF in the print dialog.</p>
+                  <p className="portal-page-subtitle">Certificates of analysis from your Atlas Analytics testing. Open a certificate to download a PNG.</p>
                 </div>
                 <div className="card overflow-hidden">
                 {filteredCoas.length === 0 ? (
@@ -329,17 +321,9 @@ export default function Portal() {
                             <td className="px-5 py-3 text-neutral-600">{formatDate(coa.issued_at)}</td>
                             <td className="px-5 py-3 text-right">
                               <div className="inline-flex flex-wrap gap-2 justify-end">
-                                <Link to={`/coa/${coa.slug}`} className="btn-outline text-xs py-1.5 gap-1 inline-flex"><ExternalLink size={12} /> View</Link>
-                                {canDownloadCoaPdf && (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDownloadCoaPdf(coa)}
-                                    className="btn-primary text-xs py-1.5 gap-1 inline-flex"
-                                  >
-                                    <Download size={12} />
-                                    Download PDF
-                                  </button>
-                                )}
+                                <Link to={`/coa/${coa.slug}`} className="btn-primary text-xs py-1.5 gap-1 inline-flex">
+                                  <ExternalLink size={12} /> Open & download PNG
+                                </Link>
                               </div>
                             </td>
                           </tr>

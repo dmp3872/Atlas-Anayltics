@@ -1,17 +1,16 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  ArrowRight, CheckCircle, ExternalLink, FileText, FlaskConical, Globe, GripVertical,
+  ArrowRight, CheckCircle, ExternalLink, FlaskConical, Globe, GripVertical,
   MessageCircle, Shield,
 } from 'lucide-react';
 import { COA } from '../../lib/types';
 import { formatDate } from '../../lib/utils';
 import {
   COA_WORKFLOW_BOARD_COLUMNS, COA_WORKFLOW_LABELS, COA_WORKFLOW_STEPS,
-  CoaWorkflowStage, coaWorkflowStage,
+  CoaWorkflowStage, canPrepareCoa, coaWorkflowStage,
 } from '../../lib/coaWorkflow';
 import CoaPdfPrepModal from './CoaPdfPrepModal';
-import { openCoaPrintView } from '../../lib/coaPdf';
 
 interface Props {
   coas: COA[];
@@ -117,7 +116,7 @@ export default function CoaWorkflowBoard({ coas, onMoveCoa, movingId, onCoaImage
       </div>
 
       <p className="text-xs text-neutral-500">
-        Drag cards between columns to update workflow stage. <strong>View PDF</strong> prints the live portal certificate; <strong>Prepare</strong> updates vial photo and panel stats first.
+        Drag cards between columns to update workflow stage. <strong>Prepare</strong> (vial photo + panel stats) is only available in Issued and Awaiting Client Info. After verify/publish, open the certificate to download PNG.
       </p>
 
       {prepCoa && (
@@ -186,48 +185,22 @@ export default function CoaWorkflowBoard({ coas, onMoveCoa, movingId, onCoaImage
                             <p className="text-xs text-neutral-500 mt-1 truncate">
                               {coa.company_name || '—'} · {formatDate(coa.issued_at)}
                             </p>
-                            {(coa.vial_image || coa.chromatogram_image) && (
-                              <div className="flex gap-1.5 mt-2">
-                                {coa.vial_image && (
-                                  <img
-                                    src={coa.vial_image}
-                                    alt="Vial"
-                                    className="h-9 w-9 rounded object-cover border border-neutral-200 bg-neutral-50"
-                                  />
-                                )}
-                                {coa.chromatogram_image && (
-                                  <img
-                                    src={coa.chromatogram_image}
-                                    alt="Chromatogram"
-                                    className="h-9 w-14 rounded object-cover border border-neutral-200 bg-neutral-50"
-                                  />
-                                )}
-                              </div>
-                            )}
                           </div>
                         </div>
 
                         <div className="flex flex-wrap gap-2 pt-2 mt-2 border-t border-atlas-border">
-                          <button
-                            type="button"
-                            onClick={e => {
-                              e.stopPropagation();
-                              openCoaPrintView(coa.slug);
-                            }}
-                            className="btn-primary text-xs py-1 px-2 gap-1"
-                          >
-                            <FileText size={11} /> View PDF
-                          </button>
-                          <button
-                            type="button"
-                            onClick={e => {
-                              e.stopPropagation();
-                              setPrepCoa(coa);
-                            }}
-                            className="btn-outline text-xs py-1 px-2 gap-1"
-                          >
-                            Prepare
-                          </button>
+                          {canPrepareCoa(coa) && (
+                            <button
+                              type="button"
+                              onClick={e => {
+                                e.stopPropagation();
+                                setPrepCoa(coa);
+                              }}
+                              className="btn-outline text-xs py-1 px-2 gap-1"
+                            >
+                              Prepare
+                            </button>
+                          )}
                           <Link
                             to={`/coa/${coa.slug}`}
                             className="btn-outline text-xs py-1 px-2 gap-1"

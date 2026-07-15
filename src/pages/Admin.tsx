@@ -9,9 +9,9 @@ import { COA, Order, UserProfile, UserRole } from '../lib/types';
 import { formatDate } from '../lib/utils';
 import { ROLE_LABELS } from '../lib/roles';
 import { hydrateCoaImages } from '../lib/coaImages';
+import { canPrepareCoa } from '../lib/coaWorkflow';
 import StaffHeader from '../components/layout/StaffHeader';
 import CoaPdfPrepModal from '../components/lab/CoaPdfPrepModal';
-import { openCoaPrintView } from '../lib/coaPdf';
 import { COA_LIST_COLUMNS } from '../lib/coaSelect';
 
 const ROLES: UserRole[] = ['client', 'chemist', 'verifier', 'reviewer', 'admin'];
@@ -170,22 +170,17 @@ export default function Admin() {
                     <p className="text-xs text-neutral-500">{c.company_name || '—'} · {formatDate(c.issued_at)} · {c.is_public ? 'Public' : 'Private'}</p>
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => openCoaPrintView(c.slug)}
-                      className="btn-primary text-xs py-1.5 px-2 gap-1"
-                    >
-                      <FileText size={12} /> View PDF
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setPrepCoa(c)}
-                      className="btn-outline text-xs py-1.5 px-2 gap-1"
-                    >
-                      Prepare
-                    </button>
-                    <Link to={`/coa/${c.slug}`} className="btn-outline text-xs py-1.5 px-2 gap-1">
-                      <ExternalLink size={12} /> Web
+                    {canPrepareCoa(c) && (
+                      <button
+                        type="button"
+                        onClick={() => setPrepCoa(c)}
+                        className="btn-outline text-xs py-1.5 px-2 gap-1"
+                      >
+                        Prepare
+                      </button>
+                    )}
+                    <Link to={`/coa/${c.slug}`} className="btn-primary text-xs py-1.5 px-2 gap-1">
+                      <ExternalLink size={12} /> Open & download PNG
                     </Link>
                   </div>
                 </div>
