@@ -14,6 +14,7 @@ import {
   EMPTY_LAB_RESULTS, LabCoaResults, VIAL_SIZE_OPTIONS, VialSizeOption,
   HEAVY_METAL_NAMES, buildLabResultsFromSample, labResultsToPanelResults,
   parsePurityPercent, parseMolecularWeight, lookupCas, casForSampleName,
+  ENDOTOXIN_SPEC_EU_ML, STERILITY_METHOD_LABELS,
 } from '../lib/labCoaForm';
 import { COA_WORKFLOW_LABELS, coaWorkflowStage, buildWorkflowStagePatch, CoaWorkflowStage } from '../lib/coaWorkflow';
 import CoaWorkflowBoard from '../components/lab/CoaWorkflowBoard';
@@ -243,7 +244,8 @@ export default function Lab() {
     const cleanPanels = labResultsToPanelResults(labResults);
 
     const purityNum = parsePurityPercent(labResults.netPurity);
-    const mwNum = parseMolecularWeight(labResults.molecularWeight);
+    const includeMw = labResults.includeMolecularWeight && !!labResults.molecularWeight.trim();
+    const mwNum = includeMw ? parseMolecularWeight(labResults.molecularWeight) : null;
     const content_hash = computeCoaContentHash({
       sample_name: form.sampleName.trim(),
       batch_number: form.batchNumber.trim(),
@@ -266,6 +268,16 @@ export default function Lab() {
       chromatogram_data: { vial_size: form.vialSize },
       vial_image: vialImage || '',
       chromatogram_image: chromatogramImage || '',
+      result_summary: {
+        include_molecular_weight: includeMw,
+        molecular_weight: includeMw ? labResults.molecularWeight.trim() : '',
+        sterility_method: labResults.sterilityMethod,
+        sterility_pass: labResults.sterilityPass,
+        sterility_method_label: STERILITY_METHOD_LABELS[labResults.sterilityMethod],
+        sterility_specification: 'Not Detected',
+        endotoxin_eu_ml: labResults.endotoxinEuMl.trim(),
+        endotoxin_pass: labResults.endotoxinPass,
+      },
       overall_result: form.overallResult,
       is_public: false,
       coa_workflow_stage: 'issued',
@@ -593,21 +605,71 @@ export default function Lab() {
                       <input type="number" step="0.1" value={labResults.netPurity} onChange={e => updateResults({ netPurity: e.target.value })} className="input-field" placeholder="e.g. 99.2" />
                     </div>
                     <div>
-                      <label className="label">Molecular Weight (Da)</label>
-                      <input type="number" step="0.1" value={labResults.molecularWeight} onChange={e => updateResults({ molecularWeight: e.target.value })} className="input-field" placeholder="e.g. 1419.5" />
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <label className="label mb-0">Molecular Weight (Da)</label>
+                        <label className="inline-flex items-center gap-1.5 text-xs text-neutral-600 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={labResults.includeMolecularWeight}
+                            onChange={e => updateResults({ includeMolecularWeight: e.target.checked })}
+                            className="rounded border-atlas-border"
+                          />
+                          Include on COA
+                        </label>
+                      </div>
+                      <input
+                        type="number"
+                        step="0.1"
+                        value={labResults.molecularWeight}
+                        onChange={e => updateResults({ molecularWeight: e.target.value })}
+                        disabled={!labResults.includeMolecularWeight}
+                        className="input-field disabled:opacity-50"
+                        placeholder="e.g. 1419.5"
+                      />
                     </div>
                   </div>
                   <div className="grid sm:grid-cols-2 gap-4">
                     <div>
-                      <label className="label">Sterility</label>
+                      <label className="label">Sterility method</label>
+                      <select
+                        value={labResults.sterilityMethod}
+                        onChange={e => updateResults({ sterilityMethod: e.target.value as LabCoaResults['sterilityMethod'] })}
+                        className="input-field"
+                      >
+                        <option value="pcr">{STERILITY_METHOD_LABELS.pcr}</option>
+                        <option value="culture_14_day">{STERILITY_METHOD_LABELS.culture_14_day}</option>
+                      </select>
+                      <p className="text-xs text-neutral-500 mt-1">Specification: Not Detected</p>
+                    </div>
+                    <div>
+                      <label className="label">Sterility result</label>
                       <select value={labResults.sterilityPass ? 'pass' : 'fail'} onChange={e => updateResults({ sterilityPass: e.target.value === 'pass' })} className="input-field">
-                        <option value="pass">Pass</option>
-                        <option value="fail">Fail</option>
+                        <option value="pass">Not Detected — PASS</option>
+                        <option value="fail">Detected — FAIL</option>
                       </select>
                     </div>
                     <div>
-                      <label className="label">Endotoxin (EU/mg)</label>
-                      <input type="number" step="0.01" value={labResults.endotoxinEuMg} onChange={e => updateResults({ endotoxinEuMg: e.target.value })} className="input-field" placeholder="e.g. 0.25" />
+                      <label className="label">Endotoxin (EU/mL)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={labResults.endotoxinEuMl}
+                        onChange={e => updateResults({ endotoxinEuMl: e.target.value })}
+                        className="input-field"
+                        placeholder="e.g. 0.25"
+                      />
+                      <p className="text-xs text-neutral-500 mt-1">Spec: {ENDOTOXIN_SPEC_EU_ML}</p>
+                    </div>
+                    <div>
+                      <label className="label">Endotoxin conformity</label>
+                      <select
+                        value={labResults.endotoxinPass ? 'pass' : 'fail'}
+                        onChange={e => updateResults({ endotoxinPass: e.target.value === 'pass' })}
+                        className="input-field"
+                      >
+                        <option value="pass">PASS</option>
+                        <option value="fail">FAIL</option>
+                      </select>
                     </div>
                     {labResults.includeFentanyl && (
                       <div>

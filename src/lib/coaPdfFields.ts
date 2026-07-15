@@ -1,5 +1,7 @@
 import { COA, PanelResult } from './types';
 import { formatDate } from './utils';
+import { readCoaPdfStats } from './coaImages';
+import { ENDOTOXIN_SPEC_EU_ML, STERILITY_METHOD_LABELS } from './labCoaForm';
 
 export type CoaPdfFieldValues = Record<string, string>;
 
@@ -36,6 +38,7 @@ function usedPanelNames(panels: PanelResult[]): Set<PanelResult> {
     ['purity', 'hplc'],
     ['steril'],
     ['endotoxin', 'lal'],
+    ['molecular'],
   ];
   const used = new Set<PanelResult>();
   for (const group of keys) {
@@ -45,14 +48,42 @@ function usedPanelNames(panels: PanelResult[]): Set<PanelResult> {
   return used;
 }
 
+function resolveSterility(coa: COA, panels: PanelResult[]) {
+  const stats = readCoaPdfStats(coa);
+  const panel = findPanel(panels, 'steril');
+  const methodLabel = STERILITY_METHOD_LABELS[stats.sterility_method];
+  const pass = stats.sterility_pass;
+  return {
+    specification: 'Not Detected',
+    result: pass
+      ? `Not Detected (${methodLabel})`
+      : `Detected (${methodLabel})`,
+    conformity: pass ? 'PASS' : 'FAIL',
+    panel,
+  };
+}
+
+function resolveEndotoxin(coa: COA, panels: PanelResult[]) {
+  const stats = readCoaPdfStats(coa);
+  const panel = findPanel(panels, 'endotoxin', 'lal');
+  const value = stats.endotoxin_eu_ml.trim();
+  return {
+    specification: ENDOTOXIN_SPEC_EU_ML,
+    result: value ? `${value} EU/mL` : (panel?.result ?? '').trim(),
+    conformity: stats.endotoxin_pass ? 'PASS' : 'FAIL',
+    panel,
+  };
+}
+
 /** Map a COA row to AcroForm field names on the Certificate of Analysis template. */
 export function buildCoaPdfFieldValues(coa: COA): CoaPdfFieldValues {
   const panels = Array.isArray(coa.panel_results) ? coa.panel_results : [];
   const identity = panelTriplet(panels, ['ident']);
   const netContent = panelTriplet(panels, ['net content', 'peptide content']);
   const purity = panelTriplet(panels, ['purity', 'hplc']);
-  const sterility = panelTriplet(panels, ['steril']);
-  const endotoxin = panelTriplet(panels, ['endotoxin', 'lal']);
+  const sterility = resolveSterility(coa, panels);
+  const endotoxin = resolveEndotoxin(coa, panels);
+  const stats = readCoaPdfStats(coa);
 
   const summary = (coa.result_summary ?? {}) as Record<string, unknown>;
   const chrom = (coa.chromatogram_data ?? {}) as Record<string, unknown>;
@@ -127,18 +158,35 @@ export function buildCoaPdfFieldValues(coa: COA): CoaPdfFieldValues {
     'ConformityEndotoxins LAL': endotoxin.conformity,
   };
 
-  const used = usedPanelNames(panels);
-  // Fentanyl is drawn as its own PDF row — keep Heavy Metals extras clean.
-  const extras = panels.filter(
-    p =>
-      !used.has(p) &&
-      !p.panel_name.toLowerCase().includes('fentanyl') &&
-      (p.result?.trim() || p.specification?.trim()),
-  );
-  for (let i = 0; i < 5; i++) {
-    const panel = extras[i];
-    fields[`Text2_T${i + 1}`] = panel ? (panel.result || panel.panel_name) : '';
-    fields[`Text2_T${i + 6}`] = panel ? conformityLabel(panel) : '';
+  const fenMark = stats.fentanyl_detection;
+  const redrawBelowEndotoxins = fenMark === 'none_detected' || fenMark === 'detected';
+
+  // When Fentanyl is on the COA we redraw the Heavy Metals block under it — leave Text2 blank.
+  if (!redrawBelowEndotoxins) {
+    const used = usedPanelNames(panels);
+    const extras = panels.filter(
+      p =>
+        !used.has(p) &&
+        !p.panel_name.toLowerCase().includes('fentanyl') &&
+        !p.panel_name.toLowerCase().includes('molecular') &&
+        (p.result?.trim() || p.specification?.trim()),
+    );
+
+    // Optional molecular weight occupies the first Text2 slot when included.
+    let slot = 0;
+    if (stats.include_molecular_weight && stats.molecular_weight.trim()) {
+      fields[`Text2_T1`] = `MW ${stats.molecular_weight.trim()} Da`;
+      fields[`Text2_T6`] = 'PASS';
+      slot = 1;
+    }
+
+    for (let i = slot; i < 5; i++) {
+      const panel = extras[i - slot];
+      fields[`Text2_T${i + 1}`] = panel ? (panel.result || panel.panel_name) : '';
+      fields[`Text2_T${i + 6}`] = panel ? conformityLabel(panel) : '';
+    }
+  } else {
+    for (let i = 1; i <= 10; i++) fields[`Text2_T${i}`] = '';
   }
 
   return fields;

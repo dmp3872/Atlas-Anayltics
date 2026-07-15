@@ -1,5 +1,5 @@
-import { PDFDocument, PDFImage, PDFPage, StandardFonts, rgb } from 'pdf-lib';
-import { COA } from './types';
+import { PDFDocument, PDFFont, PDFImage, PDFPage, StandardFonts, rgb, RGB } from 'pdf-lib';
+import { COA, PanelResult } from './types';
 import { buildCoaPdfFieldValues } from './coaPdfFields';
 import {
   fentanylDetectionLabel,
@@ -23,6 +23,26 @@ const VIAL_PANEL_RECT = { x: 12, y: 485, width: 112, height: 158 };
 const VIAL_PHOTO_RECT = { x: 18, y: 491, width: 100, height: 146 };
 
 const LOGO_WATERMARK_OPACITY = 0.18;
+
+/** Main results table geometry (matches Endotoxins / Sterility AcroForm fields). */
+const RESULTS_TABLE = {
+  left: 34,
+  right: 581,
+  /** Column dividers: Test | Specification | Result | Conformity */
+  cols: [34, 138.7, 256.6, 435.0, 581] as const,
+  rowH: 19.3,
+  /** Bottom of Endotoxins (LAL) row. */
+  endotoxinsBottom: 261.3,
+  headerH: 20,
+};
+
+const HEAVY_METAL_TEMPLATE_ROWS = [
+  { name: 'Arsenic (As)', limit: 'NMT 1.5 ppm', match: 'arsenic' },
+  { name: 'Cadmium (Cd)', limit: 'NMT 0.5 ppm', match: 'cadmium' },
+  { name: 'Chromium (Cr)', limit: 'NMT 10 ppm', match: 'chromium' },
+  { name: 'Mercury (Hg)', limit: 'NMT 1.5 ppm', match: 'mercury' },
+  { name: 'Lead (Pb)', limit: 'NMT 1 ppm', match: 'lead' },
+] as const;
 
 function parseDataUrl(dataUrl: string): { bytes: Uint8Array; kind: 'png' | 'jpg' } | null {
   const match = /^data:(image\/(?:png|jpeg|jpg));base64,(.+)$/i.exec(dataUrl.trim());
@@ -91,6 +111,131 @@ function drawContainedImage(
   });
 }
 
+function drawTableGrid(
+  page: PDFPage,
+  bottom: number,
+  height: number,
+  border: RGB,
+) {
+  const { left, right, cols } = RESULTS_TABLE;
+  const top = bottom + height;
+  const t = 0.55;
+  page.drawLine({ start: { x: left, y: top }, end: { x: right, y: top }, thickness: t, color: border });
+  page.drawLine({ start: { x: left, y: bottom }, end: { x: right, y: bottom }, thickness: t, color: border });
+  for (const x of cols) {
+    page.drawLine({ start: { x, y: bottom }, end: { x, y: top }, thickness: t, color: border });
+  }
+}
+
+function drawDataRow(
+  page: PDFPage,
+  bottom: number,
+  cells: [string, string, string, string],
+  fonts: { regular: PDFFont; bold: PDFFont },
+  opts?: { boldFirst?: boolean; confColor?: RGB },
+) {
+  const { rowH, cols } = RESULTS_TABLE;
+  const border = rgb(0.78, 0.78, 0.78);
+  const ink = rgb(0.08, 0.08, 0.08);
+  const muted = rgb(0.28, 0.28, 0.28);
+  page.drawRectangle({
+    x: RESULTS_TABLE.left,
+    y: bottom,
+    width: RESULTS_TABLE.right - RESULTS_TABLE.left,
+    height: rowH,
+    color: rgb(1, 1, 1),
+    borderWidth: 0,
+  });
+  drawTableGrid(page, bottom, rowH, border);
+  const textY = bottom + 5.5;
+  const pads = [cols[0] + 6, cols[1] + 8, cols[2] + 8, cols[3] + 14] as const;
+  cells.forEach((text, i) => {
+    if (!text) return;
+    const useBold = i === 0 ? opts?.boldFirst !== false : i === 3;
+    page.drawText(toWinAnsi(text), {
+      x: pads[i],
+      y: textY,
+      size: 9,
+      font: useBold ? fonts.bold : fonts.regular,
+      color: i === 3 && opts?.confColor ? opts.confColor : i === 1 ? muted : ink,
+    });
+  });
+}
+
+function heavyMetalResult(panels: PanelResult[], match: string): { result: string; pass: boolean } {
+  const panel = panels.find(p => p.panel_name.toLowerCase().includes(match));
+  if (!panel) return { result: '', pass: true };
+  return { result: (panel.value ?? panel.result ?? '').trim(), pass: panel.pass };
+}
+
+/** Insert Fentanyl under Endotoxins and shift Heavy Metals down so the row is visible. */
+function drawFentanylAndShiftedHeavyMetals(
+  page: PDFPage,
+  coa: COA,
+  fonts: { regular: PDFFont; bold: PDFFont },
+) {
+  const fenMark = readCoaPdfStats(coa).fentanyl_detection;
+  const fenLabel = fentanylDetectionLabel(fenMark);
+  if (!fenLabel) return;
+
+  const { rowH, endotoxinsBottom, headerH, left, right } = RESULTS_TABLE;
+  const fenBottom = endotoxinsBottom - rowH;
+  const wipeBottom = 118;
+  const wipeTop = endotoxinsBottom;
+
+  page.drawRectangle({
+    x: left - 1,
+    y: wipeBottom,
+    width: right - left + 2,
+    height: wipeTop - wipeBottom,
+    color: rgb(1, 1, 1),
+    borderWidth: 0,
+  });
+
+  const conf = fenMark === 'none_detected' ? 'PASS' : 'FAIL';
+  const confColor = fenMark === 'none_detected' ? rgb(0.05, 0.45, 0.2) : rgb(0.75, 0.08, 0.08);
+  drawDataRow(
+    page,
+    fenBottom,
+    ['Fentanyl Detection', 'None Detected', fenLabel, conf],
+    fonts,
+    { boldFirst: false, confColor },
+  );
+
+  const hmHeaderBottom = fenBottom - headerH;
+  page.drawRectangle({
+    x: left,
+    y: hmHeaderBottom,
+    width: right - left,
+    height: headerH,
+    color: rgb(0, 0, 0),
+    borderWidth: 0,
+  });
+  const gold = rgb(0.83, 0.69, 0.22);
+  const headerY = hmHeaderBottom + 6;
+  page.drawText('Heavy Metals', { x: left + 8, y: headerY, size: 9, font: fonts.bold, color: gold });
+  page.drawText('USP <232> Limits', { x: RESULTS_TABLE.cols[1] + 8, y: headerY, size: 9, font: fonts.bold, color: gold });
+  page.drawText('Result', { x: RESULTS_TABLE.cols[2] + 8, y: headerY, size: 9, font: fonts.bold, color: gold });
+  page.drawText('Conformity', { x: RESULTS_TABLE.cols[3] + 14, y: headerY, size: 9, font: fonts.bold, color: gold });
+
+  const panels = Array.isArray(coa.panel_results) ? coa.panel_results : [];
+  HEAVY_METAL_TEMPLATE_ROWS.forEach((metal, i) => {
+    const bottom = hmHeaderBottom - rowH * (i + 1);
+    const { result, pass } = heavyMetalResult(panels, metal.match);
+    const conformity = result ? (pass ? 'PASS' : 'FAIL') : '';
+    drawDataRow(
+      page,
+      bottom,
+      [metal.name, metal.limit, result, conformity],
+      fonts,
+      {
+        boldFirst: false,
+        confColor: conformity === 'PASS' ? rgb(0.05, 0.45, 0.2) : conformity === 'FAIL' ? rgb(0.75, 0.08, 0.08) : undefined,
+      },
+    );
+  });
+}
+
 /** Fill the Atlas COA template and return PDF bytes (flattened). */
 export async function buildCoaPdfBytes(coa: COA): Promise<Uint8Array> {
   const record = hydrateCoaImages(coa);
@@ -118,6 +263,7 @@ export async function buildCoaPdfBytes(coa: COA): Promise<Uint8Array> {
 
   const page = pdf.getPages()[0];
   const font = await pdf.embedFont(StandardFonts.Helvetica);
+  const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
 
   // Template says "Mean of _ quantity" — cover "quantity" and label "vials tested".
   page.drawRectangle({
@@ -136,43 +282,7 @@ export async function buildCoaPdfBytes(coa: COA): Promise<Uint8Array> {
     color: rgb(0.22, 0.22, 0.22),
   });
 
-  // Fentanyl Detection row — drawn below Endotoxins (no dedicated template field).
-  const fenMark = readCoaPdfStats(record).fentanyl_detection;
-  const fenLabel = fentanylDetectionLabel(fenMark);
-  if (fenLabel) {
-    const fenY = 236;
-    const conformity = fenMark === 'none_detected' ? 'PASS' : 'FAIL';
-    const conformityColor =
-      fenMark === 'none_detected' ? rgb(0.05, 0.45, 0.2) : rgb(0.7, 0.1, 0.1);
-    page.drawText('Fentanyl Detection', {
-      x: 36,
-      y: fenY,
-      size: 9,
-      font,
-      color: rgb(0.1, 0.1, 0.1),
-    });
-    page.drawText('None / Detected', {
-      x: 138.7,
-      y: fenY,
-      size: 9,
-      font,
-      color: rgb(0.25, 0.25, 0.25),
-    });
-    page.drawText(toWinAnsi(fenLabel), {
-      x: 256.6,
-      y: fenY,
-      size: 9,
-      font,
-      color: rgb(0.1, 0.1, 0.1),
-    });
-    page.drawText(conformity, {
-      x: 435,
-      y: fenY,
-      size: 9,
-      font,
-      color: conformityColor,
-    });
-  }
+  drawFentanylAndShiftedHeavyMetals(page, record, { regular: font, bold });
 
   if (record.chromatogram_image) {
     const chromImage = await embedDataUrl(pdf, record.chromatogram_image);

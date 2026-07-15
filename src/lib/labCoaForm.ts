@@ -14,6 +14,15 @@ export const HEAVY_METAL_NAMES = [
 
 export type HeavyMetalName = (typeof HEAVY_METAL_NAMES)[number];
 
+export type SterilityMethod = 'pcr' | 'culture_14_day';
+
+export const STERILITY_METHOD_LABELS: Record<SterilityMethod, string> = {
+  pcr: 'PCR',
+  culture_14_day: '14-day culture',
+};
+
+export const ENDOTOXIN_SPEC_EU_ML = '<= 5.0 EU/mL';
+
 export interface ConformityPeptideRow {
   name: string;
   netContent: string;
@@ -25,8 +34,12 @@ export interface LabCoaResults {
   netContent: string;
   netPurity: string;
   molecularWeight: string;
+  /** When false, Molecular Weight is omitted from the COA. */
+  includeMolecularWeight: boolean;
+  sterilityMethod: SterilityMethod;
   sterilityPass: boolean;
-  endotoxinEuMg: string;
+  endotoxinEuMl: string;
+  endotoxinPass: boolean;
   heavyMetals: Record<HeavyMetalName, string>;
   conformityPeptides: ConformityPeptideRow[];
   includeFentanyl: boolean;
@@ -38,8 +51,11 @@ export const EMPTY_LAB_RESULTS: LabCoaResults = {
   netContent: '',
   netPurity: '',
   molecularWeight: '',
+  includeMolecularWeight: false,
+  sterilityMethod: 'pcr',
   sterilityPass: true,
-  endotoxinEuMg: '',
+  endotoxinEuMl: '',
+  endotoxinPass: true,
   heavyMetals: {
     'Lead (Pb)': '',
     'Arsenic (As)': '',
@@ -102,15 +118,44 @@ export function buildLabResultsFromSample(metadata: OrderSample['metadata'], sam
   };
 }
 
+export function sterilitySpecLabel(_method?: SterilityMethod): string {
+  return 'Not Detected';
+}
+
 export function labResultsToPanelResults(results: LabCoaResults): PanelResult[] {
   const rows: PanelResult[] = [
     { panel_name: 'Identification', specification: 'Peptide ID', result: results.identification, pass: !!results.identification.trim() },
     { panel_name: 'Net Content', specification: 'Label claim', result: results.netContent, pass: !!results.netContent.trim() },
-    { panel_name: 'Net Purity', specification: '≥95.0%', result: results.netPurity ? `${results.netPurity}%` : '', pass: true },
-    { panel_name: 'Molecular Weight (Da)', specification: '± 2 Da', result: results.molecularWeight, pass: !!results.molecularWeight.trim() },
-    { panel_name: 'Sterility', specification: 'Pass / Fail', result: results.sterilityPass ? 'Pass' : 'Fail', pass: results.sterilityPass },
-    { panel_name: 'Endotoxin', specification: 'EU/mg', result: results.endotoxinEuMg, pass: !!results.endotoxinEuMg.trim() },
+    { panel_name: 'Net Purity', specification: '>=95.0%', result: results.netPurity ? `${results.netPurity}%` : '', pass: true },
   ];
+
+  if (results.includeMolecularWeight && results.molecularWeight.trim()) {
+    rows.push({
+      panel_name: 'Molecular Weight (Da)',
+      specification: '+/- 2 Da',
+      result: results.molecularWeight.trim(),
+      pass: true,
+    });
+  }
+
+  rows.push(
+    {
+      panel_name: 'Sterility',
+      specification: 'Not Detected',
+      result: results.sterilityPass
+        ? `Not Detected (${STERILITY_METHOD_LABELS[results.sterilityMethod]})`
+        : `Detected (${STERILITY_METHOD_LABELS[results.sterilityMethod]})`,
+      pass: results.sterilityPass,
+    },
+    {
+      panel_name: 'Endotoxin',
+      specification: ENDOTOXIN_SPEC_EU_ML,
+      result: results.endotoxinEuMl.trim()
+        ? `${results.endotoxinEuMl.trim()} EU/mL`
+        : '',
+      pass: results.endotoxinPass,
+    },
+  );
 
   for (const metal of HEAVY_METAL_NAMES) {
     rows.push({

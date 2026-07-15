@@ -7,6 +7,7 @@ import {
   readCoaPdfStats,
   saveCoaPdfPrep,
 } from '../../lib/coaImages';
+import { ENDOTOXIN_SPEC_EU_ML, SterilityMethod, STERILITY_METHOD_LABELS } from '../../lib/labCoaForm';
 import { openCoaPdf } from '../../lib/coaPdf';
 import LogoDropzone from '../account/LogoDropzone';
 
@@ -29,6 +30,16 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
   const [fentanylDetection, setFentanylDetection] = useState<FentanylDetectionMark>(
     initialStats.fentanyl_detection,
   );
+  const [includeMolecularWeight, setIncludeMolecularWeight] = useState(
+    initialStats.include_molecular_weight,
+  );
+  const [molecularWeight, setMolecularWeight] = useState(initialStats.molecular_weight);
+  const [sterilityMethod, setSterilityMethod] = useState<SterilityMethod>(
+    initialStats.sterility_method,
+  );
+  const [sterilityPass, setSterilityPass] = useState(initialStats.sterility_pass);
+  const [endotoxinEuMl, setEndotoxinEuMl] = useState(initialStats.endotoxin_eu_ml);
+  const [endotoxinPass, setEndotoxinPass] = useState(initialStats.endotoxin_pass);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -41,6 +52,12 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
     setMeanOfVials(stats.mean_of_vials_tested);
     setAvgPurity(stats.avg_purity || '');
     setFentanylDetection(stats.fentanyl_detection);
+    setIncludeMolecularWeight(stats.include_molecular_weight);
+    setMolecularWeight(stats.molecular_weight);
+    setSterilityMethod(stats.sterility_method);
+    setSterilityPass(stats.sterility_pass);
+    setEndotoxinEuMl(stats.endotoxin_eu_ml);
+    setEndotoxinPass(stats.endotoxin_pass);
     setError(null);
   }, [coa.id]);
 
@@ -48,6 +65,14 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
     const vials = meanOfVials.trim();
     if (vials && !/^\d+(\.\d+)?$/.test(vials)) {
       setError('Mean of vials tested must be a number.');
+      return;
+    }
+    if (includeMolecularWeight && molecularWeight.trim() && Number.isNaN(Number(molecularWeight))) {
+      setError('Molecular weight must be a number.');
+      return;
+    }
+    if (endotoxinEuMl.trim() && Number.isNaN(Number(endotoxinEuMl))) {
+      setError('Endotoxin value must be a number (EU/mL).');
       return;
     }
 
@@ -61,6 +86,12 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
         mean_of_vials_tested: vials,
         avg_purity: avgPurity,
         fentanyl_detection: fentanylDetection,
+        include_molecular_weight: includeMolecularWeight,
+        molecular_weight: molecularWeight,
+        sterility_method: sterilityMethod,
+        sterility_pass: sterilityPass,
+        endotoxin_eu_ml: endotoxinEuMl,
+        endotoxin_pass: endotoxinPass,
       });
       if (saveError) {
         setError(saveError);
@@ -138,6 +169,97 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
                 className="input-field"
                 placeholder="e.g. 99.1%"
               />
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-atlas-border p-4 space-y-3 bg-neutral-50/60">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-sm font-bold uppercase tracking-wide text-black">Molecular Weight</h3>
+              <label className="inline-flex items-center gap-2 text-sm text-neutral-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={includeMolecularWeight}
+                  onChange={e => setIncludeMolecularWeight(e.target.checked)}
+                  className="rounded border-atlas-border"
+                />
+                Include on COA
+              </label>
+            </div>
+            <div>
+              <label className="label" htmlFor="molecular-weight">Value (Da)</label>
+              <input
+                id="molecular-weight"
+                type="number"
+                step="0.1"
+                value={molecularWeight}
+                onChange={e => setMolecularWeight(e.target.value)}
+                disabled={!includeMolecularWeight}
+                className="input-field disabled:opacity-50"
+                placeholder="e.g. 1419.5"
+              />
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-atlas-border p-4 space-y-3 bg-neutral-50/60">
+            <h3 className="text-sm font-bold uppercase tracking-wide text-black">Sterility</h3>
+            <p className="text-xs text-neutral-500">Specification on COA: Not Detected</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="label" htmlFor="sterility-method">Method</label>
+                <select
+                  id="sterility-method"
+                  value={sterilityMethod}
+                  onChange={e => setSterilityMethod(e.target.value as SterilityMethod)}
+                  className="input-field"
+                >
+                  <option value="pcr">{STERILITY_METHOD_LABELS.pcr}</option>
+                  <option value="culture_14_day">{STERILITY_METHOD_LABELS.culture_14_day}</option>
+                </select>
+              </div>
+              <div>
+                <label className="label" htmlFor="sterility-result">Result / Conformity</label>
+                <select
+                  id="sterility-result"
+                  value={sterilityPass ? 'pass' : 'fail'}
+                  onChange={e => setSterilityPass(e.target.value === 'pass')}
+                  className="input-field"
+                >
+                  <option value="pass">Not Detected — PASS</option>
+                  <option value="fail">Detected — FAIL</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-atlas-border p-4 space-y-3 bg-neutral-50/60">
+            <h3 className="text-sm font-bold uppercase tracking-wide text-black">Endotoxins (LAL)</h3>
+            <p className="text-xs text-neutral-500">Specification on COA: {ENDOTOXIN_SPEC_EU_ML}</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="label" htmlFor="endotoxin-eu-ml">Result (EU/mL)</label>
+                <input
+                  id="endotoxin-eu-ml"
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  value={endotoxinEuMl}
+                  onChange={e => setEndotoxinEuMl(e.target.value)}
+                  className="input-field"
+                  placeholder="e.g. 0.25"
+                />
+              </div>
+              <div>
+                <label className="label" htmlFor="endotoxin-conformity">Conformity</label>
+                <select
+                  id="endotoxin-conformity"
+                  value={endotoxinPass ? 'pass' : 'fail'}
+                  onChange={e => setEndotoxinPass(e.target.value === 'pass')}
+                  className="input-field"
+                >
+                  <option value="pass">PASS</option>
+                  <option value="fail">FAIL</option>
+                </select>
+              </div>
             </div>
           </div>
 
