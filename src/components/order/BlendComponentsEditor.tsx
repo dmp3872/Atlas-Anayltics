@@ -33,8 +33,8 @@ export default function BlendComponentsEditor({ components, onChange }: Props) {
 
   return (
     <div className="mt-3 space-y-3">
-      <p className="text-xs font-semibold text-amber-900">
-        Blend components — list every compound and its labeled mg amount
+      <p className="text-xs font-semibold text-neutral-800">
+        Blend compounds — up to {MAX_BLEND_COMPONENTS}, each with a unique name and label claim
       </p>
       {components.map((row, index) => (
         <div key={index} className="grid grid-cols-12 gap-2 items-start">
@@ -97,12 +97,12 @@ export default function BlendComponentsEditor({ components, onChange }: Props) {
         type="button"
         onClick={addRow}
         disabled={components.length >= MAX_BLEND_COMPONENTS}
-        className="text-xs font-medium text-amber-800 hover:text-amber-950 flex items-center gap-1 disabled:opacity-40"
+        className="text-xs font-medium text-brand-800 hover:text-brand-950 flex items-center gap-1 disabled:opacity-40"
       >
         <Plus size={13} /> Add compound
       </button>
-      <p className="text-[11px] text-amber-800/80">
-        Example: Glow Blend → GHK-Cu 50mg, BPC-157 5mg, TB-500 2mg
+      <p className="text-[11px] text-neutral-500">
+        Duplicate compound names are not allowed.
       </p>
     </div>
   );

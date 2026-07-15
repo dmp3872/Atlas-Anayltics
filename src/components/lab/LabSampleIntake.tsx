@@ -259,7 +259,7 @@ export default function LabSampleIntake({ clients, chemists, onCreated }: Props)
               className={`w-full p-3 rounded-lg border-2 text-left transition-colors ${form.testMode === 'full_qc' ? 'border-brand-500 bg-brand-50' : 'border-neutral-200 hover:border-brand-300'}`}
             >
               <p className="font-semibold text-sm">{FULL_QC_PANEL.name}</p>
-              <p className="text-xs text-neutral-500 mt-0.5">{FULL_QC_PANEL.description} · {FULL_QC_PANEL.vialsRequired} vials incl. conformity</p>
+              <p className="text-xs text-neutral-500 mt-0.5">{FULL_QC_PANEL.description} · {FULL_QC_PANEL.vialsRequired} vials</p>
             </button>
             <button
               type="button"

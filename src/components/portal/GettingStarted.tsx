@@ -11,8 +11,8 @@ const STEPS = [
   {
     icon: Truck,
     title: 'Ship to our lab',
-    body: 'Print your prepaid shipping label at checkout and send samples via FedEx or UPS to our Austin facility.',
-    cta: { label: 'Shipping instructions', href: '/dashboard?tab=orders' },
+    body: 'You’re preboarded — UPS comes to you, scans your plaque and prepaid label, and your package is RFID tracked end to end. You never pay for shipping. Thank you for preboarding!',
+    cta: { label: 'View your orders', href: '/dashboard?tab=orders' },
   },
   {
     icon: FileText,

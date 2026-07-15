@@ -16,7 +16,7 @@ export default function OrderSummarySidebar({ samples, step, total, primaryBrand
   const { subtotal, sampleCount } = orderTotals(samples, primaryBrand);
   const displayTotal = total ?? subtotal;
   const hasTests = samples.some(s => s.sample_name && (isPackageMode(s.test_mode) || s.individual_tests.length > 0));
-  const totalVials = samples.reduce((n, s) => n + (s.sample_name ? sampleVialCount(s) * Math.max(1, s.quantity) : 0), 0);
+  const totalVials = samples.reduce((n, s) => n + (s.sample_name ? sampleVialCount(s) : 0), 0);
   const panelFees = samples.reduce((s, sample) => s + sampleTestPrice(sample) * Math.max(1, sample.quantity), 0);
   const addOnFees = samples.reduce((s, sample) => s + sampleAddOnPrice(sample, primaryBrand) * Math.max(1, sample.quantity), 0);
   const conformityVials = samples.reduce((n, s) => n + s.conformity_extra * Math.max(1, s.quantity), 0);
@@ -67,7 +67,7 @@ export default function OrderSummarySidebar({ samples, step, total, primaryBrand
           'ISO 17025 accredited laboratory',
           '3–5 day standard turnaround',
           'QR-verified certificates of analysis',
-          'Secure payment via Square',
+          'Secure payment via Stripe',
         ].map(item => (
           <li key={item} className="flex items-start gap-2">
             <CheckCircle size={13} className="text-atlas-success flex-shrink-0 mt-0.5" />
@@ -79,7 +79,7 @@ export default function OrderSummarySidebar({ samples, step, total, primaryBrand
       {step === 1 && (
         <p className="text-[10px] text-neutral-400 mt-4 leading-relaxed border-t border-atlas-border pt-3">
           {ATLAS_PRO_PANEL.name}: {ATLAS_PRO_PANEL.vialsRequired} vials with conformity included.
-          {FULL_QC_PANEL.name} also available. Extra conformity vials {formatCurrency(CONFORMITY_PRICE)} each.
+          {FULL_QC_PANEL.name}: {FULL_QC_PANEL.vialsRequired} vials (no conformity). Extra conformity vials {formatCurrency(CONFORMITY_PRICE)} each.
         </p>
       )}
     </div>

@@ -80,7 +80,7 @@ export const ATLAS_SAFETY_PRO_INCLUDES = [
   'Endotoxin (LAL)',
   'Sterility (PCR)',
   'Fentanyl Detection',
-  '3 Conformity Vials',
+  'Conformity Vials',
 ] as const;
 
 export const ATLAS_SAFETY_PRO_PRICE = 700;

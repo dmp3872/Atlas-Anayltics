@@ -23,8 +23,8 @@ export function parseSampleMetadata(metadata: OrderSample['metadata']): OrderSam
 
 export function orderSampleIncludesFentanyl(metadata: OrderSample['metadata']): boolean {
   const meta = parseSampleMetadata(metadata);
-  if (meta.test_mode && meta.test_mode !== 'atlas_pro') return false;
   if (typeof meta.include_fentanyl === 'boolean') return meta.include_fentanyl;
+  // Legacy Safety Pro orders without a flag implied fentanyl was included.
   return meta.test_mode === 'atlas_pro';
 }
 

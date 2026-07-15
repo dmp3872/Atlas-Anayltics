@@ -11,6 +11,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.app.json"
   },
   "dependencies": {
+    "@stripe/react-stripe-js": "^6.8.0",
+    "@stripe/stripe-js": "^9.10.0",
     "@supabase/supabase-js": "^2.57.4",
     "html-to-image": "^1.11.13",
     "lucide-react": "^0.344.0",
