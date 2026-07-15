@@ -5,24 +5,25 @@ import {
   fentanylDetectionLabel,
   hydrateCoaImages,
   readCoaPdfStats,
-  resolveCoaLogoWatermark,
+  resolveImageAsDataUrl,
+  trimImageWhitespace,
 } from './coaImages';
 
 const TEMPLATE_URL = '/coa/certificate-of-analysis-template.pdf';
+const ATLAS_LOGO_URL = '/brand/atlas-logo-stacked.png';
 
 /** Chromatogram image region on the A4 template (PDF user units). */
 const CHROMATOGRAM_RECT = { x: 125.735, y: 487.755, width: 453.447, height: 152.124 };
 
 /**
- * Left vial panel beside the chromatogram (same vertical band as HPLC box).
- * Stock vial artwork is baked into the template — white-out this entire rect, then draw the attached photo.
+ * Condensed vial frame beside the chromatogram (Vanguard-style product shot).
+ * Stock vial artwork is wiped, then the cropped vial photo is drawn tightly inside.
  */
-const VIAL_PANEL_RECT = { x: 12, y: 485, width: 112, height: 158 };
+const VIAL_FRAME = { x: 18, y: 498, width: 100, height: 132 };
+const VIAL_PHOTO_INSET = 5;
 
-/** Photo fills the panel with a small inset so edges stay clean. */
-const VIAL_PHOTO_RECT = { x: 18, y: 491, width: 100, height: 146 };
-
-const LOGO_WATERMARK_OPACITY = 0.18;
+/** Faint Atlas watermark in the HPLC box (matches web COA AtlasWatermark feel). */
+const ATLAS_WATERMARK_OPACITY = 0.14;
 
 /** Main results table geometry (matches Endotoxins / Sterility AcroForm fields). */
 const RESULTS_TABLE = {
@@ -49,18 +50,24 @@ function parseDataUrl(dataUrl: string): { bytes: Uint8Array; kind: 'png' | 'jpg'
   if (!match) return null;
   const mime = match[1].toLowerCase();
   const kind: 'png' | 'jpg' = mime.includes('png') ? 'png' : 'jpg';
-  const binary = atob(match[2]);
+  const binary = atob(match[2].replace(/\s/g, ''));
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   return { bytes, kind };
 }
 
-async function embedDataUrl(pdf: PDFDocument, dataUrl: string): Promise<PDFImage | null> {
+async function embedImageSource(pdf: PDFDocument, src: string): Promise<PDFImage | null> {
+  const dataUrl = await resolveImageAsDataUrl(src);
+  if (!dataUrl) return null;
   const parsed = parseDataUrl(dataUrl);
   if (!parsed) return null;
-  return parsed.kind === 'png'
-    ? pdf.embedPng(parsed.bytes)
-    : pdf.embedJpg(parsed.bytes);
+  try {
+    return parsed.kind === 'png'
+      ? await pdf.embedPng(parsed.bytes)
+      : await pdf.embedJpg(parsed.bytes);
+  } catch {
+    return null;
+  }
 }
 
 /** AcroForm Helvetica is WinAnsi — replace Unicode that pdf-lib cannot encode. */
@@ -239,7 +246,6 @@ function drawFentanylAndShiftedHeavyMetals(
 /** Fill the Atlas COA template and return PDF bytes (flattened). */
 export async function buildCoaPdfBytes(coa: COA): Promise<Uint8Array> {
   const record = hydrateCoaImages(coa);
-  const logoUrl = await resolveCoaLogoWatermark(record);
 
   const templateRes = await fetch(TEMPLATE_URL);
   if (!templateRes.ok) {
@@ -284,61 +290,107 @@ export async function buildCoaPdfBytes(coa: COA): Promise<Uint8Array> {
 
   drawFentanylAndShiftedHeavyMetals(page, record, { regular: font, bold });
 
-  if (record.chromatogram_image) {
-    const chromImage = await embedDataUrl(pdf, record.chromatogram_image);
-    if (chromImage) {
-      // Cover the template chromatogram slot completely
-      page.drawImage(chromImage, {
-        x: CHROMATOGRAM_RECT.x,
-        y: CHROMATOGRAM_RECT.y,
-        width: CHROMATOGRAM_RECT.width,
-        height: CHROMATOGRAM_RECT.height,
-      });
-    }
+  // HPLC box: clear any stock art / uploaded chromatogram and place a faint Atlas logo.
+  page.drawRectangle({
+    x: CHROMATOGRAM_RECT.x,
+    y: CHROMATOGRAM_RECT.y,
+    width: CHROMATOGRAM_RECT.width,
+    height: CHROMATOGRAM_RECT.height,
+    color: rgb(1, 1, 1),
+    borderWidth: 0,
+  });
+  const atlasLogo = await embedImageSource(pdf, ATLAS_LOGO_URL);
+  if (atlasLogo) {
+    drawContainedImage(page, atlasLogo, {
+      x: CHROMATOGRAM_RECT.x + CHROMATOGRAM_RECT.width * 0.30,
+      y: CHROMATOGRAM_RECT.y + CHROMATOGRAM_RECT.height * 0.18,
+      width: CHROMATOGRAM_RECT.width * 0.40,
+      height: CHROMATOGRAM_RECT.height * 0.64,
+    }, ATLAS_WATERMARK_OPACITY);
   }
 
-  if (logoUrl) {
-    const logoImage = await embedDataUrl(pdf, logoUrl);
-    if (logoImage) {
-      drawContainedImage(page, logoImage, {
-        x: CHROMATOGRAM_RECT.x + CHROMATOGRAM_RECT.width * 0.28,
-        y: CHROMATOGRAM_RECT.y + CHROMATOGRAM_RECT.height * 0.15,
-        width: CHROMATOGRAM_RECT.width * 0.44,
-        height: CHROMATOGRAM_RECT.height * 0.7,
-      }, LOGO_WATERMARK_OPACITY);
-    }
-  }
-
+  // Condensed vial product shot (trim empty studio background, tight double frame).
+  page.drawRectangle({
+    x: 12,
+    y: 485,
+    width: 112,
+    height: 158,
+    color: rgb(1, 1, 1),
+    borderWidth: 0,
+  });
   if (record.vial_image) {
-    const vialImage = await embedDataUrl(pdf, record.vial_image);
+    const trimmed = await trimImageWhitespace(record.vial_image);
+    const vialImage = await embedImageSource(pdf, trimmed || record.vial_image);
     if (vialImage) {
-      // Cover the template's stock vial completely so it cannot show through.
+      const frame = VIAL_FRAME;
+      const ink = rgb(0.12, 0.12, 0.12);
+      // Outer + inner frame like Vanguard product shot.
       page.drawRectangle({
-        x: VIAL_PANEL_RECT.x,
-        y: VIAL_PANEL_RECT.y,
-        width: VIAL_PANEL_RECT.width,
-        height: VIAL_PANEL_RECT.height,
+        x: frame.x,
+        y: frame.y,
+        width: frame.width,
+        height: frame.height,
+        borderColor: ink,
+        borderWidth: 1.4,
         color: rgb(1, 1, 1),
-        borderWidth: 0,
       });
-      drawContainedImage(page, vialImage, VIAL_PHOTO_RECT);
+      page.drawRectangle({
+        x: frame.x + 2.5,
+        y: frame.y + 2.5,
+        width: frame.width - 5,
+        height: frame.height - 5,
+        borderColor: ink,
+        borderWidth: 0.6,
+      });
+      drawContainedImage(page, vialImage, {
+        x: frame.x + VIAL_PHOTO_INSET,
+        y: frame.y + VIAL_PHOTO_INSET,
+        width: frame.width - VIAL_PHOTO_INSET * 2,
+        height: frame.height - VIAL_PHOTO_INSET * 2,
+      });
     }
   }
 
   return pdf.save();
 }
 
+/**
+ * Open a blank preview tab synchronously inside a click handler, then pass it to
+ * `openCoaPdf` so the browser does not treat the later navigation as a popup.
+ */
+export function openCoaPdfPreviewWindow(): Window | null {
+  // Do not pass `noopener` in windowFeatures — that makes open() return null even on success.
+  const preview = window.open('about:blank', '_blank');
+  if (preview) preview.opener = null;
+  return preview;
+}
+
 /** Open the filled COA PDF in a new browser tab (staff preview). */
-export async function openCoaPdf(coa: COA): Promise<void> {
+export async function openCoaPdf(coa: COA, previewWindow?: Window | null): Promise<void> {
   const bytes = await buildCoaPdfBytes(coa);
   const blob = new Blob([bytes], { type: 'application/pdf' });
   const url = URL.createObjectURL(blob);
-  const opened = window.open(url, '_blank', 'noopener,noreferrer');
-  if (!opened) {
-    URL.revokeObjectURL(url);
-    throw new Error('Pop-up blocked. Allow pop-ups to preview the PDF.');
+
+  let target = previewWindow && !previewWindow.closed ? previewWindow : null;
+  if (!target) {
+    target = openCoaPdfPreviewWindow();
   }
-  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+
+  if (target) {
+    target.location.href = url;
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    return;
+  }
+
+  // Fallback: download instead of failing when popups are blocked.
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = coaFilename(coa);
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 /** Download the filled COA PDF (client portal). */

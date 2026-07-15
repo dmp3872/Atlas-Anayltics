@@ -24,6 +24,7 @@ import {
   hydrateCoaImages,
   isMissingCoaImageColumnError,
   payloadWithoutImageColumns,
+  resolveCoaLogoWatermark,
 } from '../lib/coaImages';
 import CoaPdfPrepModal from '../components/lab/CoaPdfPrepModal';
 
@@ -58,7 +59,7 @@ export default function Lab() {
   const [form, setForm] = useState({ ...BLANK });
   const [labResults, setLabResults] = useState<LabCoaResults>({ ...EMPTY_LAB_RESULTS });
   const [vialImage, setVialImage] = useState('');
-  const [chromatogramImage, setChromatogramImage] = useState('');
+  // chromatogram slot on the PDF is a faint Atlas logo watermark (no upload)
   const [casSuggestions, setCasSuggestions] = useState<{ name: string; cas: string }[]>([]);
   const [showCasSuggestions, setShowCasSuggestions] = useState(false);
   const [prepCoa, setPrepCoa] = useState<COA | null>(null);
@@ -253,6 +254,11 @@ export default function Lab() {
       panel_results: cleanPanels,
     });
 
+    const companyLogo = await resolveCoaLogoWatermark({
+      user_id: form.clientId,
+      company_logo: '',
+    } as COA);
+
     const payload = {
       user_id: form.clientId,
       sample_id: form.sampleId || null,
@@ -260,6 +266,7 @@ export default function Lab() {
       sample_name: form.sampleName.trim(),
       display_name: form.displayName.trim() || form.sampleName.trim(),
       company_name: form.companyName.trim(),
+      company_logo: companyLogo,
       peptide_sequence: form.casNumber.trim(),
       batch_number: form.batchNumber.trim(),
       purity_percent: purityNum,
@@ -267,7 +274,7 @@ export default function Lab() {
       panel_results: cleanPanels,
       chromatogram_data: { vial_size: form.vialSize },
       vial_image: vialImage || '',
-      chromatogram_image: chromatogramImage || '',
+      chromatogram_image: '',
       result_summary: {
         include_molecular_weight: includeMw,
         molecular_weight: includeMw ? labResults.molecularWeight.trim() : '',
@@ -277,6 +284,9 @@ export default function Lab() {
         sterility_specification: 'Not Detected',
         endotoxin_eu_ml: labResults.endotoxinEuMl.trim(),
         endotoxin_pass: labResults.endotoxinPass,
+        company_logo: companyLogo,
+        vial_image: vialImage || '',
+        chromatogram_image: '',
       },
       overall_result: form.overallResult,
       is_public: false,
@@ -308,7 +318,6 @@ export default function Lab() {
     setForm({ ...BLANK });
     setLabResults({ ...EMPTY_LAB_RESULTS });
     setVialImage('');
-    setChromatogramImage('');
     setCasSuggestions([]);
     setShowCasSuggestions(false);
     setMsg({ type: 'success', text: 'COA issued (private). Verify it, then publish for the client.', slug: data?.slug });
@@ -723,29 +732,19 @@ export default function Lab() {
                   </div>
                 </div>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="label mb-2 block">Vial photo (COA PDF)</label>
-                  <LogoDropzone
-                    value={vialImage}
-                    onChange={setVialImage}
-                    onError={text => setMsg({ type: 'error', text })}
-                    maxBytes={MAX_COA_IMAGE_BYTES}
-                    prompt="a vial photo"
-                    hint="JPG or PNG of the physical vial, up to 2 MB"
-                  />
-                </div>
-                <div>
-                  <label className="label mb-2 block">Chromatogram photo (COA PDF)</label>
-                  <LogoDropzone
-                    value={chromatogramImage}
-                    onChange={setChromatogramImage}
-                    onError={text => setMsg({ type: 'error', text })}
-                    maxBytes={MAX_COA_IMAGE_BYTES}
-                    prompt="a chromatogram"
-                    hint="JPG or PNG instrument trace, up to 2 MB"
-                  />
-                </div>
+              <div>
+                <label className="label mb-2 block">Vial photo (COA PDF)</label>
+                <p className="text-xs text-neutral-500 mb-2">
+                  Auto-cropped to the vial. HPLC area uses a faint Atlas logo watermark.
+                </p>
+                <LogoDropzone
+                  value={vialImage}
+                  onChange={setVialImage}
+                  onError={text => setMsg({ type: 'error', text })}
+                  maxBytes={MAX_COA_IMAGE_BYTES}
+                  prompt="a vial photo"
+                  hint="JPG or PNG of the physical vial, up to 2 MB"
+                />
               </div>
               <button type="submit" disabled={saving} className="btn-primary w-full gap-2">
                 <CheckCircle size={16} /> {saving ? 'Issuing…' : 'Issue COA (Private)'}

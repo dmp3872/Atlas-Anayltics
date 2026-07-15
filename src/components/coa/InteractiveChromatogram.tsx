@@ -59,7 +59,7 @@ export default function InteractiveChromatogram({
       {backgroundImage ? (
         <img src={backgroundImage} alt="" className="absolute inset-0 w-full h-full object-cover opacity-20 pointer-events-none" />
       ) : (
-        <AtlasWatermark className="absolute inset-0 m-auto w-28 h-28 opacity-30 pointer-events-none" />
+        <AtlasWatermark className="absolute inset-0 m-auto w-28 h-28 opacity-[0.14] pointer-events-none" />
       )}
       <div className="relative px-4 pt-4 pb-1 flex items-center justify-between">
         <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-neutral-600">

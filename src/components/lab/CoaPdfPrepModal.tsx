@@ -8,7 +8,7 @@ import {
   saveCoaPdfPrep,
 } from '../../lib/coaImages';
 import { ENDOTOXIN_SPEC_EU_ML, SterilityMethod, STERILITY_METHOD_LABELS } from '../../lib/labCoaForm';
-import { openCoaPdf } from '../../lib/coaPdf';
+import { openCoaPdf, openCoaPdfPreviewWindow } from '../../lib/coaPdf';
 import LogoDropzone from '../account/LogoDropzone';
 
 const MAX_COA_IMAGE_BYTES = 2 * 1024 * 1024;
@@ -23,7 +23,6 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
   const initial = hydrateCoaImages(coa);
   const initialStats = readCoaPdfStats(coa);
   const [vialImage, setVialImage] = useState(initial.vial_image || '');
-  const [chromatogramImage, setChromatogramImage] = useState(initial.chromatogram_image || '');
   const [avgNetPeptide, setAvgNetPeptide] = useState(initialStats.avg_net_peptide_content);
   const [meanOfVials, setMeanOfVials] = useState(initialStats.mean_of_vials_tested);
   const [avgPurity, setAvgPurity] = useState(initialStats.avg_purity || '');
@@ -47,7 +46,6 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
     const next = hydrateCoaImages(coa);
     const stats = readCoaPdfStats(coa);
     setVialImage(next.vial_image || '');
-    setChromatogramImage(next.chromatogram_image || '');
     setAvgNetPeptide(stats.avg_net_peptide_content);
     setMeanOfVials(stats.mean_of_vials_tested);
     setAvgPurity(stats.avg_purity || '');
@@ -78,10 +76,12 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
 
     setBusy(true);
     setError(null);
+    // Open the tab during the click gesture so browsers don't block it after awaits.
+    const previewWindow = openCoaPdfPreviewWindow();
     try {
       const { coa: saved, error: saveError } = await saveCoaPdfPrep(coa, {
         vial_image: vialImage,
-        chromatogram_image: chromatogramImage,
+        chromatogram_image: '',
         avg_net_peptide_content: avgNetPeptide,
         mean_of_vials_tested: vials,
         avg_purity: avgPurity,
@@ -94,13 +94,15 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
         endotoxin_pass: endotoxinPass,
       });
       if (saveError) {
+        previewWindow?.close();
         setError(saveError);
         return;
       }
       onSaved?.(saved);
-      await openCoaPdf(saved);
+      await openCoaPdf(saved, previewWindow);
       onClose();
     } catch (err) {
+      previewWindow?.close();
       setError(err instanceof Error ? err.message : 'Could not generate the PDF.');
     } finally {
       setBusy(false);
@@ -128,8 +130,8 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
 
         <div className="px-5 py-4 space-y-5">
           <p className="text-sm text-neutral-600">
-            Attach photos and fill Average Net Peptide Content before generating.
-            The client company logo watermarks the chromatogram.
+            Attach a vial photo and fill Average Net Peptide Content before generating.
+            The HPLC area prints with a faint Atlas Analytics logo watermark — no chromatogram upload needed.
           </p>
 
           <div className="rounded-lg border border-atlas-border p-4 space-y-3 bg-neutral-50/60">
@@ -283,29 +285,19 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="label mb-2 block">Vial photo</label>
-              <LogoDropzone
-                value={vialImage}
-                onChange={setVialImage}
-                onError={setError}
-                maxBytes={MAX_COA_IMAGE_BYTES}
-                prompt="a vial photo"
-                hint="JPG or PNG, up to 2 MB"
-              />
-            </div>
-            <div>
-              <label className="label mb-2 block">Chromatogram photo</label>
-              <LogoDropzone
-                value={chromatogramImage}
-                onChange={setChromatogramImage}
-                onError={setError}
-                maxBytes={MAX_COA_IMAGE_BYTES}
-                prompt="a chromatogram"
-                hint="JPG or PNG instrument trace, up to 2 MB"
-              />
-            </div>
+          <div>
+            <label className="label mb-2 block">Vial photo</label>
+            <p className="text-xs text-neutral-500 mb-2">
+              Empty background is auto-cropped so only the vial prints (tight product frame).
+            </p>
+            <LogoDropzone
+              value={vialImage}
+              onChange={setVialImage}
+              onError={setError}
+              maxBytes={MAX_COA_IMAGE_BYTES}
+              prompt="a vial photo"
+              hint="JPG or PNG, up to 2 MB"
+            />
           </div>
 
           {error && (

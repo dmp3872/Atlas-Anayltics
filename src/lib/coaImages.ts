@@ -146,11 +146,140 @@ export function hydrateCoaImages(coa: COA): COA {
   const summary = (coa.result_summary ?? {}) as Record<string, unknown>;
   const vialFromSummary = typeof summary.vial_image === 'string' ? summary.vial_image : '';
   const chromFromSummary = typeof summary.chromatogram_image === 'string' ? summary.chromatogram_image : '';
+  const logoFromSummary = typeof summary.company_logo === 'string' ? summary.company_logo : '';
   return {
     ...coa,
     vial_image: coa.vial_image || vialFromSummary || '',
     chromatogram_image: coa.chromatogram_image || chromFromSummary || '',
+    company_logo: coa.company_logo || logoFromSummary || '',
   };
+}
+
+/** Normalize any image src (data URL, http(s), or site path) into a PNG/JPEG data URL for PDF embed. */
+export async function resolveImageAsDataUrl(src: string): Promise<string> {
+  const value = (src || '').trim();
+  if (!value) return '';
+
+  if (/^data:image\/(png|jpeg|jpg);base64,/i.test(value)) return value;
+
+  if (value.startsWith('data:image/')) {
+    try {
+      const res = await fetch(value);
+      const blob = await res.blob();
+      return await blobToPngDataUrl(blob);
+    } catch {
+      return '';
+    }
+  }
+
+  try {
+    const url = value.startsWith('/') ? `${window.location.origin}${value}` : value;
+    const res = await fetch(url);
+    if (!res.ok) return '';
+    const blob = await res.blob();
+    if (/^image\/(png|jpeg|jpg)$/i.test(blob.type)) {
+      return await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+        reader.onerror = () => reject(new Error('read failed'));
+        reader.readAsDataURL(blob);
+      });
+    }
+    return await blobToPngDataUrl(blob);
+  } catch {
+    return '';
+  }
+}
+
+async function blobToPngDataUrl(blob: Blob): Promise<string> {
+  const bitmap = await createImageBitmap(blob);
+  const canvas = document.createElement('canvas');
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return '';
+  ctx.drawImage(bitmap, 0, 0);
+  bitmap.close();
+  return canvas.toDataURL('image/png');
+}
+
+/**
+ * Crop near-white / empty margins so a vial photo shows just the vial
+ * (Vanguard-style product shot), with a small padding margin.
+ */
+export async function trimImageWhitespace(
+  src: string,
+  opts?: { threshold?: number; padRatio?: number },
+): Promise<string> {
+  const dataUrl = await resolveImageAsDataUrl(src);
+  if (!dataUrl) return '';
+
+  const threshold = opts?.threshold ?? 242;
+  const padRatio = opts?.padRatio ?? 0.06;
+
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = () => reject(new Error('image load failed'));
+      el.src = dataUrl;
+    });
+
+    const canvas = document.createElement('canvas');
+    canvas.width = img.naturalWidth || img.width;
+    canvas.height = img.naturalHeight || img.height;
+    if (canvas.width < 8 || canvas.height < 8) return dataUrl;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return dataUrl;
+    ctx.drawImage(img, 0, 0);
+    const { data, width, height } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+    let minX = width;
+    let minY = height;
+    let maxX = 0;
+    let maxY = 0;
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const i = (y * width + x) * 4;
+        const a = data[i + 3];
+        if (a < 12) continue;
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
+        if (r >= threshold && g >= threshold && b >= threshold) continue;
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
+      }
+    }
+
+    if (maxX <= minX || maxY <= minY) return dataUrl;
+
+    const pad = Math.round(Math.max(width, height) * padRatio);
+    minX = Math.max(0, minX - pad);
+    minY = Math.max(0, minY - pad);
+    maxX = Math.min(width - 1, maxX + pad);
+    maxY = Math.min(height - 1, maxY + pad);
+
+    const tw = maxX - minX + 1;
+    const th = maxY - minY + 1;
+    // If trim barely changes anything, keep original.
+    if (tw * th > width * height * 0.92) return dataUrl;
+
+    const out = document.createElement('canvas');
+    out.width = tw;
+    out.height = th;
+    const outCtx = out.getContext('2d');
+    if (!outCtx) return dataUrl;
+    outCtx.fillStyle = '#ffffff';
+    outCtx.fillRect(0, 0, tw, th);
+    outCtx.drawImage(canvas, minX, minY, tw, th, 0, 0, tw, th);
+    return out.toDataURL('image/png');
+  } catch {
+    return dataUrl;
+  }
 }
 
 export function isMissingCoaImageColumnError(message: string): boolean {
@@ -282,11 +411,13 @@ export async function saveCoaPdfPrep(
 ): Promise<{ coa: COA; error: string | null }> {
   const hydrated = hydrateCoaImages(coa);
   const { panel_results, molecular_weight } = applyPrepToCoaPanels(coa, prep);
+  const companyLogo = await resolveCoaLogoWatermark({ ...hydrated, vial_image: prep.vial_image });
 
   const baseSummary = {
     ...((coa.result_summary && typeof coa.result_summary === 'object' ? coa.result_summary : {}) as Record<string, unknown>),
     vial_image: prep.vial_image || '',
     chromatogram_image: prep.chromatogram_image || '',
+    company_logo: companyLogo || hydrated.company_logo || '',
     avg_net_peptide_content: prep.avg_net_peptide_content.trim(),
     mean_of_vials_tested: prep.mean_of_vials_tested.trim(),
     avg_purity: (prep.avg_purity ?? '').trim(),
@@ -306,6 +437,7 @@ export async function saveCoaPdfPrep(
     ...hydrated,
     vial_image: prep.vial_image,
     chromatogram_image: prep.chromatogram_image,
+    company_logo: companyLogo || hydrated.company_logo || '',
     result_summary: baseSummary,
     panel_results,
     molecular_weight,
@@ -314,6 +446,7 @@ export async function saveCoaPdfPrep(
   const direct = {
     vial_image: prep.vial_image || '',
     chromatogram_image: prep.chromatogram_image || '',
+    company_logo: companyLogo || hydrated.company_logo || '',
     result_summary: baseSummary,
     panel_results,
     molecular_weight,
@@ -360,9 +493,10 @@ export async function saveCoaPdfImages(
   });
 }
 
-/** Company / profile logo used as chromatogram watermark on the PDF. */
+/** Company / profile logo used as chromatogram watermark on the PDF / web COA. */
 export async function resolveCoaLogoWatermark(coa: COA): Promise<string> {
-  if (coa.company_logo?.startsWith('data:image/')) return coa.company_logo;
+  const candidates: string[] = [];
+  if (coa.company_logo) candidates.push(coa.company_logo);
 
   const { data: company } = await supabase
     .from('companies')
@@ -371,9 +505,7 @@ export async function resolveCoaLogoWatermark(coa: COA): Promise<string> {
     .eq('is_default', true)
     .maybeSingle();
 
-  if (typeof company?.logo === 'string' && company.logo.startsWith('data:image/')) {
-    return company.logo;
-  }
+  if (typeof company?.logo === 'string' && company.logo) candidates.push(company.logo);
 
   const { data: profile } = await supabase
     .from('user_profiles')
@@ -381,8 +513,13 @@ export async function resolveCoaLogoWatermark(coa: COA): Promise<string> {
     .eq('id', coa.user_id)
     .maybeSingle();
 
-  if (typeof profile?.company_logo === 'string' && profile.company_logo.startsWith('data:image/')) {
-    return profile.company_logo;
+  if (typeof profile?.company_logo === 'string' && profile.company_logo) {
+    candidates.push(profile.company_logo);
+  }
+
+  for (const candidate of candidates) {
+    const dataUrl = await resolveImageAsDataUrl(candidate);
+    if (dataUrl) return dataUrl;
   }
 
   return '';

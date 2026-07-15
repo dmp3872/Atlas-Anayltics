@@ -57,8 +57,6 @@ export default function COADetail() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [vialSize, setVialSize] = useState('3ml');
-  const [chromatographBg, setChromatographBg] = useState('');
 
   useEffect(() => {
     if (!slug || authLoading) return;
@@ -71,14 +69,17 @@ export default function COADetail() {
       .maybeSingle()
       .then(async ({ data }) => {
         if (!data) { setNotFound(true); setLoading(false); return; }
-        setCoa(hydrateCoaImages(data as COA));
+        const hydrated = hydrateCoaImages(data as COA);
+        setCoa(hydrated);
         const { data: companies } = await supabase
           .from('companies')
-          .select('chromatograph_background')
+          .select('logo')
           .eq('user_id', data.user_id)
           .eq('is_default', true)
           .maybeSingle();
-        if (companies?.chromatograph_background) setChromatographBg(companies.chromatograph_background);
+        if (!hydrated.company_logo && companies?.logo) {
+          setCoa({ ...hydrated, company_logo: companies.logo });
+        }
         setLoading(false);
       });
   }, [slug, user, authLoading]);
@@ -115,6 +116,9 @@ export default function COADetail() {
   const isOwner = !!user && user.id === coa.user_id;
   const companyLogo = coa.company_logo || (isOwner ? profile?.company_logo : '') || '';
   const integrity = verifyCoaIntegrity(coa);
+  const vialSize =
+    (typeof coa.chromatogram_data?.vial_size === 'string' && coa.chromatogram_data.vial_size.trim())
+      || '—';
 
   const infoFields = [
     { label: 'Client', value: coa.company_name || '—' },
@@ -201,17 +205,19 @@ export default function COADetail() {
             </div>
           </div>
 
-          <div className="mb-6 no-print">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 mb-2">Vial Size</p>
-            <div className="flex gap-2">
-              {['3ml', '5ml', '10ml'].map(size => (
-                <button key={size} onClick={() => setVialSize(size)} className={`coa-vial-btn ${vialSize === size ? 'coa-vial-btn-active' : ''}`}>{size}</button>
-              ))}
-            </div>
-          </div>
-
-          <div className="mb-8">
-            <InteractiveChromatogram data={coa.chromatogram_data} backgroundImage={chromatographBg || undefined} />
+          <div className="mb-8 grid grid-cols-1 sm:grid-cols-[120px_1fr] gap-4 items-start">
+            {coa.vial_image ? (
+              <div className="border-2 border-black p-0.5 bg-white w-[120px]">
+                <div className="border border-black p-2 bg-white flex items-center justify-center aspect-[3/4]">
+                  <img
+                    src={coa.vial_image}
+                    alt="Sample vial"
+                    className="max-h-full max-w-full object-contain"
+                  />
+                </div>
+              </div>
+            ) : null}
+            <InteractiveChromatogram data={coa.chromatogram_data} />
           </div>
 
           <div className="mb-8 overflow-hidden border border-atlas-border">
