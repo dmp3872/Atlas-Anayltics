@@ -27,6 +27,9 @@ import PeptideRequests from '../components/portal/PeptideRequests';
 import PortalHome from '../components/portal/PortalHome';
 import PrepaidShippingLabel from '../components/order/PrepaidShippingLabel';
 import { queueNotification } from '../lib/notifications';
+import { downloadCoaPdf } from '../lib/coaPdf';
+import { hydrateCoaImages } from '../lib/coaImages';
+import { useUserRole } from '../hooks/useUserRole';
 
 type PortalTab = 'home' | 'getting-started' | 'peptide-requests' | 'coas' | 'samples' | 'orders' | 'invoices' | 'payments' | 'account' | 'widget' | 'team';
 
@@ -40,6 +43,7 @@ function ResultBadge({ result }: { result: string }) {
 
 export default function Portal() {
   const { user, profile } = useAuth();
+  const { role } = useUserRole();
   const location = useLocation();
   const [params, setParams] = useSearchParams();
   const pathTab = location.pathname.includes('/orders') ? 'orders' : location.pathname.includes('/coas') ? 'coas' : null;
@@ -50,6 +54,9 @@ export default function Portal() {
   const [samples, setSamples] = useState<OrderSample[]>([]);
   const [panels, setPanels] = useState<TestPanel[]>([]);
   const [loading, setLoading] = useState(true);
+  const [pdfDownloadingId, setPdfDownloadingId] = useState<string | null>(null);
+  const [pdfError, setPdfError] = useState<string | null>(null);
+  const canDownloadCoaPdf = role === 'client';
   const [shippingOpen, setShippingOpen] = useState(true);
   const [copiedAddr, setCopiedAddr] = useState(false);
   const [search, setSearch] = useState('');
@@ -75,13 +82,26 @@ export default function Portal() {
       supabase.from('order_samples').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
       supabase.from('test_panels').select('*').eq('is_active', true).order('sort_order'),
     ]).then(([coasRes, ordersRes, samplesRes, panelsRes]) => {
-      if (coasRes.data) setCoas(coasRes.data);
+      if (coasRes.data) setCoas((coasRes.data as COA[]).map(hydrateCoaImages));
       if (ordersRes.data) setOrders(ordersRes.data);
       if (samplesRes.data) setSamples(samplesRes.data);
       if (panelsRes.data) setPanels(panelsRes.data);
       setLoading(false);
     });
   }, [user]);
+
+  async function handleDownloadCoaPdf(coa: COA) {
+    if (!canDownloadCoaPdf || pdfDownloadingId) return;
+    setPdfDownloadingId(coa.id);
+    setPdfError(null);
+    try {
+      await downloadCoaPdf(hydrateCoaImages(coa));
+    } catch (err) {
+      setPdfError(err instanceof Error ? err.message : 'Could not generate the PDF.');
+    } finally {
+      setPdfDownloadingId(null);
+    }
+  }
 
   useEffect(() => {
     const label = params.get('label');
@@ -284,8 +304,11 @@ export default function Portal() {
               <div className="space-y-4">
                 <div>
                   <h1 className="portal-page-title">Your COAs</h1>
-                  <p className="portal-page-subtitle">Certificates of analysis from your Atlas Analytics testing.</p>
+                  <p className="portal-page-subtitle">Certificates of analysis from your Atlas Analytics testing. Download PDFs here.</p>
                 </div>
+                {pdfError && (
+                  <p className="text-sm text-red-600" role="alert">{pdfError}</p>
+                )}
                 <div className="card overflow-hidden">
                 {filteredCoas.length === 0 ? (
                   <div className="p-12 text-center">
@@ -316,7 +339,20 @@ export default function Portal() {
                             <td className="px-5 py-3 text-neutral-600">{coa.batch_number || '—'}</td>
                             <td className="px-5 py-3 text-neutral-600">{formatDate(coa.issued_at)}</td>
                             <td className="px-5 py-3 text-right">
-                              <Link to={`/coa/${coa.slug}`} className="btn-outline text-xs py-1.5 gap-1 inline-flex"><ExternalLink size={12} /> View</Link>
+                              <div className="inline-flex flex-wrap gap-2 justify-end">
+                                <Link to={`/coa/${coa.slug}`} className="btn-outline text-xs py-1.5 gap-1 inline-flex"><ExternalLink size={12} /> View</Link>
+                                {canDownloadCoaPdf && (
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleDownloadCoaPdf(coa)}
+                                    disabled={pdfDownloadingId === coa.id}
+                                    className="btn-primary text-xs py-1.5 gap-1 inline-flex"
+                                  >
+                                    <Download size={12} />
+                                    {pdfDownloadingId === coa.id ? 'Generating…' : 'Download PDF'}
+                                  </button>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         ))}

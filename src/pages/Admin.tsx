@@ -8,7 +8,9 @@ import { supabase } from '../lib/supabase';
 import { COA, Order, UserProfile, UserRole } from '../lib/types';
 import { formatDate } from '../lib/utils';
 import { ROLE_LABELS } from '../lib/roles';
+import { hydrateCoaImages } from '../lib/coaImages';
 import StaffHeader from '../components/layout/StaffHeader';
+import CoaPdfPrepModal from '../components/lab/CoaPdfPrepModal';
 
 const ROLES: UserRole[] = ['client', 'chemist', 'verifier', 'reviewer', 'admin'];
 
@@ -19,6 +21,7 @@ export default function Admin() {
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [prepCoa, setPrepCoa] = useState<COA | null>(null);
 
   async function loadAll() {
     const [u, c, o] = await Promise.all([
@@ -27,7 +30,7 @@ export default function Admin() {
       supabase.from('orders').select('*').order('created_at', { ascending: false }),
     ]);
     if (u.data) setUsers(u.data.sort((a, b) => (a.full_name || '').localeCompare(b.full_name || '')));
-    if (c.data) setCoas(c.data);
+    if (c.data) setCoas((c.data as COA[]).map(hydrateCoaImages));
     if (o.data) setOrders(o.data);
     setLoading(false);
   }
@@ -159,18 +162,39 @@ export default function Admin() {
           ) : (
             <div className="divide-y divide-atlas-border max-h-[400px] overflow-y-auto">
               {coas.map(c => (
-                <Link key={c.id} to={`/coa/${c.slug}`} className="flex items-center justify-between px-5 py-3 hover:bg-neutral-50">
+                <div key={c.id} className="flex items-center justify-between gap-3 px-5 py-3 hover:bg-neutral-50">
                   <div className="min-w-0">
                     <p className="font-medium text-black truncate">{c.display_name || c.sample_name}</p>
                     <p className="text-xs text-neutral-500">{c.company_name || '—'} · {formatDate(c.issued_at)} · {c.is_public ? 'Public' : 'Private'}</p>
                   </div>
-                  <ExternalLink size={14} className="text-neutral-400 flex-shrink-0" />
-                </Link>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setPrepCoa(c)}
+                      className="btn-primary text-xs py-1.5 px-2 gap-1"
+                    >
+                      <FileText size={12} /> View PDF
+                    </button>
+                    <Link to={`/coa/${c.slug}`} className="btn-outline text-xs py-1.5 px-2 gap-1">
+                      <ExternalLink size={12} /> Web
+                    </Link>
+                  </div>
+                </div>
               ))}
             </div>
           )}
         </div>
       </main>
+
+      {prepCoa && (
+        <CoaPdfPrepModal
+          coa={prepCoa}
+          onClose={() => setPrepCoa(null)}
+          onSaved={updated => {
+            setCoas(prev => prev.map(c => (c.id === updated.id ? hydrateCoaImages(updated) : c)));
+          }}
+        />
+      )}
     </div>
   );
 }

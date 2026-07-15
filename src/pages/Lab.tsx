@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   FlaskConical, Plus, Trash2, CheckCircle, AlertCircle, ExternalLink, ClipboardList,
-  ChevronDown, ChevronUp, ArrowRight,
+  ChevronDown, ChevronUp, ArrowRight, FileText,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { COA, Order, OrderSample, OrderStatus, SampleStatus, UserProfile } from '../lib/types';
@@ -24,6 +24,7 @@ import {
   isMissingCoaImageColumnError,
   payloadWithoutImageColumns,
 } from '../lib/coaImages';
+import CoaPdfPrepModal from '../components/lab/CoaPdfPrepModal';
 
 const MAX_COA_IMAGE_BYTES = 2 * 1024 * 1024;
 
@@ -59,6 +60,7 @@ export default function Lab() {
   const [chromatogramImage, setChromatogramImage] = useState('');
   const [casSuggestions, setCasSuggestions] = useState<{ name: string; cas: string }[]>([]);
   const [showCasSuggestions, setShowCasSuggestions] = useState(false);
+  const [prepCoa, setPrepCoa] = useState<COA | null>(null);
 
   async function loadAll() {
     setLoading(true);
@@ -347,7 +349,23 @@ export default function Lab() {
             {msg.type === 'success' ? <CheckCircle size={16} className="flex-shrink-0 mt-0.5" /> : <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />}
             <span>
               {msg.text}
-              {msg.slug && <> <Link to={`/coa/${msg.slug}`} className="font-semibold underline">View COA</Link></>}
+              {msg.slug && (
+                <>
+                  {' '}
+                  <button
+                    type="button"
+                    className="font-semibold underline"
+                    onClick={() => {
+                      const issued = coas.find(c => c.slug === msg.slug);
+                      if (issued) setPrepCoa(issued);
+                    }}
+                  >
+                    View PDF
+                  </button>
+                  {' · '}
+                  <Link to={`/coa/${msg.slug}`} className="font-semibold underline">Web view</Link>
+                </>
+              )}
             </span>
           </div>
         )}
@@ -426,7 +444,16 @@ export default function Lab() {
                                     Issue COA <ArrowRight size={12} />
                                   </button>
                                 ) : (
-                                  <Link to={`/coa/${coa.slug}`} className="btn-outline text-xs py-1.5 gap-1"><ExternalLink size={12} /> View</Link>
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => setPrepCoa(coa)}
+                                      className="btn-primary text-xs py-1.5 gap-1"
+                                    >
+                                      <FileText size={12} /> View PDF
+                                    </button>
+                                    <Link to={`/coa/${coa.slug}`} className="btn-outline text-xs py-1.5 gap-1"><ExternalLink size={12} /> Web view</Link>
+                                  </>
                                 )}
                               </div>
                             </div>
@@ -686,9 +713,22 @@ export default function Lab() {
             coas={coas}
             onMoveCoa={moveCoaToStage}
             movingId={movingCoaId}
+            onCoaImagesSaved={updated => {
+              setCoas(prev => prev.map(c => (c.id === updated.id ? hydrateCoaImages(updated) : c)));
+            }}
           />
         )}
       </main>
+
+      {prepCoa && (
+        <CoaPdfPrepModal
+          coa={prepCoa}
+          onClose={() => setPrepCoa(null)}
+          onSaved={updated => {
+            setCoas(prev => prev.map(c => (c.id === updated.id ? hydrateCoaImages(updated) : c)));
+          }}
+        />
+      )}
     </div>
   );
 }

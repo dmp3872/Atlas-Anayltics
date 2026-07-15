@@ -71,11 +71,20 @@ export function buildCoaPdfFieldValues(coa: COA): CoaPdfFieldValues {
     (typeof summary.sample_matrix === 'string' && summary.sample_matrix) ||
     (typeof chrom.sample_matrix === 'string' && chrom.sample_matrix) ||
     '';
-  const vialsTested =
+  const meanOfVials =
+    (typeof summary.mean_of_vials_tested === 'string' && summary.mean_of_vials_tested) ||
     (typeof summary.vials_tested === 'string' && summary.vials_tested) ||
     (typeof summary.vial_count === 'number' && String(summary.vial_count)) ||
-    (typeof chrom.vial_size === 'string' && chrom.vial_size) ||
     '';
+  const avgNetPeptide =
+    (typeof summary.avg_net_peptide_content === 'string' && summary.avg_net_peptide_content) ||
+    netContent.result ||
+    '';
+  const avgPurity =
+    (typeof summary.avg_purity === 'string' && summary.avg_purity) ||
+    purity.result ||
+    (coa.purity_percent != null ? `${coa.purity_percent}%` : '');
+  const vialsTested = meanOfVials || (typeof chrom.vial_size === 'string' ? chrom.vial_size : '');
 
   const fields: CoaPdfFieldValues = {
     CLIENT: coa.company_name || '',
@@ -87,6 +96,16 @@ export function buildCoaPdfFieldValues(coa: COA): CoaPdfFieldValues {
     'LOT CODE': coa.batch_number || '',
     'VIALS TESTED': vialsTested,
 
+    // Average Net Peptide Content card
+    VIALS_33: avgNetPeptide,
+    VIALS_55: meanOfVials,
+    VIALS_222: '',
+
+    // Average Purity card
+    VIALS_44: avgPurity,
+    VIALS_66: meanOfVials,
+    VIALS_22: '',
+
     SpecificationIdentity: identity.specification,
     ResultIdentity: identity.result,
     ConformityIdentity: identity.conformity,
@@ -95,7 +114,7 @@ export function buildCoaPdfFieldValues(coa: COA): CoaPdfFieldValues {
     'ResultNet Peptide Content': netContent.result,
     'ConformityNet Peptide Content': netContent.conformity,
 
-    'SpecificationPurity HPLC': purity.specification || (coa.purity_percent != null ? '≥95.0%' : ''),
+    'SpecificationPurity HPLC': purity.specification || (coa.purity_percent != null ? '>=95.0%' : ''),
     'ResultPurity HPLC': purity.result || (coa.purity_percent != null ? `${coa.purity_percent}%` : ''),
     'ConformityPurity HPLC': purity.conformity || (coa.overall_result === 'pass' ? 'PASS' : coa.overall_result === 'fail' ? 'FAIL' : ''),
 

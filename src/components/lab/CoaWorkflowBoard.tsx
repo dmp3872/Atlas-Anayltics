@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  ArrowRight, CheckCircle, ExternalLink, FlaskConical, Globe, GripVertical,
+  ArrowRight, CheckCircle, ExternalLink, FileText, FlaskConical, Globe, GripVertical,
   MessageCircle, Shield,
 } from 'lucide-react';
 import { COA } from '../../lib/types';
@@ -10,11 +10,13 @@ import {
   COA_WORKFLOW_BOARD_COLUMNS, COA_WORKFLOW_LABELS, COA_WORKFLOW_STEPS,
   CoaWorkflowStage, coaWorkflowStage,
 } from '../../lib/coaWorkflow';
+import CoaPdfPrepModal from './CoaPdfPrepModal';
 
 interface Props {
   coas: COA[];
   onMoveCoa: (coa: COA, targetStage: CoaWorkflowStage) => void | Promise<void>;
   movingId?: string | null;
+  onCoaImagesSaved?: (coa: COA) => void;
 }
 
 const COLUMN_STYLES: Record<CoaWorkflowStage, { header: string; body: string; ring: string }> = {
@@ -66,10 +68,11 @@ function groupCoasByStage(coas: COA[]): Record<CoaWorkflowStage, COA[]> {
   return groups;
 }
 
-export default function CoaWorkflowBoard({ coas, onMoveCoa, movingId }: Props) {
+export default function CoaWorkflowBoard({ coas, onMoveCoa, movingId, onCoaImagesSaved }: Props) {
   const grouped = groupCoasByStage(coas);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [overStage, setOverStage] = useState<CoaWorkflowStage | null>(null);
+  const [prepCoa, setPrepCoa] = useState<COA | null>(null);
 
   function handleDragStart(e: React.DragEvent, coaId: string) {
     e.dataTransfer.setData('text/coa-id', coaId);
@@ -113,8 +116,16 @@ export default function CoaWorkflowBoard({ coas, onMoveCoa, movingId }: Props) {
       </div>
 
       <p className="text-xs text-neutral-500">
-        Drag cards between columns to update workflow stage. New COAs start in Issued.
+        Drag cards between columns to update workflow stage. Use <strong>View PDF</strong> to attach vial/chromatogram photos and generate the certificate (logo watermarks the chromatogram).
       </p>
+
+      {prepCoa && (
+        <CoaPdfPrepModal
+          coa={prepCoa}
+          onClose={() => setPrepCoa(null)}
+          onSaved={onCoaImagesSaved}
+        />
+      )}
 
       <div className="flex gap-4 overflow-x-auto pb-2 min-h-[520px]">
         {COA_WORKFLOW_BOARD_COLUMNS.map(stage => {
@@ -196,12 +207,22 @@ export default function CoaWorkflowBoard({ coas, onMoveCoa, movingId }: Props) {
                         </div>
 
                         <div className="flex flex-wrap gap-2 pt-2 mt-2 border-t border-atlas-border">
+                          <button
+                            type="button"
+                            onClick={e => {
+                              e.stopPropagation();
+                              setPrepCoa(coa);
+                            }}
+                            className="btn-primary text-xs py-1 px-2 gap-1"
+                          >
+                            <FileText size={11} /> View PDF
+                          </button>
                           <Link
                             to={`/coa/${coa.slug}`}
                             className="btn-outline text-xs py-1 px-2 gap-1"
                             onClick={e => e.stopPropagation()}
                           >
-                            <ExternalLink size={11} /> Preview
+                            <ExternalLink size={11} /> Web view
                           </Link>
 
                           {currentStage === 'issued' && (

@@ -1,12 +1,23 @@
-import { PDFDocument, PDFImage } from 'pdf-lib';
+import { PDFDocument, PDFImage, PDFPage, StandardFonts, rgb } from 'pdf-lib';
 import { COA } from './types';
 import { buildCoaPdfFieldValues } from './coaPdfFields';
+import { hydrateCoaImages, resolveCoaLogoWatermark } from './coaImages';
 
 const TEMPLATE_URL = '/coa/certificate-of-analysis-template.pdf';
-const CHROMATOGRAM_FIELD = 'Image3_af_image';
 
-/** Left stock-vial graphic region on the A4 template (PDF user units). */
-const VIAL_IMAGE_RECT = { x: 28, y: 400, width: 90, height: 95 };
+/** Chromatogram image region on the A4 template (PDF user units). */
+const CHROMATOGRAM_RECT = { x: 125.735, y: 487.755, width: 453.447, height: 152.124 };
+
+/**
+ * Left vial panel beside the chromatogram (same vertical band as HPLC box).
+ * Stock vial artwork is baked into the template — white-out this entire rect, then draw the attached photo.
+ */
+const VIAL_PANEL_RECT = { x: 12, y: 485, width: 112, height: 158 };
+
+/** Photo fills the panel with a small inset so edges stay clean. */
+const VIAL_PHOTO_RECT = { x: 18, y: 491, width: 100, height: 146 };
+
+const LOGO_WATERMARK_OPACITY = 0.18;
 
 function parseDataUrl(dataUrl: string): { bytes: Uint8Array; kind: 'png' | 'jpg' } | null {
   const match = /^data:(image\/(?:png|jpeg|jpg));base64,(.+)$/i.exec(dataUrl.trim());
@@ -27,29 +38,59 @@ async function embedDataUrl(pdf: PDFDocument, dataUrl: string): Promise<PDFImage
     : pdf.embedJpg(parsed.bytes);
 }
 
+/** AcroForm Helvetica is WinAnsi — replace Unicode that pdf-lib cannot encode. */
+function toWinAnsi(value: string): string {
+  return (value ?? '')
+    .replace(/\u2265/g, '>=') // ≥
+    .replace(/\u2264/g, '<=') // ≤
+    .replace(/\u00B1/g, '+/-') // ±
+    .replace(/\u00B5|\u03BC/g, 'u') // µ μ
+    .replace(/\u00B0/g, ' deg') // °
+    .replace(/\u2013|\u2014|\u2212/g, '-') // – — −
+    .replace(/\u2018|\u2019/g, "'") // ‘ ’
+    .replace(/\u201C|\u201D/g, '"') // “ ”
+    .replace(/\u2026/g, '...') // …
+    .replace(/\u00A0/g, ' ') // nbsp
+    .replace(/[^\x00-\xFF]/g, ''); // drop anything else outside Latin-1
+}
+
 function setTextField(form: ReturnType<PDFDocument['getForm']>, name: string, value: string) {
   try {
-    form.getTextField(name).setText(value ?? '');
+    form.getTextField(name).setText(toWinAnsi(value));
   } catch {
     // Field missing on template variant — ignore
   }
 }
 
-function triggerDownload(bytes: Uint8Array, filename: string) {
-  const blob = new Blob([bytes], { type: 'application/pdf' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.rel = 'noopener';
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+function coaFilename(coa: COA): string {
+  const slug = (coa.slug || 'coa').replace(/[^\w.-]+/g, '_');
+  return `${slug}-coa.pdf`;
 }
 
-/** Fill the Atlas COA template and download a flattened PDF for the given record. */
-export async function downloadCoaPdf(coa: COA): Promise<void> {
+function drawContainedImage(
+  page: PDFPage,
+  image: PDFImage,
+  rect: { x: number; y: number; width: number; height: number },
+  opacity = 1,
+) {
+  const { width: iw, height: ih } = image;
+  const scale = Math.min(rect.width / iw, rect.height / ih);
+  const drawW = iw * scale;
+  const drawH = ih * scale;
+  page.drawImage(image, {
+    x: rect.x + (rect.width - drawW) / 2,
+    y: rect.y + (rect.height - drawH) / 2,
+    width: drawW,
+    height: drawH,
+    opacity,
+  });
+}
+
+/** Fill the Atlas COA template and return PDF bytes (flattened). */
+export async function buildCoaPdfBytes(coa: COA): Promise<Uint8Array> {
+  const record = hydrateCoaImages(coa);
+  const logoUrl = await resolveCoaLogoWatermark(record);
+
   const templateRes = await fetch(TEMPLATE_URL);
   if (!templateRes.ok) {
     throw new Error('Could not load the Certificate of Analysis template.');
@@ -58,45 +99,10 @@ export async function downloadCoaPdf(coa: COA): Promise<void> {
   const templateBytes = await templateRes.arrayBuffer();
   const pdf = await PDFDocument.load(templateBytes);
   const form = pdf.getForm();
-  const values = buildCoaPdfFieldValues(coa);
+  const values = buildCoaPdfFieldValues(record);
 
   for (const [name, value] of Object.entries(values)) {
     setTextField(form, name, value);
-  }
-
-  if (coa.chromatogram_image) {
-    const chromImage = await embedDataUrl(pdf, coa.chromatogram_image);
-    if (chromImage) {
-      try {
-        form.getButton(CHROMATOGRAM_FIELD).setImage(chromImage);
-      } catch {
-        const page = pdf.getPages()[0];
-        page.drawImage(chromImage, {
-          x: 125.735,
-          y: 487.755,
-          width: 453.447,
-          height: 152.124,
-        });
-      }
-    }
-  }
-
-  if (coa.vial_image) {
-    const vialImage = await embedDataUrl(pdf, coa.vial_image);
-    if (vialImage) {
-      const page = pdf.getPages()[0];
-      const { width: iw, height: ih } = vialImage;
-      const { x, y, width, height } = VIAL_IMAGE_RECT;
-      const scale = Math.min(width / iw, height / ih);
-      const drawW = iw * scale;
-      const drawH = ih * scale;
-      page.drawImage(vialImage, {
-        x: x + (width - drawW) / 2,
-        y: y + (height - drawH) / 2,
-        width: drawW,
-        height: drawH,
-      });
-    }
   }
 
   try {
@@ -105,7 +111,94 @@ export async function downloadCoaPdf(coa: COA): Promise<void> {
     // Some PDF readers still open unflattened filled forms
   }
 
-  const saved = await pdf.save();
-  const slug = (coa.slug || 'coa').replace(/[^\w.-]+/g, '_');
-  triggerDownload(saved, `${slug}-coa.pdf`);
+  const page = pdf.getPages()[0];
+  const font = await pdf.embedFont(StandardFonts.Helvetica);
+
+  // Template says "Mean of _ quantity" — cover "quantity" and label "vials tested".
+  page.drawRectangle({
+    x: 245,
+    y: 405,
+    width: 60,
+    height: 12,
+    color: rgb(1, 1, 1),
+    borderWidth: 0,
+  });
+  page.drawText('vials tested', {
+    x: 246,
+    y: 407.5,
+    size: 8.5,
+    font,
+    color: rgb(0.22, 0.22, 0.22),
+  });
+
+  if (record.chromatogram_image) {
+    const chromImage = await embedDataUrl(pdf, record.chromatogram_image);
+    if (chromImage) {
+      // Cover the template chromatogram slot completely
+      page.drawImage(chromImage, {
+        x: CHROMATOGRAM_RECT.x,
+        y: CHROMATOGRAM_RECT.y,
+        width: CHROMATOGRAM_RECT.width,
+        height: CHROMATOGRAM_RECT.height,
+      });
+    }
+  }
+
+  if (logoUrl) {
+    const logoImage = await embedDataUrl(pdf, logoUrl);
+    if (logoImage) {
+      drawContainedImage(page, logoImage, {
+        x: CHROMATOGRAM_RECT.x + CHROMATOGRAM_RECT.width * 0.28,
+        y: CHROMATOGRAM_RECT.y + CHROMATOGRAM_RECT.height * 0.15,
+        width: CHROMATOGRAM_RECT.width * 0.44,
+        height: CHROMATOGRAM_RECT.height * 0.7,
+      }, LOGO_WATERMARK_OPACITY);
+    }
+  }
+
+  if (record.vial_image) {
+    const vialImage = await embedDataUrl(pdf, record.vial_image);
+    if (vialImage) {
+      // Cover the template's stock vial completely so it cannot show through.
+      page.drawRectangle({
+        x: VIAL_PANEL_RECT.x,
+        y: VIAL_PANEL_RECT.y,
+        width: VIAL_PANEL_RECT.width,
+        height: VIAL_PANEL_RECT.height,
+        color: rgb(1, 1, 1),
+        borderWidth: 0,
+      });
+      drawContainedImage(page, vialImage, VIAL_PHOTO_RECT);
+    }
+  }
+
+  return pdf.save();
+}
+
+/** Open the filled COA PDF in a new browser tab (staff preview). */
+export async function openCoaPdf(coa: COA): Promise<void> {
+  const bytes = await buildCoaPdfBytes(coa);
+  const blob = new Blob([bytes], { type: 'application/pdf' });
+  const url = URL.createObjectURL(blob);
+  const opened = window.open(url, '_blank', 'noopener,noreferrer');
+  if (!opened) {
+    URL.revokeObjectURL(url);
+    throw new Error('Pop-up blocked. Allow pop-ups to preview the PDF.');
+  }
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+/** Download the filled COA PDF (client portal). */
+export async function downloadCoaPdf(coa: COA): Promise<void> {
+  const bytes = await buildCoaPdfBytes(coa);
+  const blob = new Blob([bytes], { type: 'application/pdf' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = coaFilename(coa);
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
