@@ -11,6 +11,7 @@ import {
   CoaWorkflowStage, coaWorkflowStage,
 } from '../../lib/coaWorkflow';
 import CoaPdfPrepModal from './CoaPdfPrepModal';
+import { openCoaPrintView } from '../../lib/coaPdf';
 
 interface Props {
   coas: COA[];
@@ -116,7 +117,7 @@ export default function CoaWorkflowBoard({ coas, onMoveCoa, movingId, onCoaImage
       </div>
 
       <p className="text-xs text-neutral-500">
-        Drag cards between columns to update workflow stage. Use <strong>View PDF</strong> to attach vial/chromatogram photos and generate the certificate (logo watermarks the chromatogram).
+        Drag cards between columns to update workflow stage. <strong>View PDF</strong> prints the live portal certificate; <strong>Prepare</strong> updates vial photo and panel stats first.
       </p>
 
       {prepCoa && (
@@ -211,11 +212,21 @@ export default function CoaWorkflowBoard({ coas, onMoveCoa, movingId, onCoaImage
                             type="button"
                             onClick={e => {
                               e.stopPropagation();
-                              setPrepCoa(coa);
+                              openCoaPrintView(coa.slug);
                             }}
                             className="btn-primary text-xs py-1 px-2 gap-1"
                           >
                             <FileText size={11} /> View PDF
+                          </button>
+                          <button
+                            type="button"
+                            onClick={e => {
+                              e.stopPropagation();
+                              setPrepCoa(coa);
+                            }}
+                            className="btn-outline text-xs py-1 px-2 gap-1"
+                          >
+                            Prepare
                           </button>
                           <Link
                             to={`/coa/${coa.slug}`}

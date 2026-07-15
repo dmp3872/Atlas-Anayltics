@@ -97,9 +97,11 @@ export function lookupCas(query: string): { name: string; cas: string }[] {
 
 export function casForSampleName(sampleName: string): string {
   const key = sampleName.trim().toLowerCase();
-  const hit = PEPTIDE_CAS_LOOKUP.find(
-    p => p.name.toLowerCase() === key || key.includes(p.name.toLowerCase()),
-  );
+  if (!key) return '';
+  const hit = PEPTIDE_CAS_LOOKUP.find(p => {
+    const n = p.name.toLowerCase();
+    return n === key || n.startsWith(`${key}-`) || n.startsWith(`${key} `) || key.includes(n);
+  });
   return hit?.cas ?? '';
 }
 
@@ -126,7 +128,7 @@ export function labResultsToPanelResults(results: LabCoaResults): PanelResult[] 
   const rows: PanelResult[] = [
     { panel_name: 'Identification', specification: 'Peptide ID', result: results.identification, pass: !!results.identification.trim() },
     { panel_name: 'Net Content', specification: 'Label claim', result: results.netContent, pass: !!results.netContent.trim() },
-    { panel_name: 'Net Purity', specification: '>=95.0%', result: results.netPurity ? `${results.netPurity}%` : '', pass: true },
+    { panel_name: 'Net Purity', specification: '≥98%', result: results.netPurity ? `${results.netPurity}%` : '', pass: true },
   ];
 
   if (results.includeMolecularWeight && results.molecularWeight.trim()) {
@@ -151,7 +153,7 @@ export function labResultsToPanelResults(results: LabCoaResults): PanelResult[] 
       panel_name: 'Endotoxin',
       specification: ENDOTOXIN_SPEC_EU_ML,
       result: results.endotoxinEuMl.trim()
-        ? `${results.endotoxinEuMl.trim()} EU/mL`
+        ? `${results.endotoxinEuMl.trim()} EU/mL (LAL)`
         : '',
       pass: results.endotoxinPass,
     },
@@ -175,14 +177,38 @@ export function labResultsToPanelResults(results: LabCoaResults): PanelResult[] 
     });
   }
 
+  // Fold conformity vials into Net Content / Net Purity (one line each), not extra rows.
+  const contentParts: string[] = [];
+  const purityParts: string[] = [];
+  const asMg = (v: string) => {
+    const t = v.trim();
+    if (!t) return '';
+    const m = t.match(/^(-?\d+(?:\.\d+)?)\s*(mg)?$/i);
+    return m ? `${m[1]} mg` : t;
+  };
+  const asPct = (v: string) => {
+    const t = v.trim();
+    if (!t) return '';
+    const m = t.match(/^(-?\d+(?:\.\d+)?)\s*%?$/);
+    return m ? `${m[1]}%` : t;
+  };
+
+  if (results.netContent.trim()) contentParts.push(asMg(results.netContent));
+  if (results.netPurity.trim()) purityParts.push(asPct(results.netPurity));
+
   for (const row of results.conformityPeptides) {
-    if (!row.name.trim()) continue;
-    rows.push({
-      panel_name: `Conformity — ${row.name.trim()}`,
-      specification: 'Content / Purity',
-      result: [row.netContent, row.netPurity ? `${row.netPurity}%` : ''].filter(Boolean).join(' · '),
-      pass: true,
-    });
+    if (!row.name.trim() && !row.netContent.trim() && !row.netPurity.trim()) continue;
+    if (row.netContent.trim()) contentParts.push(asMg(row.netContent));
+    if (row.netPurity.trim()) purityParts.push(asPct(row.netPurity));
+  }
+
+  if (contentParts.length > 0) {
+    const net = rows.find(r => r.panel_name === 'Net Content');
+    if (net) net.result = contentParts.join(', ');
+  }
+  if (purityParts.length > 0) {
+    const pur = rows.find(r => r.panel_name === 'Net Purity');
+    if (pur) pur.result = purityParts.join(', ');
   }
 
   return rows;

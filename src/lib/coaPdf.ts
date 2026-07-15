@@ -5,6 +5,7 @@ import {
   fentanylDetectionLabel,
   hydrateCoaImages,
   readCoaPdfStats,
+  resolveCoaWatermark,
   resolveImageAsDataUrl,
   trimImageWhitespace,
 } from './coaImages';
@@ -22,8 +23,8 @@ const CHROMATOGRAM_RECT = { x: 125.735, y: 487.755, width: 453.447, height: 152.
 const VIAL_FRAME = { x: 18, y: 498, width: 100, height: 132 };
 const VIAL_PHOTO_INSET = 5;
 
-/** Faint Atlas watermark in the HPLC box (matches web COA AtlasWatermark feel). */
-const ATLAS_WATERMARK_OPACITY = 0.14;
+/** Client logo watermark in the HPLC box (same feel as web AtlasWatermark). */
+const LOGO_WATERMARK_OPACITY = 0.16;
 
 /** Main results table geometry (matches Endotoxins / Sterility AcroForm fields). */
 const RESULTS_TABLE = {
@@ -246,6 +247,7 @@ function drawFentanylAndShiftedHeavyMetals(
 /** Fill the Atlas COA template and return PDF bytes (flattened). */
 export async function buildCoaPdfBytes(coa: COA): Promise<Uint8Array> {
   const record = hydrateCoaImages(coa);
+  const watermarkSrc = (await resolveCoaWatermark(record)) || ATLAS_LOGO_URL;
 
   const templateRes = await fetch(TEMPLATE_URL);
   if (!templateRes.ok) {
@@ -290,7 +292,7 @@ export async function buildCoaPdfBytes(coa: COA): Promise<Uint8Array> {
 
   drawFentanylAndShiftedHeavyMetals(page, record, { regular: font, bold });
 
-  // HPLC box: clear any stock art / uploaded chromatogram and place a faint Atlas logo.
+  // HPLC box: client chromatogram watermark from COA profile (Atlas only if none applied).
   page.drawRectangle({
     x: CHROMATOGRAM_RECT.x,
     y: CHROMATOGRAM_RECT.y,
@@ -299,14 +301,14 @@ export async function buildCoaPdfBytes(coa: COA): Promise<Uint8Array> {
     color: rgb(1, 1, 1),
     borderWidth: 0,
   });
-  const atlasLogo = await embedImageSource(pdf, ATLAS_LOGO_URL);
-  if (atlasLogo) {
-    drawContainedImage(page, atlasLogo, {
-      x: CHROMATOGRAM_RECT.x + CHROMATOGRAM_RECT.width * 0.30,
-      y: CHROMATOGRAM_RECT.y + CHROMATOGRAM_RECT.height * 0.18,
-      width: CHROMATOGRAM_RECT.width * 0.40,
-      height: CHROMATOGRAM_RECT.height * 0.64,
-    }, ATLAS_WATERMARK_OPACITY);
+  const watermark = await embedImageSource(pdf, watermarkSrc);
+  if (watermark) {
+    drawContainedImage(page, watermark, {
+      x: CHROMATOGRAM_RECT.x + CHROMATOGRAM_RECT.width * 0.28,
+      y: CHROMATOGRAM_RECT.y + CHROMATOGRAM_RECT.height * 0.15,
+      width: CHROMATOGRAM_RECT.width * 0.44,
+      height: CHROMATOGRAM_RECT.height * 0.70,
+    }, LOGO_WATERMARK_OPACITY);
   }
 
   // Condensed vial product shot (trim empty studio background, tight double frame).
@@ -355,46 +357,40 @@ export async function buildCoaPdfBytes(coa: COA): Promise<Uint8Array> {
 }
 
 /**
- * Open a blank preview tab synchronously inside a click handler, then pass it to
- * `openCoaPdf` so the browser does not treat the later navigation as a popup.
+ * Open the live portal COA page and trigger the browser print / Save as PDF dialog.
+ * This is the canonical download path so certificates match what clients see on the web.
+ */
+export function openCoaPrintView(slug: string): void {
+  const path = `/coa/${encodeURIComponent(slug)}?print=1`;
+  window.open(path, '_blank', 'noopener,noreferrer');
+}
+
+/**
+ * @deprecated Prefer `openCoaPrintView`. Kept for click-handler sync open patterns.
  */
 export function openCoaPdfPreviewWindow(): Window | null {
-  // Do not pass `noopener` in windowFeatures — that makes open() return null even on success.
   const preview = window.open('about:blank', '_blank');
   if (preview) preview.opener = null;
   return preview;
 }
 
-/** Open the filled COA PDF in a new browser tab (staff preview). */
+/** Open the portal COA print view (matches on-screen certificate). */
 export async function openCoaPdf(coa: COA, previewWindow?: Window | null): Promise<void> {
-  const bytes = await buildCoaPdfBytes(coa);
-  const blob = new Blob([bytes], { type: 'application/pdf' });
-  const url = URL.createObjectURL(blob);
-
-  let target = previewWindow && !previewWindow.closed ? previewWindow : null;
-  if (!target) {
-    target = openCoaPdfPreviewWindow();
-  }
-
-  if (target) {
-    target.location.href = url;
-    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  const path = `/coa/${encodeURIComponent(coa.slug)}?print=1`;
+  if (previewWindow && !previewWindow.closed) {
+    previewWindow.location.href = path;
     return;
   }
-
-  // Fallback: download instead of failing when popups are blocked.
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = coaFilename(coa);
-  a.rel = 'noopener';
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  openCoaPrintView(coa.slug);
 }
 
-/** Download the filled COA PDF (client portal). */
+/** Download / print via the portal COA view (Save as PDF in the print dialog). */
 export async function downloadCoaPdf(coa: COA): Promise<void> {
+  openCoaPrintView(coa.slug);
+}
+
+/** @deprecated Template blob generation is no longer used for downloads. */
+export async function downloadCoaPdfBlob(coa: COA): Promise<void> {
   const bytes = await buildCoaPdfBytes(coa);
   const blob = new Blob([bytes], { type: 'application/pdf' });
   const url = URL.createObjectURL(blob);

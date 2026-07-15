@@ -8,6 +8,7 @@ import { supabase } from '../lib/supabase';
 import { COA, Company } from '../lib/types';
 import { formatDate } from '../lib/utils';
 import { verifyCoaIntegrity } from '../lib/coaVerify';
+import { COA_LIST_COLUMNS } from '../lib/coaSelect';
 import StaffHeader from '../components/layout/StaffHeader';
 
 type CompanyProfile = {
@@ -40,7 +41,7 @@ export default function VerifyPortal() {
 
   useEffect(() => {
     Promise.all([
-      supabase.from('coas').select('*').eq('is_public', true).order('issued_at', { ascending: false }),
+      supabase.from('coas').select(COA_LIST_COLUMNS).eq('is_public', true).order('issued_at', { ascending: false }),
       supabase.from('companies').select('*').order('name'),
     ]).then(([coaRes, coRes]) => {
       setCoas(coaRes.data ?? []);
@@ -95,7 +96,7 @@ export default function VerifyPortal() {
     if (!slug.trim()) return;
     setVerifying(true);
     setVerifyResult(null);
-    const { data } = await supabase.from('coas').select('*').eq('slug', slug.trim()).eq('is_public', true).maybeSingle();
+    const { data } = await supabase.from('coas').select(COA_LIST_COLUMNS).eq('slug', slug.trim()).eq('is_public', true).maybeSingle();
     setVerifyResult(data ?? 'not_found');
     setVerifying(false);
   }

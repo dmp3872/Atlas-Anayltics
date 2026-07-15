@@ -120,7 +120,7 @@ export default function CompanyManager() {
             <Building2 size={16} /> COA Profiles
           </h3>
           <p className="text-xs text-neutral-500 mt-1">
-            Create a profile for each brand or sister company. Everything on a profile appears on that brand&apos;s COAs. The default profile is used for new orders.
+            Each brand needs a <strong>company logo</strong> (COA header) and a <strong>chromatogram watermark</strong> (faint HPLC background). Chemists only upload the vial photo and choose whether to apply these at issue time.
           </p>
         </div>
         <button type="button" onClick={openCreate} className="btn-primary text-sm gap-1.5 whitespace-nowrap">

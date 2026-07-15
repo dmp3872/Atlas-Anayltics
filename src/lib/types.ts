@@ -91,7 +91,7 @@ export interface COA {
   pdf_url: string;
   /** Data URL (JPG/PNG) of the physical vial photo for COA PDF. */
   vial_image?: string;
-  /** Data URL (JPG/PNG) of the instrument chromatogram for COA PDF. */
+  /** Snapshotted HPLC watermark from the client's COA profile (`chromatograph_background`). */
   chromatogram_image?: string;
   seal_serial?: string;
   coa_workflow_stage?: CoaWorkflowStage;
@@ -114,6 +114,8 @@ export interface ChromatogramData {
   retention_time?: number;
   peak_area?: number;
   points?: { x: number; y: number }[];
+  /** Chemist-assigned vial size locked onto the COA (e.g. 3ml). */
+  vial_size?: string;
 }
 
 export interface ApiKey {

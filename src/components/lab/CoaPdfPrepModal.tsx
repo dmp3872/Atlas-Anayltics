@@ -8,7 +8,7 @@ import {
   saveCoaPdfPrep,
 } from '../../lib/coaImages';
 import { ENDOTOXIN_SPEC_EU_ML, SterilityMethod, STERILITY_METHOD_LABELS } from '../../lib/labCoaForm';
-import { openCoaPdf, openCoaPdfPreviewWindow } from '../../lib/coaPdf';
+import { openCoaPrintView } from '../../lib/coaPdf';
 import LogoDropzone from '../account/LogoDropzone';
 
 const MAX_COA_IMAGE_BYTES = 2 * 1024 * 1024;
@@ -76,12 +76,11 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
 
     setBusy(true);
     setError(null);
-    // Open the tab during the click gesture so browsers don't block it after awaits.
-    const previewWindow = openCoaPdfPreviewWindow();
     try {
       const { coa: saved, error: saveError } = await saveCoaPdfPrep(coa, {
         vial_image: vialImage,
-        chromatogram_image: '',
+        chromatogram_image: coa.chromatogram_image || '',
+        company_logo: coa.company_logo || '',
         avg_net_peptide_content: avgNetPeptide,
         mean_of_vials_tested: vials,
         avg_purity: avgPurity,
@@ -94,20 +93,21 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
         endotoxin_pass: endotoxinPass,
       });
       if (saveError) {
-        previewWindow?.close();
         setError(saveError);
         return;
       }
       onSaved?.(saved);
-      await openCoaPdf(saved, previewWindow);
+      openCoaPrintView(saved.slug);
       onClose();
     } catch (err) {
-      previewWindow?.close();
-      setError(err instanceof Error ? err.message : 'Could not generate the PDF.');
+      setError(err instanceof Error ? err.message : 'Could not save the certificate.');
     } finally {
       setBusy(false);
     }
   }
+
+  const headerLogo = initial.company_logo || '';
+  const watermark = initial.chromatogram_image || '';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={onClose}>
@@ -117,7 +117,7 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
       >
         <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-atlas-border">
           <div>
-            <h2 className="text-lg font-bold text-black">Prepare COA PDF</h2>
+            <h2 className="text-lg font-bold text-black">Prepare certificate</h2>
             <p className="text-sm text-neutral-500 mt-0.5">
               {coa.display_name || coa.sample_name}
               {coa.company_name ? ` · ${coa.company_name}` : ''}
@@ -130,9 +130,26 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
 
         <div className="px-5 py-4 space-y-5">
           <p className="text-sm text-neutral-600">
-            Attach a vial photo and fill Average Net Peptide Content before generating.
-            The HPLC area prints with a faint Atlas Analytics logo watermark — no chromatogram upload needed.
+            Upload the vial photo and fill Average Net Peptide Content.
+            After save, the live portal certificate opens for print / Save as PDF.
           </p>
+
+          {(headerLogo || watermark) && (
+            <div className="flex flex-wrap gap-4 rounded-lg border border-atlas-border bg-neutral-50 p-3">
+              {headerLogo && (
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 mb-1">Header logo</p>
+                  <img src={headerLogo} alt="" className="h-12 w-12 object-contain bg-white border border-atlas-border rounded" />
+                </div>
+              )}
+              {watermark && (
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 mb-1">HPLC watermark</p>
+                  <img src={watermark} alt="" className="h-12 w-12 object-contain bg-white border border-atlas-border rounded opacity-70" />
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="rounded-lg border border-atlas-border p-4 space-y-3 bg-neutral-50/60">
             <h3 className="text-sm font-bold uppercase tracking-wide text-black">Average Net Peptide Content</h3>
@@ -196,15 +213,14 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
                 value={molecularWeight}
                 onChange={e => setMolecularWeight(e.target.value)}
                 disabled={!includeMolecularWeight}
-                className="input-field disabled:opacity-50"
-                placeholder="e.g. 1419.5"
+                className="input-field"
+                placeholder="e.g. 1419.7"
               />
             </div>
           </div>
 
           <div className="rounded-lg border border-atlas-border p-4 space-y-3 bg-neutral-50/60">
             <h3 className="text-sm font-bold uppercase tracking-wide text-black">Sterility</h3>
-            <p className="text-xs text-neutral-500">Specification on COA: Not Detected</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="label" htmlFor="sterility-method">Method</label>
@@ -214,14 +230,15 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
                   onChange={e => setSterilityMethod(e.target.value as SterilityMethod)}
                   className="input-field"
                 >
-                  <option value="pcr">{STERILITY_METHOD_LABELS.pcr}</option>
-                  <option value="culture_14_day">{STERILITY_METHOD_LABELS.culture_14_day}</option>
+                  {(Object.keys(STERILITY_METHOD_LABELS) as SterilityMethod[]).map(key => (
+                    <option key={key} value={key}>{STERILITY_METHOD_LABELS[key]}</option>
+                  ))}
                 </select>
               </div>
               <div>
-                <label className="label" htmlFor="sterility-result">Result / Conformity</label>
+                <label className="label" htmlFor="sterility-pass">Result</label>
                 <select
-                  id="sterility-result"
+                  id="sterility-pass"
                   value={sterilityPass ? 'pass' : 'fail'}
                   onChange={e => setSterilityPass(e.target.value === 'pass')}
                   className="input-field"
@@ -279,16 +296,13 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
                 <option value="none_detected">None Detected</option>
                 <option value="detected">Detected</option>
               </select>
-              <p className="text-xs text-neutral-500 mt-1">
-                Prints under Endotoxins with Conformity PASS (none detected) or FAIL (detected).
-              </p>
             </div>
           </div>
 
           <div>
             <label className="label mb-2 block">Vial photo</label>
             <p className="text-xs text-neutral-500 mb-2">
-              Empty background is auto-cropped so only the vial prints (tight product frame).
+              Empty background is auto-cropped so only the vial prints.
             </p>
             <LogoDropzone
               value={vialImage}
@@ -311,7 +325,7 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
           </button>
           <button type="button" onClick={() => void handleGenerate()} disabled={busy} className="btn-primary gap-2">
             <FileText size={16} />
-            {busy ? 'Saving & generating…' : 'Save & view PDF'}
+            {busy ? 'Saving…' : 'Save & print'}
           </button>
         </div>
       </div>

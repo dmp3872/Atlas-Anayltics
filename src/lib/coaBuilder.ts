@@ -56,7 +56,7 @@ function buildPanelResults(
 ): PanelResult[] {
   const purity = form.purity_percent ?? (overallPass ? 98.5 : 94.0);
   const panelName = panel?.name ?? 'HPLC Purity';
-  const spec = overallPass ? '≥95.0%' : '≥95.0%';
+  const spec = overallPass ? '≥98%' : '≥98%';
 
   const rows: PanelResult[] = [
     {

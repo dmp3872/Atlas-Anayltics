@@ -27,8 +27,9 @@ import PeptideRequests from '../components/portal/PeptideRequests';
 import PortalHome from '../components/portal/PortalHome';
 import PrepaidShippingLabel from '../components/order/PrepaidShippingLabel';
 import { queueNotification } from '../lib/notifications';
-import { downloadCoaPdf } from '../lib/coaPdf';
 import { hydrateCoaImages } from '../lib/coaImages';
+import { openCoaPrintView } from '../lib/coaPdf';
+import { COA_LIST_COLUMNS } from '../lib/coaSelect';
 import { useUserRole } from '../hooks/useUserRole';
 
 type PortalTab = 'home' | 'getting-started' | 'peptide-requests' | 'coas' | 'samples' | 'orders' | 'invoices' | 'payments' | 'account' | 'widget' | 'team';
@@ -54,8 +55,6 @@ export default function Portal() {
   const [samples, setSamples] = useState<OrderSample[]>([]);
   const [panels, setPanels] = useState<TestPanel[]>([]);
   const [loading, setLoading] = useState(true);
-  const [pdfDownloadingId, setPdfDownloadingId] = useState<string | null>(null);
-  const [pdfError, setPdfError] = useState<string | null>(null);
   const canDownloadCoaPdf = role === 'client';
   const [shippingOpen, setShippingOpen] = useState(true);
   const [copiedAddr, setCopiedAddr] = useState(false);
@@ -77,7 +76,7 @@ export default function Portal() {
     setNotifs(loadNotificationPrefs(user.id));
     setTeam(loadTeamMembers(user.id));
     Promise.all([
-      supabase.from('coas').select('*').eq('user_id', user.id).order('issued_at', { ascending: false }),
+      supabase.from('coas').select(COA_LIST_COLUMNS).eq('user_id', user.id).order('issued_at', { ascending: false }),
       supabase.from('orders').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
       supabase.from('order_samples').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
       supabase.from('test_panels').select('*').eq('is_active', true).order('sort_order'),
@@ -90,17 +89,10 @@ export default function Portal() {
     });
   }, [user]);
 
-  async function handleDownloadCoaPdf(coa: COA) {
-    if (!canDownloadCoaPdf || pdfDownloadingId) return;
-    setPdfDownloadingId(coa.id);
-    setPdfError(null);
-    try {
-      await downloadCoaPdf(hydrateCoaImages(coa));
-    } catch (err) {
-      setPdfError(err instanceof Error ? err.message : 'Could not generate the PDF.');
-    } finally {
-      setPdfDownloadingId(null);
-    }
+  /** Opens the live portal COA view and triggers the browser print / Save as PDF dialog. */
+  function handleDownloadCoaPdf(coa: COA) {
+    if (!canDownloadCoaPdf) return;
+    openCoaPrintView(coa.slug);
   }
 
   useEffect(() => {
@@ -304,11 +296,8 @@ export default function Portal() {
               <div className="space-y-4">
                 <div>
                   <h1 className="portal-page-title">Your COAs</h1>
-                  <p className="portal-page-subtitle">Certificates of analysis from your Atlas Analytics testing. Download PDFs here.</p>
+                  <p className="portal-page-subtitle">Certificates of analysis from your Atlas Analytics testing. Download opens the certificate — use Save as PDF in the print dialog.</p>
                 </div>
-                {pdfError && (
-                  <p className="text-sm text-red-600" role="alert">{pdfError}</p>
-                )}
                 <div className="card overflow-hidden">
                 {filteredCoas.length === 0 ? (
                   <div className="p-12 text-center">
@@ -344,12 +333,11 @@ export default function Portal() {
                                 {canDownloadCoaPdf && (
                                   <button
                                     type="button"
-                                    onClick={() => void handleDownloadCoaPdf(coa)}
-                                    disabled={pdfDownloadingId === coa.id}
+                                    onClick={() => handleDownloadCoaPdf(coa)}
                                     className="btn-primary text-xs py-1.5 gap-1 inline-flex"
                                   >
                                     <Download size={12} />
-                                    {pdfDownloadingId === coa.id ? 'Generating…' : 'Download PDF'}
+                                    Download PDF
                                   </button>
                                 )}
                               </div>

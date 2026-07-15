@@ -25,7 +25,7 @@ export function orderSampleIncludesFentanyl(metadata: OrderSample['metadata']): 
 
 /** Default chemist COA test rows — matches the lab issue form. */
 export const DEFAULT_COA_TEST_PANELS: PanelResult[] = [
-  { panel_name: 'Purity & Quantitation (HPLC)', specification: '≥95.0%', result: '', pass: true },
+  { panel_name: 'Purity & Quantitation (HPLC)', specification: '≥98%', result: '', pass: true },
   { panel_name: 'Identity Confirmation (MS)', specification: '± 2 Da', result: '', pass: true },
   { panel_name: 'Net Content (Weight)', specification: '', result: '', pass: true },
   { panel_name: 'Endotoxin (USP <85>)', specification: '<= 5.0 EU/mL', result: '', pass: true },

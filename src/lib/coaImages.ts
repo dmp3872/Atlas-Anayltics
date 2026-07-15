@@ -308,6 +308,8 @@ export function payloadWithoutImageColumns(payload: Record<string, unknown>): Re
 export type CoaPdfPrepPayload = {
   vial_image: string;
   chromatogram_image: string;
+  /** Brand logo for HPLC watermark; snapshotted onto coa.company_logo. */
+  company_logo?: string;
   avg_net_peptide_content: string;
   mean_of_vials_tested: string;
   avg_purity?: string;
@@ -363,7 +365,7 @@ export function applyPrepToCoaPanels(coa: COA, prep: CoaPdfPrepPayload): {
     {
       panel_name: 'Endotoxin',
       specification: ENDOTOXIN_SPEC_EU_ML,
-      result: endoVal ? `${endoVal} EU/mL` : '',
+      result: endoVal ? `${endoVal} EU/mL (LAL)` : '',
       pass: prep.endotoxin_pass,
     },
   );
@@ -411,13 +413,12 @@ export async function saveCoaPdfPrep(
 ): Promise<{ coa: COA; error: string | null }> {
   const hydrated = hydrateCoaImages(coa);
   const { panel_results, molecular_weight } = applyPrepToCoaPanels(coa, prep);
-  const companyLogo = await resolveCoaLogoWatermark({ ...hydrated, vial_image: prep.vial_image });
+  // Keep snapshotted header logo / watermark from issue time; prep only updates vial + stats.
+  const companyLogo = hydrated.company_logo || '';
+  const watermark = hydrated.chromatogram_image || '';
 
   const baseSummary = {
     ...((coa.result_summary && typeof coa.result_summary === 'object' ? coa.result_summary : {}) as Record<string, unknown>),
-    vial_image: prep.vial_image || '',
-    chromatogram_image: prep.chromatogram_image || '',
-    company_logo: companyLogo || hydrated.company_logo || '',
     avg_net_peptide_content: prep.avg_net_peptide_content.trim(),
     mean_of_vials_tested: prep.mean_of_vials_tested.trim(),
     avg_purity: (prep.avg_purity ?? '').trim(),
@@ -432,11 +433,15 @@ export async function saveCoaPdfPrep(
     sterility_method_label: STERILITY_METHOD_LABELS[prep.sterility_method],
     sterility_specification: 'Not Detected',
   };
+  // Never embed base64 images in result_summary — that freezes COA pages (multi‑MB JSON).
+  delete baseSummary.vial_image;
+  delete baseSummary.chromatogram_image;
+  delete baseSummary.company_logo;
 
   const next: COA = {
     ...hydrated,
     vial_image: prep.vial_image,
-    chromatogram_image: prep.chromatogram_image,
+    chromatogram_image: watermark,
     company_logo: companyLogo || hydrated.company_logo || '',
     result_summary: baseSummary,
     panel_results,
@@ -445,7 +450,7 @@ export async function saveCoaPdfPrep(
 
   const direct = {
     vial_image: prep.vial_image || '',
-    chromatogram_image: prep.chromatogram_image || '',
+    chromatogram_image: watermark,
     company_logo: companyLogo || hydrated.company_logo || '',
     result_summary: baseSummary,
     panel_results,
@@ -493,36 +498,105 @@ export async function saveCoaPdfImages(
   });
 }
 
-/** Company / profile logo used as chromatogram watermark on the PDF / web COA. */
-export async function resolveCoaLogoWatermark(coa: COA): Promise<string> {
+/** Header logo snapshotted on the COA (left of company name). Returns a displayable src (no canvas convert). */
+export async function resolveCoaHeaderLogo(coa: COA): Promise<string> {
+  const hydrated = hydrateCoaImages(coa);
   const candidates: string[] = [];
-  if (coa.company_logo) candidates.push(coa.company_logo);
+  const push = (value: unknown) => {
+    if (typeof value === 'string' && value.trim()) candidates.push(value.trim());
+  };
 
-  const { data: company } = await supabase
+  push(hydrated.company_logo);
+
+  const companyName = (hydrated.company_name || '').trim().toLowerCase();
+  const { data: companies } = await supabase
     .from('companies')
-    .select('logo')
-    .eq('user_id', coa.user_id)
-    .eq('is_default', true)
-    .maybeSingle();
+    .select('name, logo, is_default')
+    .eq('user_id', hydrated.user_id);
 
-  if (typeof company?.logo === 'string' && company.logo) candidates.push(company.logo);
+  if (Array.isArray(companies)) {
+    const named = companyName
+      ? companies.find(c => (c.name || '').trim().toLowerCase() === companyName && c.logo)
+      : undefined;
+    const partial = companyName
+      ? companies.find(c => {
+          const n = (c.name || '').trim().toLowerCase();
+          return !!c.logo && (n.includes(companyName) || companyName.includes(n));
+        })
+      : undefined;
+    const def = companies.find(c => c.is_default && c.logo);
+    const any = companies.find(c => c.logo);
+    push(named?.logo);
+    push(partial?.logo);
+    push(def?.logo);
+    push(any?.logo);
+  }
 
   const { data: profile } = await supabase
     .from('user_profiles')
     .select('company_logo')
-    .eq('id', coa.user_id)
+    .eq('id', hydrated.user_id)
     .maybeSingle();
+  push(profile?.company_logo);
 
-  if (typeof profile?.company_logo === 'string' && profile.company_logo) {
-    candidates.push(profile.company_logo);
-  }
-
+  const seen = new Set<string>();
   for (const candidate of candidates) {
-    const dataUrl = await resolveImageAsDataUrl(candidate);
-    if (dataUrl) return dataUrl;
+    if (seen.has(candidate)) continue;
+    seen.add(candidate);
+    // Prefer the original src for web display — converting large logos to PNG data URLs
+    // freezes / crashes the tab. PDF download now uses print of this page.
+    if (candidate.startsWith('data:image/') || candidate.startsWith('http') || candidate.startsWith('/')) {
+      return candidate;
+    }
+  }
+  return '';
+}
+
+/**
+ * HPLC watermark from the client's COA profile (`chromatograph_background`),
+ * snapshotted onto the COA as `chromatogram_image` when the chemist applies it.
+ */
+export async function resolveCoaWatermark(coa: COA): Promise<string> {
+  const hydrated = hydrateCoaImages(coa);
+  const candidates: string[] = [];
+  const push = (value: unknown) => {
+    if (typeof value === 'string' && value.trim()) candidates.push(value.trim());
+  };
+
+  // Snapshotted watermark (chemist applied at issue time).
+  push(hydrated.chromatogram_image);
+
+  const companyName = (hydrated.company_name || '').trim().toLowerCase();
+  const { data: companies } = await supabase
+    .from('companies')
+    .select('name, chromatograph_background, is_default')
+    .eq('user_id', hydrated.user_id);
+
+  if (Array.isArray(companies)) {
+    const named = companyName
+      ? companies.find(c => (c.name || '').trim().toLowerCase() === companyName && c.chromatograph_background)
+      : undefined;
+    const def = companies.find(c => c.is_default && c.chromatograph_background);
+    const any = companies.find(c => c.chromatograph_background);
+    push(named?.chromatograph_background);
+    push(def?.chromatograph_background);
+    push(any?.chromatograph_background);
   }
 
+  const seen = new Set<string>();
+  for (const candidate of candidates) {
+    if (seen.has(candidate)) continue;
+    seen.add(candidate);
+    if (candidate.startsWith('data:image/') || candidate.startsWith('http') || candidate.startsWith('/')) {
+      return candidate;
+    }
+  }
   return '';
+}
+
+/** @deprecated use resolveCoaWatermark */
+export async function resolveCoaLogoWatermark(coa: COA): Promise<string> {
+  return resolveCoaWatermark(coa);
 }
 
 export { sterilitySpecLabel };

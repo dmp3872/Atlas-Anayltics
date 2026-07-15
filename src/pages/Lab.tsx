@@ -5,11 +5,12 @@ import {
   ChevronDown, ChevronUp, ArrowRight, FileText,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { COA, Order, OrderSample, OrderStatus, SampleStatus, UserProfile } from '../lib/types';
+import { COA, Company, Order, OrderSample, OrderStatus, SampleStatus, UserProfile } from '../lib/types';
 import { formatDateTime, ORDER_STATUS_LABELS, SAMPLE_STATUS_LABELS } from '../lib/utils';
 import { computeCoaContentHash } from '../lib/coaVerify';
 import { notifyCoaReady } from '../lib/notifications';
 import { matchCoaForSample, clientSubmittedLabel, parseSampleMetadata } from '../lib/coaPanels';
+import { fetchUserCompanies } from '../lib/coaProfile';
 import {
   EMPTY_LAB_RESULTS, LabCoaResults, VIAL_SIZE_OPTIONS, VialSizeOption,
   HEAVY_METAL_NAMES, buildLabResultsFromSample, labResultsToPanelResults,
@@ -24,9 +25,11 @@ import {
   hydrateCoaImages,
   isMissingCoaImageColumnError,
   payloadWithoutImageColumns,
-  resolveCoaLogoWatermark,
+  resolveImageAsDataUrl,
 } from '../lib/coaImages';
 import CoaPdfPrepModal from '../components/lab/CoaPdfPrepModal';
+import { openCoaPrintView } from '../lib/coaPdf';
+import { COA_LIST_COLUMNS } from '../lib/coaSelect';
 
 const MAX_COA_IMAGE_BYTES = 2 * 1024 * 1024;
 
@@ -59,10 +62,56 @@ export default function Lab() {
   const [form, setForm] = useState({ ...BLANK });
   const [labResults, setLabResults] = useState<LabCoaResults>({ ...EMPTY_LAB_RESULTS });
   const [vialImage, setVialImage] = useState('');
-  // chromatogram slot on the PDF is a faint Atlas logo watermark (no upload)
+  const [clientCompanies, setClientCompanies] = useState<Company[]>([]);
+  const [selectedCompanyId, setSelectedCompanyId] = useState('');
+  const [preferredBrandName, setPreferredBrandName] = useState('');
+  const [applyHeaderLogo, setApplyHeaderLogo] = useState(true);
+  const [applyWatermark, setApplyWatermark] = useState(true);
   const [casSuggestions, setCasSuggestions] = useState<{ name: string; cas: string }[]>([]);
   const [showCasSuggestions, setShowCasSuggestions] = useState(false);
   const [prepCoa, setPrepCoa] = useState<COA | null>(null);
+
+  const selectedCompany = clientCompanies.find(c => c.id === selectedCompanyId) ?? null;
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!form.clientId) {
+      setClientCompanies([]);
+      setSelectedCompanyId('');
+      return;
+    }
+    fetchUserCompanies(form.clientId)
+      .then(list => {
+        if (cancelled) return;
+        setClientCompanies(list);
+        const want = (preferredBrandName || form.companyName || '').trim().toLowerCase();
+        const named = want
+          ? list.find(c => c.name.trim().toLowerCase() === want)
+            ?? list.find(c => {
+              const n = c.name.trim().toLowerCase();
+              return n.includes(want) || want.includes(n);
+            })
+          : undefined;
+        const pick = named ?? list.find(c => c.is_default) ?? list[0];
+        setSelectedCompanyId(pick?.id ?? '');
+        if (pick?.name) {
+          setForm(prev => ({
+            ...prev,
+            companyName: named ? pick.name : (prev.companyName || pick.name),
+          }));
+        }
+        setApplyHeaderLogo(!!pick?.logo);
+        setApplyWatermark(!!pick?.chromatograph_background);
+      })
+      .catch((err) => {
+        console.error('Failed to load client COA profiles', err);
+        if (!cancelled) {
+          setClientCompanies([]);
+          setSelectedCompanyId('');
+        }
+      });
+    return () => { cancelled = true; };
+  }, [form.clientId, preferredBrandName]);
 
   async function loadAll() {
     setLoading(true);
@@ -70,7 +119,7 @@ export default function Lab() {
       supabase.from('user_profiles').select('*'),
       supabase.from('order_samples').select('*').order('created_at', { ascending: false }),
       supabase.from('orders').select('*').order('created_at', { ascending: false }),
-      supabase.from('coas').select('*').order('issued_at', { ascending: false }),
+      supabase.from('coas').select(COA_LIST_COLUMNS).order('issued_at', { ascending: false }),
     ]);
     if (p.data) setClients(p.data.filter(u => (u.role ?? 'client') === 'client'));
     if (s.data) setSamples(s.data);
@@ -112,6 +161,7 @@ export default function Lab() {
     const client = clients.find(c => c.id === s.user_id);
     const order = orders.find(o => o.id === s.order_id);
     const cas = casForSampleName(s.sample_name) || meta.peptide_identification?.trim() || '';
+    const brandHint = meta.brand_names?.[0] || order?.company_name || client?.company_name || '';
     setForm({
       ...BLANK,
       clientId: s.user_id,
@@ -119,11 +169,12 @@ export default function Lab() {
       orderId: s.order_id ?? '',
       sampleName: s.sample_name,
       displayName: s.display_name || s.sample_name,
-      companyName: order?.company_name || client?.company_name || '',
+      companyName: brandHint,
       batchNumber: meta.batch_number ?? '',
       casNumber: cas,
       vialSize: (VIAL_SIZE_OPTIONS.includes(meta.vial_size as VialSizeOption) ? meta.vial_size : '3ml') as VialSizeOption,
     });
+    setPreferredBrandName(brandHint);
     setLabResults(buildLabResultsFromSample(s.metadata, s.sample_name));
     setCasSuggestions(cas ? lookupCas(cas) : []);
     setShowCasSuggestions(false);
@@ -254,10 +305,17 @@ export default function Lab() {
       panel_results: cleanPanels,
     });
 
-    const companyLogo = await resolveCoaLogoWatermark({
-      user_id: form.clientId,
-      company_logo: '',
-    } as COA);
+    const profile = selectedCompany
+      ?? clientCompanies.find(c => c.is_default)
+      ?? clientCompanies[0]
+      ?? null;
+
+    const headerLogoRaw = applyHeaderLogo ? (profile?.logo || '') : '';
+    const watermarkRaw = applyWatermark ? (profile?.chromatograph_background || '') : '';
+    const [companyLogo, watermarkImage] = await Promise.all([
+      headerLogoRaw ? resolveImageAsDataUrl(headerLogoRaw) : Promise.resolve(''),
+      watermarkRaw ? resolveImageAsDataUrl(watermarkRaw) : Promise.resolve(''),
+    ]);
 
     const payload = {
       user_id: form.clientId,
@@ -265,7 +323,7 @@ export default function Lab() {
       order_id: form.orderId || null,
       sample_name: form.sampleName.trim(),
       display_name: form.displayName.trim() || form.sampleName.trim(),
-      company_name: form.companyName.trim(),
+      company_name: (form.companyName.trim() || profile?.name || '').trim(),
       company_logo: companyLogo,
       peptide_sequence: form.casNumber.trim(),
       batch_number: form.batchNumber.trim(),
@@ -274,7 +332,7 @@ export default function Lab() {
       panel_results: cleanPanels,
       chromatogram_data: { vial_size: form.vialSize },
       vial_image: vialImage || '',
-      chromatogram_image: '',
+      chromatogram_image: watermarkImage,
       result_summary: {
         include_molecular_weight: includeMw,
         molecular_weight: includeMw ? labResults.molecularWeight.trim() : '',
@@ -284,9 +342,9 @@ export default function Lab() {
         sterility_specification: 'Not Detected',
         endotoxin_eu_ml: labResults.endotoxinEuMl.trim(),
         endotoxin_pass: labResults.endotoxinPass,
-        company_logo: companyLogo,
-        vial_image: vialImage || '',
-        chromatogram_image: '',
+        apply_company_logo: applyHeaderLogo,
+        apply_watermark: applyWatermark,
+        coa_profile_id: profile?.id ?? null,
       },
       overall_result: form.overallResult,
       is_public: false,
@@ -318,6 +376,8 @@ export default function Lab() {
     setForm({ ...BLANK });
     setLabResults({ ...EMPTY_LAB_RESULTS });
     setVialImage('');
+    setApplyHeaderLogo(true);
+    setApplyWatermark(true);
     setCasSuggestions([]);
     setShowCasSuggestions(false);
     setMsg({ type: 'success', text: 'COA issued (private). Verify it, then publish for the client.', slug: data?.slug });
@@ -377,11 +437,21 @@ export default function Lab() {
                     type="button"
                     className="font-semibold underline"
                     onClick={() => {
+                      if (msg.slug) openCoaPrintView(msg.slug);
+                    }}
+                  >
+                    View PDF
+                  </button>
+                  {' · '}
+                  <button
+                    type="button"
+                    className="font-semibold underline"
+                    onClick={() => {
                       const issued = coas.find(c => c.slug === msg.slug);
                       if (issued) setPrepCoa(issued);
                     }}
                   >
-                    View PDF
+                    Prepare
                   </button>
                   {' · '}
                   <Link to={`/coa/${msg.slug}`} className="font-semibold underline">Web view</Link>
@@ -422,7 +492,16 @@ export default function Lab() {
                           {expanded ? <ChevronUp size={18} className="text-neutral-400 mt-0.5" /> : <ChevronDown size={18} className="text-neutral-400 mt-0.5" />}
                           <div>
                             <p className="font-bold text-black">{order.order_number}</p>
-                            <p className="text-xs text-neutral-500">{clientLabel(order.user_id)} · {formatDateTime(order.created_at)} · {orderSamples.length} sample{orderSamples.length === 1 ? '' : 's'}</p>
+                            <p className="text-sm text-black mt-0.5">
+                              {order.company_name?.trim() || clientLabel(order.user_id)}
+                            </p>
+                            <p className="text-xs text-neutral-500">
+                              {clientLabel(order.user_id)}
+                              {order.company_name?.trim() ? ` · account` : ''}
+                              {' · '}{formatDateTime(order.created_at)}
+                              {' · '}{orderSamples.length} sample{orderSamples.length === 1 ? '' : 's'}
+                              {order.payment_status ? ` · ${order.payment_status}` : ''}
+                            </p>
                           </div>
                         </div>
                         <select
@@ -444,7 +523,15 @@ export default function Lab() {
                             <div key={s.id} className="px-5 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                               <div className="min-w-0 flex-1">
                                 <p className="font-semibold text-black">{s.display_name || s.sample_name}</p>
-                                <p className="text-xs text-neutral-500 capitalize">{s.sample_type} · {s.vial_count} vial{s.vial_count === 1 ? '' : 's'}</p>
+                                <p className="text-xs text-neutral-500 capitalize">
+                                  {s.sample_type} · {s.vial_count} vial{s.vial_count === 1 ? '' : 's'}
+                                  {parseSampleMetadata(s.metadata).brand_names?.[0]
+                                    ? ` · ${parseSampleMetadata(s.metadata).brand_names![0]}`
+                                    : order.company_name ? ` · ${order.company_name}` : ''}
+                                  {parseSampleMetadata(s.metadata).batch_number
+                                    ? ` · lot ${parseSampleMetadata(s.metadata).batch_number}`
+                                    : ''}
+                                </p>
                                 {coa && (
                                   <p className="text-xs text-brand-700 mt-1">
                                     COA: {COA_WORKFLOW_LABELS[stage!]}
@@ -468,10 +555,17 @@ export default function Lab() {
                                   <>
                                     <button
                                       type="button"
-                                      onClick={() => setPrepCoa(coa)}
+                                      onClick={() => openCoaPrintView(coa.slug)}
                                       className="btn-primary text-xs py-1.5 gap-1"
                                     >
                                       <FileText size={12} /> View PDF
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setPrepCoa(coa)}
+                                      className="btn-outline text-xs py-1.5 gap-1"
+                                    >
+                                      Prepare
                                     </button>
                                     <Link to={`/coa/${coa.slug}`} className="btn-outline text-xs py-1.5 gap-1"><ExternalLink size={12} /> Web view</Link>
                                   </>
@@ -517,7 +611,8 @@ export default function Lab() {
                   <label className="label">Client <span className="text-red-500">*</span></label>
                   <select value={form.clientId} onChange={e => {
                     const client = clients.find(c => c.id === e.target.value);
-                    update({ clientId: e.target.value, companyName: client?.company_name || form.companyName });
+                    setPreferredBrandName(client?.company_name || '');
+                    update({ clientId: e.target.value, companyName: client?.company_name || '' });
                   }} className="input-field">
                     <option value="">Select client…</option>
                     {form.clientId && !clients.some(c => c.id === form.clientId) && (
@@ -529,10 +624,95 @@ export default function Lab() {
                   </select>
                 </div>
                 <div>
-                  <label className="label">Company Name (on COA)</label>
-                  <input value={form.companyName} onChange={e => update({ companyName: e.target.value })} className="input-field" placeholder="Client company" />
+                  <label className="label">COA profile (brand)</label>
+                  <select
+                    value={selectedCompanyId}
+                    onChange={e => {
+                      const id = e.target.value;
+                      setSelectedCompanyId(id);
+                      const co = clientCompanies.find(c => c.id === id);
+                      if (co) {
+                        update({ companyName: co.name });
+                        setApplyHeaderLogo(!!co.logo);
+                        setApplyWatermark(!!co.chromatograph_background);
+                      }
+                    }}
+                    className="input-field"
+                    disabled={!form.clientId || clientCompanies.length === 0}
+                  >
+                    {clientCompanies.length === 0 ? (
+                      <option value="">
+                        {form.clientId ? 'No COA profiles found for this client' : 'Select a client first'}
+                      </option>
+                    ) : (
+                      clientCompanies.map(c => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}{c.is_default ? ' (default)' : ''}
+                          {c.logo ? ' · logo' : ''}
+                          {c.chromatograph_background ? ' · watermark' : ''}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                  {form.clientId && clientCompanies.length > 0 && (
+                    <p className="text-xs text-neutral-500 mt-1">
+                      {clientCompanies.length} profile{clientCompanies.length === 1 ? '' : 's'} loaded for this client.
+                    </p>
+                  )}
                 </div>
               </div>
+
+              <div>
+                <label className="label">Company Name (on COA)</label>
+                <input value={form.companyName} onChange={e => update({ companyName: e.target.value })} className="input-field" placeholder="Client company" />
+              </div>
+
+              {selectedCompany && (
+                <div className="rounded-lg border border-atlas-border bg-neutral-50/80 p-4 space-y-3">
+                  <p className="text-sm font-semibold text-black">Apply from client profile</p>
+                  <p className="text-xs text-neutral-500">
+                    Images are saved on the client&apos;s COA profile. Chemist only chooses whether to apply them.
+                  </p>
+                  <div className="flex flex-wrap gap-6 items-start">
+                    <label className="inline-flex items-start gap-2 text-sm text-neutral-800 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="mt-0.5 rounded border-atlas-border"
+                        checked={applyHeaderLogo}
+                        disabled={!selectedCompany.logo}
+                        onChange={e => setApplyHeaderLogo(e.target.checked)}
+                      />
+                      <span>
+                        Company logo (header)
+                        {!selectedCompany.logo && (
+                          <span className="block text-xs text-neutral-500">Not uploaded on this profile</span>
+                        )}
+                        {!!selectedCompany.logo && (
+                          <img src={selectedCompany.logo} alt="" className="mt-1 h-10 w-10 object-contain border border-atlas-border bg-white rounded" />
+                        )}
+                      </span>
+                    </label>
+                    <label className="inline-flex items-start gap-2 text-sm text-neutral-800 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="mt-0.5 rounded border-atlas-border"
+                        checked={applyWatermark}
+                        disabled={!selectedCompany.chromatograph_background}
+                        onChange={e => setApplyWatermark(e.target.checked)}
+                      />
+                      <span>
+                        Chromatogram watermark
+                        {!selectedCompany.chromatograph_background && (
+                          <span className="block text-xs text-neutral-500">Not uploaded on this profile</span>
+                        )}
+                        {!!selectedCompany.chromatograph_background && (
+                          <img src={selectedCompany.chromatograph_background} alt="" className="mt-1 h-10 w-10 object-contain border border-atlas-border bg-white rounded opacity-70" />
+                        )}
+                      </span>
+                    </label>
+                  </div>
+                </div>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="label">Sample Name <span className="text-red-500">*</span></label>
@@ -733,9 +913,9 @@ export default function Lab() {
                 </div>
               </div>
               <div>
-                <label className="label mb-2 block">Vial photo (COA PDF)</label>
+                <label className="label mb-2 block">Vial photo</label>
                 <p className="text-xs text-neutral-500 mb-2">
-                  Auto-cropped to the vial. HPLC area uses a faint Atlas logo watermark.
+                  Only upload from the chemist. Empty background is auto-cropped. Header logo and HPLC watermark come from the client profile above.
                 </p>
                 <LogoDropzone
                   value={vialImage}
@@ -758,12 +938,19 @@ export default function Lab() {
               <div className="divide-y divide-atlas-border max-h-[520px] overflow-y-auto">
                 {pendingSamples.length === 0 ? (
                   <p className="p-5 text-sm text-neutral-500">All samples have COAs.</p>
-                ) : pendingSamples.slice(0, 20).map(s => (
+                ) : pendingSamples.slice(0, 20).map(s => {
+                  const order = orders.find(o => o.id === s.order_id);
+                  const brand = parseSampleMetadata(s.metadata).brand_names?.[0] || order?.company_name;
+                  return (
                   <button key={s.id} type="button" onClick={() => prefillFromSample(s)} className="w-full text-left px-5 py-3 hover:bg-neutral-50">
                     <p className="font-medium text-sm">{s.display_name || s.sample_name}</p>
-                    <p className="text-xs text-neutral-500">{clientLabel(s.user_id)}</p>
+                    <p className="text-xs text-neutral-500">
+                      {brand || clientLabel(s.user_id)}
+                      {order?.order_number ? ` · ${order.order_number}` : ''}
+                    </p>
                   </button>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </div>

@@ -7,6 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { COA } from '../lib/types';
 import { formatDate } from '../lib/utils';
+import { COA_LIST_COLUMNS } from '../lib/coaSelect';
 
 function ResultBadge({ result }: { result: string }) {
   if (result === 'pass') return <span className="badge-pass"><CheckCircle size={11} /> Pass</span>;
@@ -25,7 +26,7 @@ export default function COALibrary() {
     if (!user) return;
     supabase
       .from('coas')
-      .select('*')
+      .select(COA_LIST_COLUMNS)
       .eq('user_id', user.id)
       .order('issued_at', { ascending: false })
       .then(({ data }) => {

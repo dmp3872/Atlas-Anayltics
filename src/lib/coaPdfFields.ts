@@ -2,6 +2,7 @@ import { COA, PanelResult } from './types';
 import { formatDate } from './utils';
 import { readCoaPdfStats } from './coaImages';
 import { ENDOTOXIN_SPEC_EU_ML, STERILITY_METHOD_LABELS } from './labCoaForm';
+import { collapseConformityPanels } from './coaDisplayPanels';
 
 export type CoaPdfFieldValues = Record<string, string>;
 
@@ -67,9 +68,11 @@ function resolveEndotoxin(coa: COA, panels: PanelResult[]) {
   const stats = readCoaPdfStats(coa);
   const panel = findPanel(panels, 'endotoxin', 'lal');
   const value = stats.endotoxin_eu_ml.trim();
+  const raw = value ? `${value} EU/mL` : (panel?.result ?? '').trim();
+  const result = raw && !/\(\s*lal\s*\)/i.test(raw) ? `${raw.replace(/\s+$/, '')} (LAL)` : raw;
   return {
     specification: ENDOTOXIN_SPEC_EU_ML,
-    result: value ? `${value} EU/mL` : (panel?.result ?? '').trim(),
+    result,
     conformity: stats.endotoxin_pass ? 'PASS' : 'FAIL',
     panel,
   };
@@ -77,7 +80,7 @@ function resolveEndotoxin(coa: COA, panels: PanelResult[]) {
 
 /** Map a COA row to AcroForm field names on the Certificate of Analysis template. */
 export function buildCoaPdfFieldValues(coa: COA): CoaPdfFieldValues {
-  const panels = Array.isArray(coa.panel_results) ? coa.panel_results : [];
+  const panels = collapseConformityPanels(Array.isArray(coa.panel_results) ? coa.panel_results : []);
   const identity = panelTriplet(panels, ['ident']);
   const netContent = panelTriplet(panels, ['net content', 'peptide content']);
   const purity = panelTriplet(panels, ['purity', 'hplc']);
@@ -145,7 +148,7 @@ export function buildCoaPdfFieldValues(coa: COA): CoaPdfFieldValues {
     'ResultNet Peptide Content': netContent.result,
     'ConformityNet Peptide Content': netContent.conformity,
 
-    'SpecificationPurity HPLC': purity.specification || (coa.purity_percent != null ? '>=95.0%' : ''),
+    'SpecificationPurity HPLC': purity.specification || (coa.purity_percent != null ? '≥98%' : ''),
     'ResultPurity HPLC': purity.result || (coa.purity_percent != null ? `${coa.purity_percent}%` : ''),
     'ConformityPurity HPLC': purity.conformity || (coa.overall_result === 'pass' ? 'PASS' : coa.overall_result === 'fail' ? 'FAIL' : ''),
 

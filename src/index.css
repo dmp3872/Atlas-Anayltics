@@ -127,15 +127,181 @@
 }
 
 @media print {
-  header, footer, .print\\:hidden, .no-print {
+  @page {
+    size: letter;
+    margin: 0.18in;
+  }
+
+  header,
+  footer,
+  nav {
     display: none !important;
   }
+
+  .no-print {
+    display: none !important;
+  }
+
   body {
     background: white !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    margin: 0 !important;
+    height: auto !important;
   }
+
+  html,
+  body {
+    height: 100% !important;
+  }
+
   .coa-print-root {
     max-width: none !important;
+    min-height: calc(11in - 0.36in) !important;
+    height: calc(11in - 0.36in) !important;
     padding: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+  }
+
+  .coa-print-root .coa-header-bar {
+    padding: 0.3rem 0.45rem !important;
+    flex: 0 0 auto !important;
+  }
+
+  .coa-print-root .coa-header-bar > div {
+    gap: 0.5rem !important;
+  }
+
+  .coa-print-root .coa-header-bar img {
+    max-height: 28px !important;
+    width: auto !important;
+  }
+
+  .coa-print-root .coa-client-logo-chip {
+    background: #fff !important;
+    padding: 2px !important;
+    border-radius: 2px !important;
+  }
+
+  .coa-print-root .coa-client-logo-chip img {
+    max-height: 28px !important;
+    max-width: 28px !important;
+    height: 28px !important;
+    width: 28px !important;
+  }
+
+  .coa-print-root .coa-gold-divider {
+    flex: 0 0 auto !important;
+  }
+
+  .coa-print-body {
+    max-width: none !important;
+    padding: 0.2rem 0 0 !important;
+    flex: 1 1 auto !important;
+    display: flex !important;
+    flex-direction: column !important;
+    min-height: 0 !important;
+    height: 100% !important;
+  }
+
+  .coa-print-root .mb-4,
+  .coa-print-root .mb-3 {
+    margin-bottom: 0.22rem !important;
+  }
+
+  .coa-print-media {
+    display: grid !important;
+    grid-template-columns: 78px 1fr !important;
+    gap: 0.35rem !important;
+    align-items: stretch !important;
+    flex: 1 1 auto !important;
+    min-height: 2.4in !important;
+  }
+
+  .coa-print-media:not(:has(.coa-print-vial)) {
+    grid-template-columns: 1fr !important;
+  }
+
+  .coa-print-vial {
+    width: 78px !important;
+    height: 100% !important;
+  }
+
+  .coa-print-vial img {
+    max-height: 100% !important;
+  }
+
+  .coa-print-chromatogram {
+    height: 100% !important;
+    max-height: none !important;
+    min-height: 2.2in !important;
+    flex: 1 1 auto !important;
+  }
+
+  .coa-print-chromatogram,
+  .coa-print-chromatogram > div {
+    width: 100% !important;
+    min-width: 0 !important;
+    height: 100% !important;
+    display: flex !important;
+    flex-direction: column !important;
+  }
+
+  .coa-chrom-svg {
+    min-height: 0 !important;
+    height: 100% !important;
+    width: 100% !important;
+    flex: 1 1 auto !important;
+  }
+
+  .coa-print-table td,
+  .coa-print-table th {
+    padding-top: 0.14rem !important;
+    padding-bottom: 0.14rem !important;
+    font-size: 9.5px !important;
+  }
+
+  .coa-cert-footer {
+    padding: 0.4rem 0.65rem !important;
+    margin-top: 0.35rem !important;
+    flex: 0 0 auto !important;
+    break-inside: avoid;
+  }
+
+  .coa-cert-footer > div:first-child {
+    justify-content: space-between !important;
+    width: 100% !important;
+  }
+
+  .coa-print-table {
+    table-layout: fixed !important;
+    width: 100% !important;
+  }
+
+  .coa-print-table col:nth-child(1) { width: 28% !important; }
+  .coa-print-table col:nth-child(2) { width: 32% !important; }
+  .coa-print-table col:nth-child(3) { width: 26% !important; }
+  .coa-print-table col:nth-child(4) { width: 14% !important; }
+
+  .coa-print-qr-img {
+    width: 56px !important;
+    height: 56px !important;
+  }
+
+  .coa-print-root .coa-stat-card {
+    padding: 0.45rem 0.55rem !important;
+  }
+
+  .coa-print-root .text-xl {
+    font-size: 1.05rem !important;
+  }
+
+  .coa-print-root img,
+  .coa-print-root canvas,
+  .coa-print-root svg {
+    max-width: 100% !important;
   }
 }
 

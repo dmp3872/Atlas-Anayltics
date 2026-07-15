@@ -74,51 +74,42 @@ export default function CoaProfileFormFields({ form, onChange, onError, compact 
         />
       </div>
 
-      {!compact && (
-        <div className="grid sm:grid-cols-2 gap-4">
-          <div>
-            <label className="label">
-              Company Logo <span className="text-neutral-400 font-normal text-xs">(300×300px · PNG or JPG)</span>
-            </label>
-            <LogoDropzone
-              value={form.logo}
-              onChange={logo => onChange({ logo })}
-              onError={onError}
-              prompt="a logo"
-              hint="PNG or JPG · 300×300px"
-              compact
-            />
-          </div>
-          <div>
-            <label className="label">
-              Chromatograph Background <span className="text-neutral-400 font-normal text-xs">(optional)</span>
-            </label>
-            <LogoDropzone
-              value={form.chromatograph_background}
-              onChange={chromatograph_background => onChange({ chromatograph_background })}
-              onError={onError}
-              prompt="a background"
-              hint="PNG preferred · 1500×600px"
-              maxBytes={BACKGROUND_MAX_BYTES}
-              compact
-            />
-          </div>
-        </div>
-      )}
-
-      {compact && (
+      <div className={`grid gap-4 ${compact ? 'sm:grid-cols-1' : 'sm:grid-cols-2'}`}>
         <div>
-          <label className="label">Company Logo <span className="text-neutral-400 font-normal text-xs">(optional)</span></label>
+          <label className="label">
+            Company logo <span className="text-neutral-400 font-normal text-xs">(COA header)</span>
+          </label>
+          <p className="text-xs text-neutral-500 mb-2">
+            Appears to the left of your company name on certificates.
+          </p>
           <LogoDropzone
             value={form.logo}
             onChange={logo => onChange({ logo })}
             onError={onError}
-            prompt="a logo"
-            hint="PNG or JPG"
+            prompt="a company logo"
+            hint="PNG or JPG · square works best"
+            maxBytes={BACKGROUND_MAX_BYTES}
             compact
           />
         </div>
-      )}
+        <div>
+          <label className="label">
+            Chromatogram watermark <span className="text-neutral-400 font-normal text-xs">(HPLC)</span>
+          </label>
+          <p className="text-xs text-neutral-500 mb-2">
+            Faint logo behind the HPLC chromatogram on your COA.
+          </p>
+          <LogoDropzone
+            value={form.chromatograph_background}
+            onChange={chromatograph_background => onChange({ chromatograph_background })}
+            onError={onError}
+            prompt="a watermark logo"
+            hint="PNG preferred · used at low opacity"
+            maxBytes={BACKGROUND_MAX_BYTES}
+            compact
+          />
+        </div>
+      </div>
     </div>
   );
 }
