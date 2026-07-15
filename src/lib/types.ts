@@ -89,6 +89,10 @@ export interface COA {
   content_hash: string;
   signature: string;
   pdf_url: string;
+  /** Data URL (JPG/PNG) of the physical vial photo for COA PDF. */
+  vial_image?: string;
+  /** Data URL (JPG/PNG) of the instrument chromatogram for COA PDF. */
+  chromatogram_image?: string;
   seal_serial?: string;
   coa_workflow_stage?: CoaWorkflowStage;
   verified_at?: string | null;

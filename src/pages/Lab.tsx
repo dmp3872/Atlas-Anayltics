@@ -18,6 +18,14 @@ import {
 import { COA_WORKFLOW_LABELS, coaWorkflowStage, buildWorkflowStagePatch, CoaWorkflowStage } from '../lib/coaWorkflow';
 import CoaWorkflowBoard from '../components/lab/CoaWorkflowBoard';
 import StaffHeader from '../components/layout/StaffHeader';
+import LogoDropzone from '../components/account/LogoDropzone';
+import {
+  hydrateCoaImages,
+  isMissingCoaImageColumnError,
+  payloadWithoutImageColumns,
+} from '../lib/coaImages';
+
+const MAX_COA_IMAGE_BYTES = 2 * 1024 * 1024;
 
 type Message = { type: 'success' | 'error'; text: string; slug?: string } | null;
 type LabTab = 'queue' | 'issue' | 'workflow';
@@ -47,6 +55,8 @@ export default function Lab() {
   const [movingCoaId, setMovingCoaId] = useState<string | null>(null);
   const [form, setForm] = useState({ ...BLANK });
   const [labResults, setLabResults] = useState<LabCoaResults>({ ...EMPTY_LAB_RESULTS });
+  const [vialImage, setVialImage] = useState('');
+  const [chromatogramImage, setChromatogramImage] = useState('');
   const [casSuggestions, setCasSuggestions] = useState<{ name: string; cas: string }[]>([]);
   const [showCasSuggestions, setShowCasSuggestions] = useState(false);
 
@@ -61,7 +71,7 @@ export default function Lab() {
     if (p.data) setClients(p.data.filter(u => (u.role ?? 'client') === 'client'));
     if (s.data) setSamples(s.data);
     if (o.data) setOrders(o.data);
-    if (c.data) setCoas(c.data);
+    if (c.data) setCoas((c.data as COA[]).map(hydrateCoaImages));
     setLoading(false);
   }
 
@@ -160,7 +170,14 @@ export default function Lab() {
   const linkedClient = form.clientId ? clients.find(c => c.id === form.clientId) : undefined;
 
   async function insertCoa(payload: Record<string, unknown>) {
-    return supabase.from('coas').insert(payload).select('slug, display_name, sample_name, user_id').single();
+    const selectCols = 'slug, display_name, sample_name, user_id';
+    const first = await supabase.from('coas').insert(payload).select(selectCols).single();
+    if (!first.error || !isMissingCoaImageColumnError(first.error.message)) return first;
+    return supabase
+      .from('coas')
+      .insert(payloadWithoutImageColumns(payload))
+      .select(selectCols)
+      .single();
   }
 
   async function issueCoaForBrand(
@@ -245,6 +262,8 @@ export default function Lab() {
       molecular_weight: mwNum,
       panel_results: cleanPanels,
       chromatogram_data: { vial_size: form.vialSize },
+      vial_image: vialImage || '',
+      chromatogram_image: chromatogramImage || '',
       overall_result: form.overallResult,
       is_public: false,
       coa_workflow_stage: 'issued',
@@ -274,6 +293,8 @@ export default function Lab() {
 
     setForm({ ...BLANK });
     setLabResults({ ...EMPTY_LAB_RESULTS });
+    setVialImage('');
+    setChromatogramImage('');
     setCasSuggestions([]);
     setShowCasSuggestions(false);
     setMsg({ type: 'success', text: 'COA issued (private). Verify it, then publish for the client.', slug: data?.slug });
@@ -611,6 +632,30 @@ export default function Lab() {
                       </div>
                     )}
                   </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="label mb-2 block">Vial photo (COA PDF)</label>
+                  <LogoDropzone
+                    value={vialImage}
+                    onChange={setVialImage}
+                    onError={text => setMsg({ type: 'error', text })}
+                    maxBytes={MAX_COA_IMAGE_BYTES}
+                    prompt="a vial photo"
+                    hint="JPG or PNG of the physical vial, up to 2 MB"
+                  />
+                </div>
+                <div>
+                  <label className="label mb-2 block">Chromatogram photo (COA PDF)</label>
+                  <LogoDropzone
+                    value={chromatogramImage}
+                    onChange={setChromatogramImage}
+                    onError={text => setMsg({ type: 'error', text })}
+                    maxBytes={MAX_COA_IMAGE_BYTES}
+                    prompt="a chromatogram"
+                    hint="JPG or PNG instrument trace, up to 2 MB"
+                  />
                 </div>
               </div>
               <button type="submit" disabled={saving} className="btn-primary w-full gap-2">

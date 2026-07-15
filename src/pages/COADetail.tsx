@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import {
-  Shield, CheckCircle, XCircle, Clock, Download,
+  Shield, CheckCircle, XCircle,
   ArrowLeft, Copy, Check, Droplets, Boxes, AlertTriangle,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { COA, PanelResult } from '../lib/types';
 import { formatDateTime } from '../lib/utils';
 import { verifyCoaIntegrity } from '../lib/coaVerify';
-import { downloadCoaPdf } from '../lib/coaPdf';
+import { hydrateCoaImages } from '../lib/coaImages';
 import { useAuth } from '../context/AuthContext';
 import Header from '../components/layout/Header';
 import Footer from '../components/layout/Footer';
@@ -71,7 +71,7 @@ export default function COADetail() {
       .maybeSingle()
       .then(async ({ data }) => {
         if (!data) { setNotFound(true); setLoading(false); return; }
-        setCoa(data);
+        setCoa(hydrateCoaImages(data as COA));
         const { data: companies } = await supabase
           .from('companies')
           .select('chromatograph_background')
@@ -275,9 +275,11 @@ export default function COADetail() {
             <button onClick={copyLink} className="btn-outline flex-1 gap-2 justify-center">
               {copied ? <><Check size={16} className="text-atlas-success" /> Copied</> : <><Copy size={16} /> Copy Link</>}
             </button>
-            <button type="button" onClick={downloadCoaPdf} className="btn-outline flex-1 gap-2 justify-center">
-              <Download size={16} /> Download PDF
-            </button>
+            {isOwner && (
+              <Link to="/dashboard?tab=coas" className="btn-outline flex-1 gap-2 justify-center">
+                Download PDF in portal
+              </Link>
+            )}
             <Link to={`/verify?slug=${encodeURIComponent(coa.slug)}`} className="btn-primary flex-1 gap-2 justify-center">
               <Shield size={16} /> Verify
             </Link>

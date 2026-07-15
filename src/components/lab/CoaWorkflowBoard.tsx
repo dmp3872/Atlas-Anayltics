@@ -174,6 +174,24 @@ export default function CoaWorkflowBoard({ coas, onMoveCoa, movingId }: Props) {
                             <p className="text-xs text-neutral-500 mt-1 truncate">
                               {coa.company_name || '—'} · {formatDate(coa.issued_at)}
                             </p>
+                            {(coa.vial_image || coa.chromatogram_image) && (
+                              <div className="flex gap-1.5 mt-2">
+                                {coa.vial_image && (
+                                  <img
+                                    src={coa.vial_image}
+                                    alt="Vial"
+                                    className="h-9 w-9 rounded object-cover border border-neutral-200 bg-neutral-50"
+                                  />
+                                )}
+                                {coa.chromatogram_image && (
+                                  <img
+                                    src={coa.chromatogram_image}
+                                    alt="Chromatogram"
+                                    className="h-9 w-14 rounded object-cover border border-neutral-200 bg-neutral-50"
+                                  />
+                                )}
+                              </div>
+                            )}
                           </div>
                         </div>
 
