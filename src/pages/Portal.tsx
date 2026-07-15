@@ -12,8 +12,9 @@ import { COA, Order, OrderSample, TestPanel } from '../lib/types';
 import {
   formatCurrency, formatDate, formatDateTime,
   ORDER_STATUS_LABELS, SAMPLE_STATUS_LABELS, PAYMENT_STATUS_LABELS,
-  ORDER_STATUS_STEPS, getStatusStep, normalizePaymentStatus, orderIsPayable,
+  normalizePaymentStatus, orderIsPayable,
 } from '../lib/utils';
+import OrderStatusPipeline from '../components/order/OrderStatusPipeline';
 import { downloadCsv } from '../lib/exportCsv';
 import {
   loadNotificationPrefs, saveNotificationPrefs,
@@ -521,14 +522,7 @@ export default function Portal() {
                           <span className="text-xs font-semibold uppercase text-brand-700">{ORDER_STATUS_LABELS[order.status]}</span>
                         </div>
                       </div>
-                      <div className="flex gap-1">
-                        {ORDER_STATUS_STEPS.map((step, i) => {
-                          const idx = getStatusStep(order.status);
-                          return (
-                            <div key={step} className={`h-1.5 flex-1 rounded-full ${i <= idx ? 'bg-brand-500' : 'bg-neutral-200'}`} />
-                          );
-                        })}
-                      </div>
+                      <OrderStatusPipeline status={order.status} size="compact" />
                     </button>
 
                     {expanded && (

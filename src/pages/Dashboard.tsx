@@ -9,33 +9,8 @@ import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { fetchUserSubmissions } from '../lib/services/submissions';
 import { Order, Submission } from '../lib/types';
-import { formatCurrency, formatDate, formatDateTime, ORDER_STATUS_LABELS, ORDER_STATUS_STEPS } from '../lib/utils';
-
-function StatusPipeline({ status }: { status: string }) {
-  const steps = ORDER_STATUS_STEPS.filter(s => s !== 'cancelled');
-  const currentIdx = steps.indexOf(status as typeof steps[number]);
-  return (
-    <div className="flex items-center gap-1">
-      {steps.map((step, i) => (
-        <div key={step} className="flex items-center gap-1">
-          <div className={`w-2 h-2 rounded-full transition-colors ${i <= currentIdx ? 'bg-brand-500' : 'bg-slate-200'}`} />
-          {i < steps.length - 1 && (
-            <div className={`w-4 h-0.5 ${i < currentIdx ? 'bg-brand-500' : 'bg-slate-200'}`} />
-          )}
-        </div>
-      ))}
-      <span className={`ml-2 text-xs font-medium px-2 py-0.5 rounded-full ${
-        status === 'complete' ? 'bg-emerald-100 text-emerald-700' :
-        status === 'in_review' ? 'bg-orange-100 text-orange-700' :
-        status === 'analyzing' ? 'bg-amber-100 text-amber-700' :
-        status === 'processing' ? 'bg-brand-100 text-brand-800' :
-        'bg-slate-100 text-slate-600'
-      }`}>
-        {ORDER_STATUS_LABELS[status as keyof typeof ORDER_STATUS_LABELS]}
-      </span>
-    </div>
-  );
-}
+import { formatCurrency, formatDate, formatDateTime } from '../lib/utils';
+import OrderStatusPipeline from '../components/order/OrderStatusPipeline';
 
 export default function Dashboard() {
   const { user, profile } = useAuth();
@@ -194,7 +169,7 @@ export default function Dashboard() {
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-xs text-slate-500">{formatDate(order.created_at)}</span>
-                      <StatusPipeline status={order.status} />
+                      <OrderStatusPipeline status={order.status} size="compact" showCurrentCaption={false} />
                     </div>
                   </Link>
                 ))}
