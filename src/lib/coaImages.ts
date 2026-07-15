@@ -1,6 +1,8 @@
 import { supabase } from './supabase';
 import { COA } from './types';
 
+export type FentanylDetectionMark = '' | 'none_detected' | 'detected';
+
 export interface CoaPdfStats {
   /** Shown under Average Net Peptide Content (e.g. "12.4 mg"). */
   avg_net_peptide_content: string;
@@ -8,6 +10,24 @@ export interface CoaPdfStats {
   mean_of_vials_tested: string;
   /** Optional Average Purity value (e.g. "99.1%"). */
   avg_purity?: string;
+  /** Fentanyl Detection result on the certificate. */
+  fentanyl_detection: FentanylDetectionMark;
+}
+
+function deriveFentanylFromPanels(coa: COA): FentanylDetectionMark {
+  const panels = Array.isArray(coa.panel_results) ? coa.panel_results : [];
+  const fen = panels.find(p => p.panel_name.toLowerCase().includes('fentanyl'));
+  if (!fen) return '';
+  const result = (fen.result || '').toLowerCase();
+  if (/none|not\s*detect|nd\b|pass/.test(result) || fen.pass) return 'none_detected';
+  if (/detect|fail|positive/.test(result) || !fen.pass) return 'detected';
+  return '';
+}
+
+export function fentanylDetectionLabel(mark: FentanylDetectionMark): string {
+  if (mark === 'none_detected') return 'None Detected';
+  if (mark === 'detected') return 'Detected';
+  return '';
 }
 
 export function readCoaPdfStats(coa: COA): CoaPdfStats {
@@ -24,10 +44,17 @@ export function readCoaPdfStats(coa: COA): CoaPdfStats {
     (typeof summary.avg_purity === 'string' && summary.avg_purity) ||
     (coa.purity_percent != null ? `${coa.purity_percent}%` : '');
 
+  const fenRaw = typeof summary.fentanyl_detection === 'string' ? summary.fentanyl_detection : '';
+  const fentanyl_detection: FentanylDetectionMark =
+    fenRaw === 'none_detected' || fenRaw === 'detected'
+      ? fenRaw
+      : deriveFentanylFromPanels(coa);
+
   return {
     avg_net_peptide_content: content,
     mean_of_vials_tested: mean,
     avg_purity: purity,
+    fentanyl_detection,
   };
 }
 
@@ -72,6 +99,7 @@ export type CoaPdfPrepPayload = {
   avg_net_peptide_content: string;
   mean_of_vials_tested: string;
   avg_purity?: string;
+  fentanyl_detection: FentanylDetectionMark;
 };
 
 /** Persist PDF images + Average Net Peptide Content stats for generation. */
@@ -88,6 +116,7 @@ export async function saveCoaPdfPrep(
     mean_of_vials_tested: prep.mean_of_vials_tested.trim(),
     avg_purity: (prep.avg_purity ?? '').trim(),
     vials_tested: prep.mean_of_vials_tested.trim(),
+    fentanyl_detection: prep.fentanyl_detection || '',
   };
 
   const next: COA = {
@@ -125,7 +154,13 @@ export async function saveCoaPdfImages(
   images: { vial_image: string; chromatogram_image: string },
 ): Promise<{ coa: COA; error: string | null }> {
   const stats = readCoaPdfStats(coa);
-  return saveCoaPdfPrep(coa, { ...images, ...stats });
+  return saveCoaPdfPrep(coa, {
+    ...images,
+    avg_net_peptide_content: stats.avg_net_peptide_content,
+    mean_of_vials_tested: stats.mean_of_vials_tested,
+    avg_purity: stats.avg_purity,
+    fentanyl_detection: stats.fentanyl_detection,
+  });
 }
 
 /** Company / profile logo used as chromatogram watermark on the PDF. */

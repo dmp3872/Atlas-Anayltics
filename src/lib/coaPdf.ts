@@ -1,7 +1,12 @@
 import { PDFDocument, PDFImage, PDFPage, StandardFonts, rgb } from 'pdf-lib';
 import { COA } from './types';
 import { buildCoaPdfFieldValues } from './coaPdfFields';
-import { hydrateCoaImages, resolveCoaLogoWatermark } from './coaImages';
+import {
+  fentanylDetectionLabel,
+  hydrateCoaImages,
+  readCoaPdfStats,
+  resolveCoaLogoWatermark,
+} from './coaImages';
 
 const TEMPLATE_URL = '/coa/certificate-of-analysis-template.pdf';
 
@@ -130,6 +135,44 @@ export async function buildCoaPdfBytes(coa: COA): Promise<Uint8Array> {
     font,
     color: rgb(0.22, 0.22, 0.22),
   });
+
+  // Fentanyl Detection row — drawn below Endotoxins (no dedicated template field).
+  const fenMark = readCoaPdfStats(record).fentanyl_detection;
+  const fenLabel = fentanylDetectionLabel(fenMark);
+  if (fenLabel) {
+    const fenY = 236;
+    const conformity = fenMark === 'none_detected' ? 'PASS' : 'FAIL';
+    const conformityColor =
+      fenMark === 'none_detected' ? rgb(0.05, 0.45, 0.2) : rgb(0.7, 0.1, 0.1);
+    page.drawText('Fentanyl Detection', {
+      x: 36,
+      y: fenY,
+      size: 9,
+      font,
+      color: rgb(0.1, 0.1, 0.1),
+    });
+    page.drawText('None / Detected', {
+      x: 138.7,
+      y: fenY,
+      size: 9,
+      font,
+      color: rgb(0.25, 0.25, 0.25),
+    });
+    page.drawText(toWinAnsi(fenLabel), {
+      x: 256.6,
+      y: fenY,
+      size: 9,
+      font,
+      color: rgb(0.1, 0.1, 0.1),
+    });
+    page.drawText(conformity, {
+      x: 435,
+      y: fenY,
+      size: 9,
+      font,
+      color: conformityColor,
+    });
+  }
 
   if (record.chromatogram_image) {
     const chromImage = await embedDataUrl(pdf, record.chromatogram_image);

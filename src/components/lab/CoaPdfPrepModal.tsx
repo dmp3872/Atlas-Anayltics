@@ -1,7 +1,12 @@
 import { useEffect, useState } from 'react';
 import { FileText, X } from 'lucide-react';
 import { COA } from '../../lib/types';
-import { hydrateCoaImages, readCoaPdfStats, saveCoaPdfPrep } from '../../lib/coaImages';
+import {
+  FentanylDetectionMark,
+  hydrateCoaImages,
+  readCoaPdfStats,
+  saveCoaPdfPrep,
+} from '../../lib/coaImages';
 import { openCoaPdf } from '../../lib/coaPdf';
 import LogoDropzone from '../account/LogoDropzone';
 
@@ -21,6 +26,9 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
   const [avgNetPeptide, setAvgNetPeptide] = useState(initialStats.avg_net_peptide_content);
   const [meanOfVials, setMeanOfVials] = useState(initialStats.mean_of_vials_tested);
   const [avgPurity, setAvgPurity] = useState(initialStats.avg_purity || '');
+  const [fentanylDetection, setFentanylDetection] = useState<FentanylDetectionMark>(
+    initialStats.fentanyl_detection,
+  );
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -32,6 +40,7 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
     setAvgNetPeptide(stats.avg_net_peptide_content);
     setMeanOfVials(stats.mean_of_vials_tested);
     setAvgPurity(stats.avg_purity || '');
+    setFentanylDetection(stats.fentanyl_detection);
     setError(null);
   }, [coa.id]);
 
@@ -51,6 +60,7 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
         avg_net_peptide_content: avgNetPeptide,
         mean_of_vials_tested: vials,
         avg_purity: avgPurity,
+        fentanyl_detection: fentanylDetection,
       });
       if (saveError) {
         setError(saveError);
@@ -128,6 +138,26 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
                 className="input-field"
                 placeholder="e.g. 99.1%"
               />
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-atlas-border p-4 space-y-3 bg-neutral-50/60">
+            <h3 className="text-sm font-bold uppercase tracking-wide text-black">Fentanyl Detection</h3>
+            <div>
+              <label className="label" htmlFor="fentanyl-detection">Result on COA</label>
+              <select
+                id="fentanyl-detection"
+                value={fentanylDetection}
+                onChange={e => setFentanylDetection(e.target.value as FentanylDetectionMark)}
+                className="input-field"
+              >
+                <option value="">Not shown on COA</option>
+                <option value="none_detected">None Detected</option>
+                <option value="detected">Detected</option>
+              </select>
+              <p className="text-xs text-neutral-500 mt-1">
+                Prints under Endotoxins with Conformity PASS (none detected) or FAIL (detected).
+              </p>
             </div>
           </div>
 

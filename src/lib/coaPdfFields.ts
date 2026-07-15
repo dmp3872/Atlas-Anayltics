@@ -128,7 +128,13 @@ export function buildCoaPdfFieldValues(coa: COA): CoaPdfFieldValues {
   };
 
   const used = usedPanelNames(panels);
-  const extras = panels.filter(p => !used.has(p) && (p.result?.trim() || p.specification?.trim()));
+  // Fentanyl is drawn as its own PDF row — keep Heavy Metals extras clean.
+  const extras = panels.filter(
+    p =>
+      !used.has(p) &&
+      !p.panel_name.toLowerCase().includes('fentanyl') &&
+      (p.result?.trim() || p.specification?.trim()),
+  );
   for (let i = 0; i < 5; i++) {
     const panel = extras[i];
     fields[`Text2_T${i + 1}`] = panel ? (panel.result || panel.panel_name) : '';

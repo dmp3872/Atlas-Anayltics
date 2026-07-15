@@ -612,9 +612,9 @@ export default function Lab() {
                     {labResults.includeFentanyl && (
                       <div>
                         <label className="label">Fentanyl Detection</label>
-                        <select value={labResults.fentanylPass ? 'pass' : 'fail'} onChange={e => updateResults({ fentanylPass: e.target.value === 'pass' })} className="input-field">
-                          <option value="pass">Pass</option>
-                          <option value="fail">Fail</option>
+                        <select value={labResults.fentanylPass ? 'none_detected' : 'detected'} onChange={e => updateResults({ fentanylPass: e.target.value === 'none_detected' })} className="input-field">
+                          <option value="none_detected">None Detected</option>
+                          <option value="detected">Detected</option>
                         </select>
                       </div>
                     )}

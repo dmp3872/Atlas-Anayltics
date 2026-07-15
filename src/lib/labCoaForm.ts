@@ -124,8 +124,8 @@ export function labResultsToPanelResults(results: LabCoaResults): PanelResult[] 
   if (results.includeFentanyl) {
     rows.push({
       panel_name: 'Fentanyl Detection',
-      specification: 'Pass / Fail',
-      result: results.fentanylPass ? 'Pass' : 'Fail',
+      specification: 'None Detected',
+      result: results.fentanylPass ? 'None Detected' : 'Detected',
       pass: results.fentanylPass,
     });
   }
