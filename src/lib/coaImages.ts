@@ -147,11 +147,13 @@ export function hydrateCoaImages(coa: COA): COA {
   const summary = (coa.result_summary ?? {}) as Record<string, unknown>;
   const vialFromSummary = typeof summary.vial_image === 'string' ? summary.vial_image : '';
   const chromFromSummary = typeof summary.chromatogram_image === 'string' ? summary.chromatogram_image : '';
+  const hplcFromSummary = typeof summary.hplc_image === 'string' ? summary.hplc_image : '';
   const logoFromSummary = typeof summary.company_logo === 'string' ? summary.company_logo : '';
   return {
     ...coa,
     vial_image: coa.vial_image || vialFromSummary || '',
     chromatogram_image: coa.chromatogram_image || chromFromSummary || '',
+    hplc_image: coa.hplc_image || hplcFromSummary || '',
     company_logo: coa.company_logo || logoFromSummary || '',
   };
 }
@@ -290,14 +292,15 @@ export async function trimImageWhitespace(
 }
 
 export function isMissingCoaImageColumnError(message: string): boolean {
-  return /vial_image|chromatogram_image|schema cache/i.test(message);
+  return /vial_image|chromatogram_image|hplc_image|schema cache/i.test(message);
 }
 
 /** Strip image columns and stash them on result_summary for legacy schemas. */
 export function payloadWithoutImageColumns(payload: Record<string, unknown>): Record<string, unknown> {
   const vial_image = typeof payload.vial_image === 'string' ? payload.vial_image : '';
   const chromatogram_image = typeof payload.chromatogram_image === 'string' ? payload.chromatogram_image : '';
-  const { vial_image: _v, chromatogram_image: _c, result_summary, ...rest } = payload;
+  const hplc_image = typeof payload.hplc_image === 'string' ? payload.hplc_image : '';
+  const { vial_image: _v, chromatogram_image: _c, hplc_image: _h, result_summary, ...rest } = payload;
   const summary =
     result_summary && typeof result_summary === 'object' && !Array.isArray(result_summary)
       ? (result_summary as Record<string, unknown>)
@@ -308,6 +311,7 @@ export function payloadWithoutImageColumns(payload: Record<string, unknown>): Re
       ...summary,
       vial_image,
       chromatogram_image,
+      hplc_image,
     },
   };
 }
@@ -315,6 +319,8 @@ export function payloadWithoutImageColumns(payload: Record<string, unknown>): Re
 export type CoaPdfPrepPayload = {
   vial_image: string;
   chromatogram_image: string;
+  /** Unique HPLC / chromatograph photo for this run. */
+  hplc_image?: string;
   /** Brand logo for HPLC watermark; snapshotted onto coa.company_logo. */
   company_logo?: string;
   avg_net_peptide_content: string;
@@ -420,15 +426,17 @@ export async function saveCoaPdfPrep(
 ): Promise<{ coa: COA; error: string | null }> {
   const hydrated = hydrateCoaImages(coa);
   const { panel_results, molecular_weight } = applyPrepToCoaPanels(coa, prep);
-  // Keep snapshotted header logo / watermark from issue time; prep only updates vial + stats.
+  // Keep snapshotted header logo / watermark from issue time unless prep replaces HPLC photo.
   // Trim empty studio margins so the vial fills the certificate frame, then compress.
   const trimmedVial = prep.vial_image
     ? (await trimImageWhitespace(prep.vial_image, { padRatio: 0.04 })) || prep.vial_image
     : '';
-  const [vialImage, companyLogo, watermark] = await Promise.all([
+  const nextHplc = prep.hplc_image !== undefined ? prep.hplc_image : (hydrated.hplc_image || '');
+  const [vialImage, companyLogo, watermark, hplcImage] = await Promise.all([
     compressImageDataUrl(trimmedVial),
     compressImageDataUrl(hydrated.company_logo || ''),
     compressImageDataUrl(hydrated.chromatogram_image || ''),
+    compressImageDataUrl(nextHplc || ''),
   ]);
 
   const baseSummary = {
@@ -450,12 +458,14 @@ export async function saveCoaPdfPrep(
   // Never embed base64 images in result_summary — that freezes COA pages (multi‑MB JSON).
   delete baseSummary.vial_image;
   delete baseSummary.chromatogram_image;
+  delete baseSummary.hplc_image;
   delete baseSummary.company_logo;
 
   const next: COA = {
     ...hydrated,
     vial_image: vialImage,
     chromatogram_image: watermark,
+    hplc_image: hplcImage,
     company_logo: companyLogo || hydrated.company_logo || '',
     result_summary: baseSummary,
     panel_results,
@@ -465,6 +475,7 @@ export async function saveCoaPdfPrep(
   const direct = {
     vial_image: vialImage || '',
     chromatogram_image: watermark,
+    hplc_image: hplcImage || '',
     company_logo: companyLogo || hydrated.company_logo || '',
     result_summary: baseSummary,
     panel_results,
@@ -478,14 +489,33 @@ export async function saveCoaPdfPrep(
     return { coa: hydrated, error: error.message };
   }
 
-  const fallback = await supabase
-    .from('coas')
-    .update({
-      result_summary: baseSummary,
-      panel_results,
-      molecular_weight,
-    })
-    .eq('id', coa.id);
+  // Prefer keeping vial/watermark columns when only `hplc_image` is missing.
+  if (/hplc_image/i.test(error.message || '')) {
+    const { hplc_image: _h, ...restDirect } = direct;
+    const summaryWithHplc = {
+      ...baseSummary,
+      ...(hplcImage ? { hplc_image: hplcImage } : {}),
+    };
+    const retry = await supabase
+      .from('coas')
+      .update({ ...restDirect, result_summary: summaryWithHplc })
+      .eq('id', coa.id);
+    if (!retry.error) {
+      return {
+        coa: { ...next, hplc_image: hplcImage, result_summary: summaryWithHplc },
+        error: null,
+      };
+    }
+    if (!isMissingCoaImageColumnError(retry.error.message)) {
+      return { coa: hydrated, error: retry.error.message };
+    }
+  }
+
+  const fallbackPayload = payloadWithoutImageColumns({
+    ...direct,
+    result_summary: baseSummary,
+  });
+  const fallback = await supabase.from('coas').update(fallbackPayload).eq('id', coa.id);
   if (fallback.error) return { coa: hydrated, error: fallback.error.message };
 
   return { coa: next, error: null };
@@ -515,43 +545,51 @@ export async function saveCoaPdfImages(
 /** Header logo snapshotted on the COA (left of company name). Returns a displayable src (no canvas convert). */
 export async function resolveCoaHeaderLogo(coa: COA): Promise<string> {
   const hydrated = hydrateCoaImages(coa);
+  const summary = (hydrated.result_summary && typeof hydrated.result_summary === 'object'
+    ? hydrated.result_summary
+    : {}) as Record<string, unknown>;
+  // When the chemist opted out, only show a snapshotted column/summary logo.
+  const applyLogo = summary.apply_company_logo !== false;
   const candidates: string[] = [];
   const push = (value: unknown) => {
     if (typeof value === 'string' && value.trim()) candidates.push(value.trim());
   };
 
   push(hydrated.company_logo);
+  push(summary.company_logo);
 
-  const companyName = (hydrated.company_name || '').trim().toLowerCase();
-  const { data: companies } = await supabase
-    .from('companies')
-    .select('name, logo, is_default')
-    .eq('user_id', hydrated.user_id);
+  if (applyLogo) {
+    const companyName = (hydrated.company_name || '').trim().toLowerCase();
+    const { data: companies } = await supabase
+      .from('companies')
+      .select('name, logo, is_default')
+      .eq('user_id', hydrated.user_id);
 
-  if (Array.isArray(companies)) {
-    const named = companyName
-      ? companies.find(c => (c.name || '').trim().toLowerCase() === companyName && c.logo)
-      : undefined;
-    const partial = companyName
-      ? companies.find(c => {
-          const n = (c.name || '').trim().toLowerCase();
-          return !!c.logo && (n.includes(companyName) || companyName.includes(n));
-        })
-      : undefined;
-    const def = companies.find(c => c.is_default && c.logo);
-    const any = companies.find(c => c.logo);
-    push(named?.logo);
-    push(partial?.logo);
-    push(def?.logo);
-    push(any?.logo);
+    if (Array.isArray(companies)) {
+      const named = companyName
+        ? companies.find(c => (c.name || '').trim().toLowerCase() === companyName && c.logo)
+        : undefined;
+      const partial = companyName
+        ? companies.find(c => {
+            const n = (c.name || '').trim().toLowerCase();
+            return !!c.logo && (n.includes(companyName) || companyName.includes(n));
+          })
+        : undefined;
+      const def = companies.find(c => c.is_default && c.logo);
+      const any = companies.find(c => c.logo);
+      push(named?.logo);
+      push(partial?.logo);
+      push(def?.logo);
+      push(any?.logo);
+    }
+
+    const { data: profile } = await supabase
+      .from('user_profiles')
+      .select('company_logo')
+      .eq('id', hydrated.user_id)
+      .maybeSingle();
+    push(profile?.company_logo);
   }
-
-  const { data: profile } = await supabase
-    .from('user_profiles')
-    .select('company_logo')
-    .eq('id', hydrated.user_id)
-    .maybeSingle();
-  push(profile?.company_logo);
 
   const seen = new Set<string>();
   for (const candidate of candidates) {
@@ -559,11 +597,18 @@ export async function resolveCoaHeaderLogo(coa: COA): Promise<string> {
     seen.add(candidate);
     // Prefer the original src for web display — converting large logos to PNG data URLs
     // freezes / crashes the tab. PDF download now uses print of this page.
-    if (candidate.startsWith('data:image/') || candidate.startsWith('http') || candidate.startsWith('/')) {
+    if (
+      candidate.startsWith('data:image/')
+      || candidate.startsWith('http://')
+      || candidate.startsWith('https://')
+      || candidate.startsWith('blob:')
+      || candidate.startsWith('/')
+    ) {
       return candidate;
     }
   }
-  return '';
+  // Last resort: unknown but non-empty src (e.g. storage key that <img> can still load).
+  return candidates[0] || '';
 }
 
 /**

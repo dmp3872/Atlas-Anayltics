@@ -209,18 +209,23 @@ export async function downloadCoaPngFromElement(root: HTMLElement, filename: str
   const { toPng } = await import('html-to-image');
   // Clone into the parent document so React remounts in the iframe cannot yank the node mid-capture.
   const clone = root.cloneNode(true) as HTMLElement;
+  clone.classList.add('coa-png-export');
   clone.querySelectorAll('.no-print').forEach(el => {
     (el as HTMLElement).style.display = 'none';
   });
+  // Fixed letter-width canvas — Tailwind `sm:` uses the viewport, not this node width.
   clone.style.cssText = [
     'position:fixed',
     'left:0',
     'top:0',
     'width:816px',
+    'max-width:816px',
+    'box-sizing:border-box',
     'background:#ffffff',
     'z-index:2147483646',
     'pointer-events:none',
     'opacity:1',
+    'overflow:visible',
   ].join(';');
   document.body.appendChild(clone);
   try {
@@ -235,12 +240,19 @@ export async function downloadCoaPngFromElement(root: HTMLElement, filename: str
             }),
       ),
     );
+    // Let forced export CSS settle before measuring height.
+    await new Promise<void>(r => requestAnimationFrame(() => r()));
     const dataUrl = await toPng(clone, {
       pixelRatio: 2,
       cacheBust: true,
       backgroundColor: '#ffffff',
-      width: clone.scrollWidth || 816,
-      height: clone.scrollHeight,
+      width: 816,
+      height: Math.ceil(clone.scrollHeight),
+      style: {
+        width: '816px',
+        maxWidth: '816px',
+        transform: 'none',
+      },
     });
     triggerBrowserDownload(dataUrl, filename);
   } finally {
@@ -466,7 +478,7 @@ export async function buildCoaPdfBytes(coa: COA): Promise<Uint8Array> {
 
   drawFentanylAndShiftedHeavyMetals(page, record, { regular: font, bold });
 
-  // HPLC box: client chromatogram watermark from COA profile (Atlas only if none applied).
+  // HPLC box: unique chromatograph photo (if uploaded), then client watermark logo on top.
   page.drawRectangle({
     x: CHROMATOGRAM_RECT.x,
     y: CHROMATOGRAM_RECT.y,
@@ -475,6 +487,18 @@ export async function buildCoaPdfBytes(coa: COA): Promise<Uint8Array> {
     color: rgb(1, 1, 1),
     borderWidth: 0,
   });
+  const hplcSrc = (record.hplc_image || '').trim();
+  if (hplcSrc) {
+    const hplcImage = await embedImageSource(pdf, hplcSrc);
+    if (hplcImage) {
+      drawContainedImage(page, hplcImage, {
+        x: CHROMATOGRAM_RECT.x + 4,
+        y: CHROMATOGRAM_RECT.y + 4,
+        width: CHROMATOGRAM_RECT.width - 8,
+        height: CHROMATOGRAM_RECT.height - 8,
+      });
+    }
+  }
   const watermark = await embedImageSource(pdf, watermarkSrc);
   if (watermark) {
     drawContainedImage(page, watermark, {

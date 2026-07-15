@@ -22,7 +22,8 @@ import CompanyFilterSearch from '../components/lab/CompanyFilterSearch';
 import TestingQueuePanel from '../components/lab/TestingQueuePanel';
 import QueueFilters, { QueueFilterValues } from '../components/lab/QueueFilters';
 import { buildQueueItems, filterQueueItems, normalizeLabPriority } from '../lib/labQueue';
-import { setSampleStatus } from '../lib/services/orderWorkflow';
+import { sampleIntakeAt, setSampleStatus } from '../lib/services/orderWorkflow';
+import { formatDate } from '../lib/utils';
 import LabSampleIntake from '../components/lab/LabSampleIntake';
 import ReceivingDesk from '../components/lab/ReceivingDesk';
 import StaffHeader from '../components/layout/StaffHeader';
@@ -75,6 +76,7 @@ export default function Lab() {
   const [form, setForm] = useState({ ...BLANK });
   const [labResults, setLabResults] = useState<LabCoaResults>({ ...EMPTY_LAB_RESULTS });
   const [vialImage, setVialImage] = useState('');
+  const [chromatographImage, setChromatographImage] = useState('');
   const [clientCompanies, setClientCompanies] = useState<Company[]>([]);
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
   const [preferredBrandName, setPreferredBrandName] = useState('');
@@ -324,6 +326,23 @@ export default function Lab() {
     const selectCols = 'slug, display_name, sample_name, user_id';
     const first = await supabase.from('coas').insert(payload).select(selectCols).single();
     if (!first.error || !isMissingCoaImageColumnError(first.error.message)) return first;
+
+    // Keep vial/watermark columns when only the new HPLC photo column is missing.
+    if (/hplc_image/i.test(first.error.message || '') && 'hplc_image' in payload) {
+      const hplc = typeof payload.hplc_image === 'string' ? payload.hplc_image : '';
+      const { hplc_image: _h, result_summary, ...rest } = payload;
+      const summary =
+        result_summary && typeof result_summary === 'object' && !Array.isArray(result_summary)
+          ? (result_summary as Record<string, unknown>)
+          : {};
+      const withoutHplcCol = {
+        ...rest,
+        result_summary: hplc ? { ...summary, hplc_image: hplc } : summary,
+      };
+      const retry = await supabase.from('coas').insert(withoutHplcCol).select(selectCols).single();
+      if (!retry.error || !isMissingCoaImageColumnError(retry.error.message)) return retry;
+    }
+
     return supabase
       .from('coas')
       .insert(payloadWithoutImageColumns(payload))
@@ -486,13 +505,19 @@ export default function Lab() {
 
     const headerLogoRaw = applyHeaderLogo ? (profile?.logo || '') : '';
     const watermarkRaw = applyWatermark ? (profile?.chromatograph_background || '') : '';
-    const [companyLogoRaw, watermarkRawResolved] = await Promise.all([
+    const [companyLogoRaw, watermarkRawResolved, hplcRawResolved] = await Promise.all([
       headerLogoRaw ? resolveImageAsDataUrl(headerLogoRaw) : Promise.resolve(''),
       watermarkRaw ? resolveImageAsDataUrl(watermarkRaw) : Promise.resolve(''),
+      chromatographImage ? resolveImageAsDataUrl(chromatographImage) : Promise.resolve(''),
     ]);
-    // resolveImageAsDataUrl already re-compresses oversized payloads
-    const companyLogo = companyLogoRaw;
-    const watermarkImage = watermarkRawResolved;
+    // Never drop the header logo if compression fails — keep the profile src so the
+    // certificate still shows the client mark on web + PNG.
+    const companyLogo = companyLogoRaw || headerLogoRaw || '';
+    const watermarkImage = watermarkRawResolved || watermarkRaw || '';
+    const hplcImage = hplcRawResolved;
+
+    const intakeAt = sampleIntakeAt(linkedSample);
+    const receivedDate = intakeAt ? formatDate(intakeAt) : '';
 
     const payload = {
       user_id: form.clientId,
@@ -510,6 +535,7 @@ export default function Lab() {
       chromatogram_data: { vial_size: form.vialSize },
       vial_image: vialImage || '',
       chromatogram_image: watermarkImage,
+      hplc_image: hplcImage || '',
       result_summary: {
         include_molecular_weight: includeMw,
         molecular_weight: includeMw ? labResults.molecularWeight.trim() : '',
@@ -522,6 +548,9 @@ export default function Lab() {
         apply_company_logo: applyHeaderLogo,
         apply_watermark: applyWatermark,
         coa_profile_id: profile?.id ?? null,
+        // Auto-filled from lab intake / accession (Receiving Desk or Add Sample on bench).
+        received_at: intakeAt || '',
+        received_date: receivedDate,
       },
       overall_result: form.overallResult,
       is_public: false,
@@ -553,6 +582,7 @@ export default function Lab() {
     setForm({ ...BLANK });
     setLabResults({ ...EMPTY_LAB_RESULTS });
     setVialImage('');
+    setChromatographImage('');
     setApplyHeaderLogo(true);
     setApplyWatermark(true);
     setCasSuggestions([]);
@@ -896,6 +926,20 @@ export default function Lab() {
                   </select>
                 </div>
               </div>
+              <div>
+                <label className="label">Received date (COA)</label>
+                <input
+                  className="input-field bg-neutral-50"
+                  readOnly
+                  value={(() => {
+                    const at = sampleIntakeAt(linkedSample);
+                    return at ? formatDate(at) : 'Set when sample is accessioned at Receiving / Add Sample';
+                  })()}
+                />
+                <p className="text-[11px] text-neutral-500 mt-1">
+                  Auto-filled from lab intake — not editable here.
+                </p>
+              </div>
               <div className="relative">
                 <label className="label">CAS Number</label>
                 <input
@@ -1070,19 +1114,45 @@ export default function Lab() {
                   </div>
                 </div>
               </div>
-              <div>
-                <label className="label mb-2 block">Vial photo</label>
-                <p className="text-xs text-neutral-500 mb-2">
-                  Only upload from the chemist. Empty background is auto-cropped. Header logo and HPLC watermark come from the client profile above.
-                </p>
-                <LogoDropzone
-                  value={vialImage}
-                  onChange={setVialImage}
-                  onError={text => setMsg({ type: 'error', text })}
-                  maxBytes={MAX_COA_IMAGE_BYTES}
-                  prompt="a vial photo"
-                  hint="JPG or PNG of the physical vial, up to 2 MB"
-                />
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="label mb-2 block">Vial photo</label>
+                  <p className="text-xs text-neutral-500 mb-2">
+                    Chemist upload. Empty background is auto-cropped. Header logo comes from the client profile above.
+                  </p>
+                  <LogoDropzone
+                    value={vialImage}
+                    onChange={setVialImage}
+                    onError={text => setMsg({ type: 'error', text })}
+                    maxBytes={MAX_COA_IMAGE_BYTES}
+                    prompt="a vial photo"
+                    hint="JPG or PNG of the physical vial, up to 2 MB"
+                  />
+                </div>
+                <div>
+                  <label className="label mb-2 block">Chromatograph photo</label>
+                  <p className="text-xs text-neutral-500 mb-2">
+                    Unique HPLC / chromatograph image for this sample. Client watermark logo is applied automatically when enabled above.
+                  </p>
+                  <LogoDropzone
+                    value={chromatographImage}
+                    onChange={setChromatographImage}
+                    onError={text => setMsg({ type: 'error', text })}
+                    maxBytes={MAX_COA_IMAGE_BYTES}
+                    prompt="a chromatograph"
+                    hint="JPG or PNG of this run’s chromatograph, up to 2 MB"
+                  />
+                  {applyWatermark && selectedCompany?.chromatograph_background && (
+                    <p className="text-[11px] text-brand-800 mt-2">
+                      Watermark will be overlaid from {selectedCompany.name || 'this COA profile'}.
+                    </p>
+                  )}
+                  {applyWatermark && !selectedCompany?.chromatograph_background && (
+                    <p className="text-[11px] text-amber-800 mt-2">
+                      No watermark on this profile — upload one on the client COA profile, or Atlas logo is used as fallback on the PDF.
+                    </p>
+                  )}
+                </div>
               </div>
               <button type="submit" disabled={saving} className="btn-primary w-full gap-2">
                 <CheckCircle size={16} /> {saving ? 'Issuing…' : 'Issue COA (Private)'}

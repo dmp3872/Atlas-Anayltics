@@ -16,17 +16,36 @@ function generateDemoPoints() {
   return pts;
 }
 
+function WatermarkLayer({ logoWatermark }: { logoWatermark?: string }) {
+  if (logoWatermark) {
+    return (
+      <img
+        src={logoWatermark}
+        alt=""
+        aria-hidden="true"
+        className="absolute inset-0 m-auto max-h-[58%] max-w-[48%] object-contain opacity-[0.18] pointer-events-none z-[1]"
+      />
+    );
+  }
+  return <AtlasWatermark className="absolute inset-0 m-auto w-28 h-28 opacity-[0.14] pointer-events-none z-[1]" />;
+}
+
 export default function InteractiveChromatogram({
   data,
+  chromatographPhoto,
   backgroundImage,
   logoWatermark,
 }: {
   data: COA['chromatogram_data'];
-  /** Optional full-bleed chromatograph background (rare). */
+  /** Chemist-uploaded unique HPLC / chromatograph photo. */
+  chromatographPhoto?: string;
+  /** Optional faint background (rare). */
   backgroundImage?: string;
-  /** Client company logo — faint watermark behind the trace (preferred over Atlas). */
+  /** Client company logo — faint watermark over the chromatograph. */
   logoWatermark?: string;
 }) {
+  const photo = (chromatographPhoto || '').trim();
+
   const points = useMemo(() => {
     const raw = data?.points;
     if (Array.isArray(raw) && raw.length > 1) return raw;
@@ -64,21 +83,33 @@ export default function InteractiveChromatogram({
 
   const mainPeak = points.reduce((a, b) => (b.y > a.y ? b : a), points[0]);
 
+  // Unique uploaded chromatograph takes priority over the interactive SVG demo.
+  if (photo) {
+    return (
+      <div className="relative border border-atlas-border bg-white overflow-hidden flex flex-col h-full min-h-[9.5rem]">
+        <div className="relative px-3 pt-2 pb-0.5 flex items-center justify-between shrink-0 z-[2]">
+          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-700">
+            HPLC Chromatogram Report
+          </p>
+        </div>
+        <div className="relative flex-1 min-h-[8.5rem]">
+          <img
+            src={photo}
+            alt="HPLC chromatograph"
+            className="absolute inset-0 w-full h-full object-contain bg-white"
+          />
+          <WatermarkLayer logoWatermark={logoWatermark} />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="relative border border-atlas-border bg-white overflow-hidden flex flex-col h-full min-h-0">
       {backgroundImage && (
         <img src={backgroundImage} alt="" className="absolute inset-0 w-full h-full object-cover opacity-15 pointer-events-none" />
       )}
-      {logoWatermark ? (
-        <img
-          src={logoWatermark}
-          alt=""
-          aria-hidden="true"
-          className="absolute inset-0 m-auto max-h-[58%] max-w-[48%] object-contain opacity-[0.16] pointer-events-none"
-        />
-      ) : (
-        <AtlasWatermark className="absolute inset-0 m-auto w-28 h-28 opacity-[0.14] pointer-events-none" />
-      )}
+      <WatermarkLayer logoWatermark={logoWatermark} />
       <div className="relative px-3 pt-2 pb-0.5 flex items-center justify-between shrink-0">
         <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-700">
           HPLC Chromatogram Report

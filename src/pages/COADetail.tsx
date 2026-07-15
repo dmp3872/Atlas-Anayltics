@@ -10,7 +10,7 @@ import { formatDate, formatDateTime } from '../lib/utils';
 import { verifyCoaIntegrity } from '../lib/coaVerify';
 import { hydrateCoaImages, readCoaPdfStats, resolveCoaHeaderLogo, resolveCoaWatermark, trimImageWhitespace } from '../lib/coaImages';
 import { partitionCoaPanels } from '../lib/coaDisplayPanels';
-import { COA_DETAIL_COLUMNS, COA_IMAGE_COLUMNS } from '../lib/coaSelect';
+import { COA_DETAIL_COLUMNS, fetchCoaImageRow } from '../lib/coaSelect';
 import { casForSampleName } from '../lib/labCoaForm';
 import { compressImageDataUrl } from '../lib/imageCompress';
 import { coaPngFilename, downloadCoaPngFromElement } from '../lib/coaPdf';
@@ -76,6 +76,7 @@ export default function COADetail() {
   const [notFound, setNotFound] = useState(false);
   const [copied, setCopied] = useState(false);
   const [logoWatermark, setLogoWatermark] = useState('');
+  const [hplcPhoto, setHplcPhoto] = useState('');
   const [clientLogo, setClientLogo] = useState('');
   const [downloadingPng, setDownloadingPng] = useState(false);
 
@@ -87,6 +88,7 @@ export default function COADetail() {
     setLoading(true);
     setNotFound(false);
     setLogoWatermark('');
+    setHplcPhoto('');
     setClientLogo('');
 
     (async () => {
@@ -109,44 +111,51 @@ export default function COADetail() {
         const hydrated = hydrateCoaImages(data as COA);
         setCoa(hydrated);
         setLogoWatermark(hydrated.chromatogram_image || '');
+        setHplcPhoto(hydrated.hplc_image || '');
         setClientLogo(hydrated.company_logo || '');
         setLoading(false);
 
         // Phase 2: images + profile fallbacks (non-blocking). Compress before state so a
         // leftover multi‑MB base64 row cannot freeze the tab / IDE embedded browser.
-        const [{ data: images }, header, watermark] = await Promise.all([
-          supabase.from('coas').select(COA_IMAGE_COLUMNS).eq('id', hydrated.id).maybeSingle(),
+        const [imgRow, header, watermark] = await Promise.all([
+          fetchCoaImageRow(hydrated.id),
           resolveCoaHeaderLogo(hydrated),
           resolveCoaWatermark(hydrated),
         ]);
         if (cancelled) return;
 
-        const imgRow = images as Pick<COA, 'vial_image' | 'chromatogram_image' | 'company_logo'> | null;
-        const rawVial = imgRow?.vial_image || '';
+        const rawVial = imgRow?.vial_image || hydrated.vial_image || '';
         // Crop empty margins so the vial spans the frame as large as possible.
         const trimmedVial = rawVial
           ? (await trimImageWhitespace(rawVial, { padRatio: 0.04 })) || rawVial
           : '';
-        const [vial, chrom, logoCol, nextHeader, nextWatermark] = await Promise.all([
+        // Header logo: keep the original src for display. Re-compressing large brand PNGs
+        // can return '' and wipe the client mark from the certificate + PNG export.
+        const rawHeader =
+          header
+          || imgRow?.company_logo
+          || hydrated.company_logo
+          || '';
+        const [vial, chrom, hplc, nextWatermark] = await Promise.all([
           compressImageDataUrl(trimmedVial),
-          compressImageDataUrl(imgRow?.chromatogram_image || ''),
-          compressImageDataUrl(imgRow?.company_logo || ''),
-          compressImageDataUrl(header || ''),
+          compressImageDataUrl(imgRow?.chromatogram_image || hydrated.chromatogram_image || ''),
+          compressImageDataUrl(imgRow?.hplc_image || hydrated.hplc_image || ''),
           compressImageDataUrl(watermark || ''),
         ]);
         if (cancelled) return;
 
-        const resolvedHeader = nextHeader || logoCol || '';
         const resolvedWatermark = nextWatermark || chrom || '';
 
         if (resolvedWatermark) setLogoWatermark(resolvedWatermark);
-        if (resolvedHeader) setClientLogo(resolvedHeader);
-        if (vial || chrom || logoCol || resolvedHeader || resolvedWatermark) {
+        if (hplc) setHplcPhoto(hplc);
+        if (rawHeader) setClientLogo(rawHeader);
+        if (vial || chrom || hplc || rawHeader || resolvedWatermark) {
           setCoa(prev => prev ? {
             ...prev,
             vial_image: vial || prev.vial_image,
             chromatogram_image: resolvedWatermark || chrom || prev.chromatogram_image,
-            company_logo: resolvedHeader || logoCol || prev.company_logo,
+            hplc_image: hplc || prev.hplc_image,
+            company_logo: rawHeader || prev.company_logo,
           } : prev);
         }
       } catch {
@@ -406,6 +415,7 @@ export default function COADetail() {
             <div className="min-w-0 w-full coa-print-chromatogram flex flex-col h-full min-h-[9.5rem] sm:min-h-[10.5rem]">
               <InteractiveChromatogram
                 data={coa.chromatogram_data}
+                chromatographPhoto={hplcPhoto || coa.hplc_image || undefined}
                 logoWatermark={logoWatermark || undefined}
               />
             </div>
@@ -534,8 +544,8 @@ export default function COADetail() {
           )}
 
           <div className="coa-cert-footer bg-[#0a1628] text-white px-4 sm:px-5 py-2.5 mt-auto">
-            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 w-full">
-              <div className="flex flex-wrap items-center gap-x-5 gap-y-3 min-w-0">
+            <div className="coa-footer-row flex flex-wrap items-center justify-between gap-x-4 gap-y-3 w-full">
+              <div className="coa-footer-sigs flex flex-wrap items-center gap-x-5 gap-y-3 min-w-0">
                 {(() => {
                   const sig = coaSignatureProgress(coa);
                   const directorSigned = coaHasDirectorSignature(coa);
@@ -598,7 +608,7 @@ export default function COADetail() {
                 })()}
               </div>
 
-              <div className="min-w-0 flex items-center gap-3 shrink-0">
+              <div className="coa-footer-verify min-w-0 flex items-center gap-3 shrink-0">
                 <div className="text-[11px] leading-snug text-right">
                   <p className="font-bold uppercase tracking-wide">atlasanalytics.io</p>
                   <p className="font-mono text-white/80 mt-0.5">
@@ -609,7 +619,7 @@ export default function COADetail() {
                 <CoaQrCode slug={coa.slug} size={64} compact />
               </div>
             </div>
-            <p className="text-[9px] text-white/50 text-center mt-2 leading-snug">
+            <p className="coa-footer-disclaimer text-[9px] text-white/50 text-center mt-2 leading-snug">
               This report applies only to the samples tested and may not be reproduced, except in full, without written approval.
             </p>
           </div>

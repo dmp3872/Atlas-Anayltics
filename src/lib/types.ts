@@ -90,6 +90,8 @@ export interface OrderSample {
   assigned_at?: string | null;
   lab_priority?: LabPriority | null;
   accession_number?: string | null;
+  /** When the sample was physically accessioned / intaked at the lab. */
+  received_at?: string | null;
   created_at: string;
 }
 
@@ -125,8 +127,10 @@ export interface COA {
   pdf_url: string;
   /** Data URL (JPG/PNG) of the physical vial photo for COA PDF. */
   vial_image?: string;
-  /** Snapshotted HPLC watermark from the client's COA profile (`chromatograph_background`). */
+  /** Snapshotted client watermark logo from the COA profile (`chromatograph_background`). */
   chromatogram_image?: string;
+  /** Chemist-uploaded unique chromatograph / HPLC trace photo for this COA. */
+  hplc_image?: string;
   seal_serial?: string;
   accession_number?: string;
   coa_workflow_stage?: CoaWorkflowStage;

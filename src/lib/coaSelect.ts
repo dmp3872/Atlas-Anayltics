@@ -4,6 +4,9 @@
  * columns freezes the browser when loading many rows (or even a single heavy COA).
  */
 
+import { supabase } from './supabase';
+import type { COA } from './types';
+
 /** Lightweight list / queue / portal table rows. */
 export const COA_LIST_COLUMNS = [
   'id',
@@ -47,5 +50,43 @@ export const COA_IMAGE_COLUMNS = [
   'id',
   'vial_image',
   'chromatogram_image',
+  'hplc_image',
   'company_logo',
 ].join(', ');
+
+/** Legacy schemas before `hplc_image` migrated. */
+export const COA_IMAGE_COLUMNS_LEGACY = [
+  'id',
+  'vial_image',
+  'chromatogram_image',
+  'company_logo',
+].join(', ');
+
+export type CoaImageRow = Pick<COA, 'vial_image' | 'chromatogram_image' | 'hplc_image' | 'company_logo'> & {
+  id: string;
+};
+
+/**
+ * Load COA image blobs. Falls back when `hplc_image` is not migrated yet —
+ * otherwise PostgREST rejects the whole select and vial/chromatogram never load.
+ */
+export async function fetchCoaImageRow(id: string): Promise<CoaImageRow | null> {
+  const full = await supabase.from('coas').select(COA_IMAGE_COLUMNS).eq('id', id).maybeSingle();
+  if (!full.error) {
+    return full.data ? ({ ...(full.data as CoaImageRow), hplc_image: (full.data as CoaImageRow).hplc_image || '' }) : null;
+  }
+
+  const msg = full.error.message || '';
+  if (!/hplc_image|schema cache/i.test(msg)) {
+    console.warn('COA image load failed:', msg);
+    return null;
+  }
+
+  const legacy = await supabase.from('coas').select(COA_IMAGE_COLUMNS_LEGACY).eq('id', id).maybeSingle();
+  if (legacy.error) {
+    console.warn('COA image load failed:', legacy.error.message);
+    return null;
+  }
+  if (!legacy.data) return null;
+  return { ...(legacy.data as CoaImageRow), hplc_image: '' };
+}

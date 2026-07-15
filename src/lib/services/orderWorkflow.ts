@@ -107,9 +107,15 @@ export async function markSampleReceived(
   if (!accession) return { error: new Error('Accession number is required.') };
 
   const now = new Date().toISOString();
+  const receivedAt = sample.received_at || now;
+  const prevMeta =
+    sample.metadata && typeof sample.metadata === 'object' ? sample.metadata : {};
   const samplePatch: Partial<OrderSample> = {
     status: 'received',
     accession_number: accession,
+    // Preserve original intake time if already set (re-accession should not rewrite COA date).
+    received_at: receivedAt,
+    metadata: { ...prevMeta, received_at: receivedAt },
   };
   if (opts.vialCountConfirmed != null && opts.vialCountConfirmed > 0) {
     samplePatch.vial_count = opts.vialCountConfirmed;
@@ -170,9 +176,13 @@ export async function setSampleStatus(
   status: SampleStatus,
   opts?: { note?: string; changedBy?: string | null; order?: Order },
 ): Promise<{ error: Error | null; sample?: OrderSample }> {
+  const patch: Partial<OrderSample> = { status };
+  if (status === 'received' && !sample.received_at) {
+    patch.received_at = new Date().toISOString();
+  }
   const { data, error } = await supabase
     .from('order_samples')
-    .update({ status })
+    .update(patch)
     .eq('id', sample.id)
     .select('*')
     .single();
@@ -212,4 +222,20 @@ export async function setSampleStatus(
 
 export function paymentLabel(status: unknown): string {
   return normalizePaymentStatus(status);
+}
+
+/** ISO timestamp when the sample was physically intaked / accessioned at the lab. */
+export function sampleIntakeAt(
+  sample: Pick<OrderSample, 'received_at' | 'status' | 'created_at' | 'metadata'> | null | undefined,
+): string | null {
+  if (!sample) return null;
+  if (typeof sample.received_at === 'string' && sample.received_at.trim()) return sample.received_at;
+  const meta = sample.metadata && typeof sample.metadata === 'object' ? sample.metadata : null;
+  const metaAt = meta && typeof meta.received_at === 'string' ? meta.received_at.trim() : '';
+  if (metaAt) return metaAt;
+  // Already past awaiting_sample without a stamp — use created_at as best known intake time.
+  if (sample.status && sample.status !== 'awaiting_sample' && sample.created_at) {
+    return sample.created_at;
+  }
+  return null;
 }

@@ -153,7 +153,8 @@ export default function LabSampleIntake({ clients, chemists, onCreated }: Props)
         panel_ids: [],
         status: onBench && paid ? 'received' : 'awaiting_sample',
         accession_number: onBench && form.accessionNumber.trim() ? form.accessionNumber.trim() : null,
-        metadata,
+        received_at: onBench && paid ? now : null,
+        metadata: onBench && paid ? { ...metadata, received_at: now } : metadata,
         assigned_to: form.assignedTo || null,
         assigned_at: form.assignedTo ? new Date().toISOString() : null,
       };

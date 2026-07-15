@@ -47,13 +47,16 @@ export async function compressImageDataUrl(
 
     let quality = 0.82;
     let dataUrl = canvas.toDataURL('image/jpeg', quality);
-    while (dataUrl.length > maxChars && quality > 0.4) {
+    while (dataUrl.length > maxChars && quality > 0.35) {
       quality -= 0.1;
       dataUrl = canvas.toDataURL('image/jpeg', quality);
     }
-    return dataUrl.length > maxChars ? '' : dataUrl;
+    // Prefer a still-oversized compressed frame over wiping the image entirely
+    // (empty string was dropping COA header logos / vial shots from the cert).
+    if (dataUrl.length <= maxChars || dataUrl.length < input.length) return dataUrl;
+    return input;
   } catch {
-    return '';
+    return input;
   }
 }
 

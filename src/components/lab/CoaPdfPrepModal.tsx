@@ -23,6 +23,7 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
   const initial = hydrateCoaImages(coa);
   const initialStats = readCoaPdfStats(coa);
   const [vialImage, setVialImage] = useState(initial.vial_image || '');
+  const [hplcImage, setHplcImage] = useState(initial.hplc_image || '');
   const [avgNetPeptide, setAvgNetPeptide] = useState(initialStats.avg_net_peptide_content);
   const [meanOfVials, setMeanOfVials] = useState(initialStats.mean_of_vials_tested);
   const [avgPurity, setAvgPurity] = useState(initialStats.avg_purity || '');
@@ -46,6 +47,7 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
     const next = hydrateCoaImages(coa);
     const stats = readCoaPdfStats(coa);
     setVialImage(next.vial_image || '');
+    setHplcImage(next.hplc_image || '');
     setAvgNetPeptide(stats.avg_net_peptide_content);
     setMeanOfVials(stats.mean_of_vials_tested);
     setAvgPurity(stats.avg_purity || '');
@@ -80,6 +82,7 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
       const { coa: saved, error: saveError } = await saveCoaPdfPrep(coa, {
         vial_image: vialImage,
         chromatogram_image: coa.chromatogram_image || '',
+        hplc_image: hplcImage,
         company_logo: coa.company_logo || '',
         avg_net_peptide_content: avgNetPeptide,
         mean_of_vials_tested: vials,
@@ -300,19 +303,35 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
             </div>
           </div>
 
-          <div>
-            <label className="label mb-2 block">Vial photo</label>
-            <p className="text-xs text-neutral-500 mb-2">
-              Empty background is auto-cropped so the vial fills the certificate frame.
-            </p>
-            <LogoDropzone
-              value={vialImage}
-              onChange={setVialImage}
-              onError={setError}
-              maxBytes={MAX_COA_IMAGE_BYTES}
-              prompt="a vial photo"
-              hint="JPG or PNG, up to 1 MB"
-            />
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div>
+              <label className="label mb-2 block">Vial photo</label>
+              <p className="text-xs text-neutral-500 mb-2">
+                Empty background is auto-cropped so the vial fills the certificate frame.
+              </p>
+              <LogoDropzone
+                value={vialImage}
+                onChange={setVialImage}
+                onError={setError}
+                maxBytes={MAX_COA_IMAGE_BYTES}
+                prompt="a vial photo"
+                hint="JPG or PNG, up to 1 MB"
+              />
+            </div>
+            <div>
+              <label className="label mb-2 block">Chromatograph photo</label>
+              <p className="text-xs text-neutral-500 mb-2">
+                Unique HPLC image for this run. Client watermark logo is applied automatically on the certificate.
+              </p>
+              <LogoDropzone
+                value={hplcImage}
+                onChange={setHplcImage}
+                onError={setError}
+                maxBytes={MAX_COA_IMAGE_BYTES}
+                prompt="a chromatograph"
+                hint="JPG or PNG, up to 1 MB"
+              />
+            </div>
           </div>
 
           {error && (
