@@ -105,6 +105,28 @@ export function casForSampleName(sampleName: string): string {
   return hit?.cas ?? '';
 }
 
+/** Normalizes a free-typed mg amount into "10 mg" (space before unit, trimmed). */
+export function formatMgAmount(raw: string): string {
+  const numeric = raw.trim().replace(/\s*mg\s*$/i, '').trim();
+  return numeric ? `${numeric} mg` : '';
+}
+
+/** Normalizes a free-typed percent amount into "9.8%" (no space before unit). */
+export function formatPurityPercent(raw: string): string {
+  const numeric = raw.trim().replace(/%\s*$/, '').trim();
+  return numeric ? `${numeric}%` : '';
+}
+
+/** Joins conformity row net-content amounts into one comma-separated string, e.g. "10 mg, 10.1 mg". */
+export function joinConformityMg(rows: ConformityPeptideRow[]): string {
+  return rows.map(r => formatMgAmount(r.netContent)).filter(Boolean).join(', ');
+}
+
+/** Joins conformity row net-purity amounts into one comma-separated string, e.g. "9.8%, 9.7%". */
+export function joinConformityPurity(rows: ConformityPeptideRow[]): string {
+  return rows.map(r => formatPurityPercent(r.netPurity)).filter(Boolean).join(', ');
+}
+
 export function buildLabResultsFromSample(metadata: OrderSample['metadata'], sampleName = ''): LabCoaResults {
   const meta = parseSampleMetadata(metadata);
   const identification = meta.peptide_identification?.trim() || sampleName.trim();
