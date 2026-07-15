@@ -1,24 +1,64 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Filter, FlaskConical, ArrowRight } from 'lucide-react';
+import { Filter, FlaskConical, ArrowRight, Database } from 'lucide-react';
 import AdminLayout from '../../components/layout/AdminLayout';
 import SubmissionStatusBadge from '../../components/submissions/SubmissionStatusBadge';
+import { useAuth } from '../../context/AuthContext';
 import { Submission, SubmissionStatus } from '../../lib/types';
-import { fetchAllSubmissions } from '../../lib/services/submissions';
+import { fetchAllSubmissions, seedDemoSubmissions } from '../../lib/services/submissions';
 import { SUBMISSION_STATUS_LABELS } from '../../lib/submissionUtils';
 import { formatDateTime } from '../../lib/utils';
 
 export default function AdminDashboard() {
+  const { user } = useAuth();
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [seeding, setSeeding] = useState(false);
+  const [seedMsg, setSeedMsg] = useState<{ type: 'ok' | 'error'; text: string } | null>(null);
+
+  async function loadSubmissions() {
+    setLoading(true);
+    try {
+      setSubmissions(await fetchAllSubmissions());
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    fetchAllSubmissions()
-      .then(setSubmissions)
-      .catch(console.error)
-      .finally(() => setLoading(false));
+    void loadSubmissions();
   }, []);
+
+  async function handleSeedDemo() {
+    if (!user?.id) {
+      setSeedMsg({ type: 'error', text: 'Sign in as admin to load demo submissions.' });
+      return;
+    }
+    setSeeding(true);
+    setSeedMsg(null);
+    try {
+      const result = await seedDemoSubmissions(user.id);
+      if (result.skipped) {
+        setSeedMsg({ type: 'ok', text: 'Demo submissions already loaded (SUB-DEMO-001).' });
+      } else {
+        setSeedMsg({
+          type: 'ok',
+          text: `Loaded ${result.created} demo submissions across the pipeline.`,
+        });
+      }
+      await loadSubmissions();
+    } catch (err) {
+      setSeedMsg({
+        type: 'error',
+        text: err instanceof Error ? err.message : 'Could not load demo submissions.',
+      });
+    } finally {
+      setSeeding(false);
+    }
+  }
 
   const filtered =
     statusFilter === 'all'
@@ -39,10 +79,30 @@ export default function AdminDashboard() {
   return (
     <AdminLayout>
       <div className="max-w-5xl">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-slate-900">Submission Dashboard</h1>
-          <p className="text-slate-500 text-sm mt-0.5">Manage all client sample submissions</p>
+        <div className="mb-6 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900">Submission Dashboard</h1>
+            <p className="text-slate-500 text-sm mt-0.5">Manage all client sample submissions</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void handleSeedDemo()}
+            disabled={seeding}
+            className="btn-outline gap-2 text-sm self-start"
+          >
+            <Database size={15} />
+            {seeding ? 'Loading demo…' : 'Load demo submissions'}
+          </button>
         </div>
+
+        {seedMsg && (
+          <p
+            className={`mb-4 text-sm ${seedMsg.type === 'ok' ? 'text-emerald-700' : 'text-red-600'}`}
+            role="status"
+          >
+            {seedMsg.text}
+          </p>
+        )}
 
         <div className="grid grid-cols-3 gap-4 mb-6">
           {[
@@ -82,6 +142,11 @@ export default function AdminDashboard() {
           <div className="card p-10 text-center text-slate-500">
             <FlaskConical size={28} className="mx-auto mb-2 text-slate-300" />
             No submissions match this filter.
+            {statusFilter === 'all' && (
+              <p className="mt-3 text-sm">
+                Use <span className="font-medium text-slate-700">Load demo submissions</span> to populate the queue.
+              </p>
+            )}
           </div>
         ) : (
           <div className="space-y-2">

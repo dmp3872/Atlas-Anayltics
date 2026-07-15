@@ -380,3 +380,178 @@ export async function fetchCOAForSample(sampleId: string) {
     .maybeSingle();
   return data;
 }
+
+const DEMO_SEED_NOTE = '[DEMO SEED]';
+
+type DemoSubmissionSeed = {
+  submission_number: string;
+  company_name: string;
+  contact_name: string;
+  email: string;
+  phone: string;
+  urgency: 'standard' | 'rush';
+  status: SubmissionStatus;
+  notes: string;
+  created_offset_hours: number;
+  samples: Array<{
+    sample_number: string;
+    product_name: string;
+    batch_lot_number: string;
+    sample_count: number;
+  }>;
+};
+
+/** Idempotent demo dataset for the admin Submissions Queue (visible across filters). */
+export async function seedDemoSubmissions(adminUserId: string): Promise<{ created: number; skipped: boolean }> {
+  const { data: existing, error: existingError } = await supabase
+    .from('submissions')
+    .select('id')
+    .eq('submission_number', 'SUB-DEMO-001')
+    .maybeSingle();
+
+  if (existingError) throw existingError;
+  if (existing) return { created: 0, skipped: true };
+
+  const panels = await fetchTestPanels();
+  const panelId = panels.find((p) => p.category === 'package')?.id
+    ?? panels[0]?.id
+    ?? null;
+
+  const demos: DemoSubmissionSeed[] = [
+    {
+      submission_number: 'SUB-DEMO-001',
+      company_name: 'Nova Peptide Co',
+      contact_name: 'Chris Client',
+      email: 'ops@novapeptide.example.com',
+      phone: '(512) 555-0142',
+      urgency: 'standard',
+      status: 'submitted',
+      notes: `New intake — waiting for kit arrival. ${DEMO_SEED_NOTE}`,
+      created_offset_hours: 6,
+      samples: [
+        { sample_number: 'SMP-DEMO-001', product_name: 'BPC-157', batch_lot_number: 'LOT-BPC-001', sample_count: 2 },
+        { sample_number: 'SMP-DEMO-002', product_name: 'TB-500', batch_lot_number: 'LOT-TB-014', sample_count: 1 },
+      ],
+    },
+    {
+      submission_number: 'SUB-DEMO-002',
+      company_name: 'Apex Research Labs',
+      contact_name: 'Jordan Lee',
+      email: 'qa@apexresearch.example.com',
+      phone: '(303) 555-0198',
+      urgency: 'rush',
+      status: 'awaiting_sample',
+      notes: `Rush kit emailed — courier label pending. ${DEMO_SEED_NOTE}`,
+      created_offset_hours: 30,
+      samples: [
+        { sample_number: 'SMP-DEMO-003', product_name: 'Retatrutide 5mg', batch_lot_number: 'RET-2406-17', sample_count: 1 },
+      ],
+    },
+    {
+      submission_number: 'SUB-DEMO-003',
+      company_name: 'Summit Peptide Labs',
+      contact_name: 'Taylor Brooks',
+      email: 'lab@summitpeptide.example.com',
+      phone: '(720) 555-0133',
+      urgency: 'standard',
+      status: 'sample_received',
+      notes: `Received at Denver dock — queued for accession. ${DEMO_SEED_NOTE}`,
+      created_offset_hours: 72,
+      samples: [
+        { sample_number: 'SMP-DEMO-004', product_name: 'Semaglutide', batch_lot_number: 'SEMA-0901', sample_count: 3 },
+        { sample_number: 'SMP-DEMO-005', product_name: 'Tirzepatide', batch_lot_number: 'TIRZ-0901', sample_count: 2 },
+      ],
+    },
+    {
+      submission_number: 'SUB-DEMO-004',
+      company_name: 'Northwind Bio',
+      contact_name: 'Morgan Ortiz',
+      email: 'morgan@northwindbio.example.com',
+      phone: '(415) 555-0177',
+      urgency: 'standard',
+      status: 'in_testing',
+      notes: `HPLC queue — purity/content panels running. ${DEMO_SEED_NOTE}`,
+      created_offset_hours: 120,
+      samples: [
+        { sample_number: 'SMP-DEMO-006', product_name: 'MOTS-c 10mg', batch_lot_number: 'MOTS-0625-A', sample_count: 1 },
+      ],
+    },
+    {
+      submission_number: 'SUB-DEMO-005',
+      company_name: 'Harbor Compounding',
+      contact_name: 'Alex Rivera',
+      email: 'alex@harborcompound.example.com',
+      phone: '(204) 555-0110',
+      urgency: 'rush',
+      status: 'qa_review',
+      notes: `Results entered — awaiting QA sign-off before COA release. ${DEMO_SEED_NOTE}`,
+      created_offset_hours: 168,
+      samples: [
+        { sample_number: 'SMP-DEMO-007', product_name: 'GHK-Cu', batch_lot_number: 'GHK-4412', sample_count: 2 },
+        { sample_number: 'SMP-DEMO-008', product_name: 'Ipamorelin', batch_lot_number: 'IPA-4412', sample_count: 1 },
+      ],
+    },
+  ];
+
+  let created = 0;
+
+  for (const demo of demos) {
+    const createdAt = new Date(Date.now() - demo.created_offset_hours * 3600 * 1000).toISOString();
+    const { data: submission, error: subError } = await supabase
+      .from('submissions')
+      .insert({
+        submission_number: demo.submission_number,
+        user_id: adminUserId,
+        company_name: demo.company_name,
+        contact_name: demo.contact_name,
+        email: demo.email,
+        phone: demo.phone,
+        urgency: demo.urgency,
+        notes: demo.notes,
+        status: 'submitted',
+        created_at: createdAt,
+        updated_at: createdAt,
+      })
+      .select('id')
+      .single();
+
+    if (subError || !submission) throw subError ?? new Error(`Failed to create ${demo.submission_number}`);
+
+    const sampleRows = demo.samples.map((sample) => ({
+      submission_id: submission.id,
+      sample_number: sample.sample_number,
+      product_name: sample.product_name,
+      batch_lot_number: sample.batch_lot_number,
+      sample_count: sample.sample_count,
+      panel_id: panelId,
+      panel_ids: panelId ? [panelId] : [],
+      status: 'submitted' as SubmissionStatus,
+      created_at: createdAt,
+    }));
+
+    const { error: samplesError } = await supabase.from('submission_samples').insert(sampleRows);
+    if (samplesError) throw samplesError;
+
+    await logStatusChange(
+      submission.id,
+      null,
+      'submitted',
+      'Demo submission seeded for admin dashboard',
+      null,
+      adminUserId,
+    );
+
+    if (demo.status !== 'submitted') {
+      await updateSubmissionStatus(
+        submission.id,
+        demo.status,
+        `Demo seed advanced to ${demo.status}`,
+        adminUserId,
+      );
+    }
+
+    created += 1;
+  }
+
+  return { created, skipped: false };
+}
