@@ -34,7 +34,7 @@ export default function Footer() {
           <div>
             <h4 className="text-sm font-semibold text-brand-500 mb-4 uppercase tracking-wider">Services</h4>
             <ul className="space-y-2.5 text-sm">
-              <li><Link to="/order" className="hover:text-brand-400 transition-colors">Submit Samples</Link></li>
+              <li><Link to="/order-new" className="hover:text-brand-400 transition-colors">Submit Samples</Link></li>
               <li><Link to="/pricing" className="hover:text-brand-400 transition-colors">Pricing Calculator</Link></li>
               <li><Link to="/verify" className="hover:text-brand-400 transition-colors">Verify a COA</Link></li>
               <li><Link to="/coa-library" className="hover:text-brand-400 transition-colors">COA Library</Link></li>

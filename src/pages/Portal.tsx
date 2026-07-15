@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, Navigate, useLocation, useSearchParams } from 'react-router-dom';
 import {
-  Package, ClipboardList, Truck, Copy, Check, X, Search, Download, FileText, ExternalLink,
-  CheckCircle, XCircle, Clock, ShoppingCart, CreditCard, FlaskConical,
-  Users, Code, Shield, Bell, Key, UserPlus,
+  Truck, Copy, Check, X, Search, Download, FileText, ExternalLink,
+  CheckCircle, XCircle, Clock, CreditCard, FlaskConical,
+  Shield, Bell, Key, UserPlus, Lock, AlertTriangle, Package, MapPin,
   ChevronDown, ChevronUp,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -11,7 +11,8 @@ import { supabase } from '../lib/supabase';
 import { COA, Order, OrderSample, TestPanel } from '../lib/types';
 import {
   formatCurrency, formatDate, formatDateTime,
-  ORDER_STATUS_LABELS, SAMPLE_STATUS_LABELS,
+  ORDER_STATUS_LABELS, SAMPLE_STATUS_LABELS, PAYMENT_STATUS_LABELS,
+  ORDER_STATUS_STEPS, getStatusStep, normalizePaymentStatus, orderIsPayable,
 } from '../lib/utils';
 import { downloadCsv } from '../lib/exportCsv';
 import {
@@ -19,7 +20,10 @@ import {
   loadTeamMembers, saveTeamMembers, TeamMember, NotificationPrefs,
 } from '../lib/portalPrefs';
 import { loadOrderDraft, draftSummary } from '../lib/orderDraft';
+import { canDiscardOrder, discardOrder } from '../lib/orderDiscard';
 import { expectedPanelNames, matchCoaForSample } from '../lib/coaPanels';
+import { testsForSample } from '../lib/labQueue';
+import { SHIPPING_ADDRESS } from '../lib/submissionUtils';
 import AccountSettings from '../components/account/AccountSettings';
 import ClientPortalLayout from '../components/layout/ClientPortalLayout';
 import GettingStarted from '../components/portal/GettingStarted';
@@ -33,12 +37,27 @@ import { useUserRole } from '../hooks/useUserRole';
 
 type PortalTab = 'home' | 'getting-started' | 'peptide-requests' | 'coas' | 'samples' | 'orders' | 'invoices' | 'payments' | 'account' | 'widget' | 'team';
 
-const SHIPPING_ADDRESS = `Atlas Analytics\n1234 Research Blvd\nAustin, TX 78701`;
-
 function ResultBadge({ result }: { result: string }) {
   if (result === 'pass') return <span className="badge-pass"><CheckCircle size={10} /> Pass</span>;
   if (result === 'fail') return <span className="badge-fail"><XCircle size={10} /> Fail</span>;
   return <span className="badge-pending"><Clock size={10} /> Pending</span>;
+}
+
+function CoaPublicationBadge({ coa }: { coa: COA }) {
+  if (coa.is_public && coa.coa_workflow_stage === 'published') {
+    return <span className="badge-pass"><CheckCircle size={10} /> Published</span>;
+  }
+  return <span className="badge-pending"><Lock size={10} /> Private Draft</span>;
+}
+
+function portalTestsForSample(sample: OrderSample, panels: TestPanel[]): string[] {
+  const meta = sample.metadata as Record<string, unknown> | null;
+  const hasWizardTestInfo = !!meta && (
+    typeof meta.test_mode === 'string' ||
+    typeof meta.tests_label === 'string' ||
+    Array.isArray(meta.individual_tests)
+  );
+  return hasWizardTestInfo ? testsForSample(sample) : expectedPanelNames(sample, panels);
 }
 
 export default function Portal() {
@@ -61,6 +80,7 @@ export default function Portal() {
   const [sampleProduct, setSampleProduct] = useState('all');
   const [coaPeptide, setCoaPeptide] = useState('all');
   const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
+  const [discardingOrderId, setDiscardingOrderId] = useState<string | null>(null);
 
   const [promoCode, setPromoCode] = useState('');
   const [promoMsg, setPromoMsg] = useState('');
@@ -73,18 +93,36 @@ export default function Portal() {
     if (!user) return;
     setNotifs(loadNotificationPrefs(user.id));
     setTeam(loadTeamMembers(user.id));
-    Promise.all([
-      supabase.from('coas').select(COA_LIST_COLUMNS).eq('user_id', user.id).order('issued_at', { ascending: false }),
-      supabase.from('orders').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
-      supabase.from('order_samples').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
-      supabase.from('test_panels').select('*').eq('is_active', true).order('sort_order'),
-    ]).then(([coasRes, ordersRes, samplesRes, panelsRes]) => {
-      if (coasRes.data) setCoas((coasRes.data as COA[]).map(hydrateCoaImages));
-      if (ordersRes.data) setOrders(ordersRes.data);
-      if (samplesRes.data) setSamples(samplesRes.data);
-      if (panelsRes.data) setPanels(panelsRes.data);
-      setLoading(false);
-    });
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    function loadPortalData() {
+      Promise.all([
+        supabase.from('coas').select(COA_LIST_COLUMNS).eq('user_id', user!.id).order('issued_at', { ascending: false }),
+        supabase.from('orders').select('*').eq('user_id', user!.id).order('created_at', { ascending: false }),
+        supabase.from('order_samples').select('*').eq('user_id', user!.id).order('created_at', { ascending: false }),
+        supabase.from('test_panels').select('*').eq('is_active', true).order('sort_order'),
+      ]).then(([coasRes, ordersRes, samplesRes, panelsRes]) => {
+        if (coasRes.data) setCoas((coasRes.data as COA[]).map(hydrateCoaImages));
+        if (ordersRes.data) setOrders(ordersRes.data);
+        if (samplesRes.data) setSamples(samplesRes.data);
+        if (panelsRes.data) setPanels(panelsRes.data);
+        setLoading(false);
+      });
+    }
+
+    loadPortalData();
+
+    const channel = supabase
+      .channel(`portal-live-${user.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders', filter: `user_id=eq.${user.id}` }, loadPortalData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'coas', filter: `user_id=eq.${user.id}` }, loadPortalData)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'order_samples', filter: `user_id=eq.${user.id}` }, loadPortalData)
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   }, [user]);
 
   useEffect(() => {
@@ -105,7 +143,8 @@ export default function Portal() {
   }
 
   async function copyAddress() {
-    await navigator.clipboard.writeText(SHIPPING_ADDRESS.replace(/\\n/g, '\n'));
+    const text = `${SHIPPING_ADDRESS.name}\n${SHIPPING_ADDRESS.line1}\n${SHIPPING_ADDRESS.city}, ${SHIPPING_ADDRESS.state} ${SHIPPING_ADDRESS.zip}\n${SHIPPING_ADDRESS.country}`;
+    await navigator.clipboard.writeText(text);
     setCopiedAddr(true);
     setTimeout(() => setCopiedAddr(false), 2000);
   }
@@ -173,9 +212,31 @@ export default function Portal() {
   const filteredOrders = orders.filter(o => {
     const q = search.toLowerCase();
     const matchSearch = !q || o.order_number.toLowerCase().includes(q) || o.company_name?.toLowerCase().includes(q);
-    const matchStatus = statusFilter === 'all' || o.status === statusFilter;
+    const matchStatus = statusFilter === 'all' || (
+      tab === 'invoices' ? normalizePaymentStatus(o.payment_status) === statusFilter : o.status === statusFilter
+    );
     return matchSearch && matchStatus;
   });
+
+  async function handleDiscardOrder(order: Order) {
+    if (!canDiscardOrder(order)) return;
+    if (!confirm(`Discard order ${order.order_number}? This cannot be undone.`)) return;
+    setDiscardingOrderId(order.id);
+    const { error } = await discardOrder(order.id);
+    if (error) {
+      alert(error);
+      setDiscardingOrderId(null);
+      return;
+    }
+    setOrders(prev => prev.filter(o => o.id !== order.id));
+    setSamples(prev => prev.filter(s => s.order_id !== order.id));
+    setExpandedOrders(prev => {
+      const next = new Set(prev);
+      next.delete(order.id);
+      return next;
+    });
+    setDiscardingOrderId(null);
+  }
 
   return (
     <ClientPortalLayout>
@@ -206,8 +267,8 @@ export default function Portal() {
             <div className="px-5 py-4 border-t border-atlas-border text-sm space-y-3">
               <p className="text-neutral-600">Ship via <strong>FedEx</strong> or <strong>UPS</strong>. Prepaid labels are generated at checkout.</p>
               <div>
-                <p className="font-semibold text-black">Atlas Analytics</p>
-                <p className="text-neutral-600">1234 Research Blvd, Austin, TX 78701</p>
+                <p className="font-semibold text-black">{SHIPPING_ADDRESS.name}</p>
+                <p className="text-neutral-600">{SHIPPING_ADDRESS.line1}, {SHIPPING_ADDRESS.city}, {SHIPPING_ADDRESS.state} {SHIPPING_ADDRESS.zip}</p>
                 <button onClick={copyAddress} className="mt-2 flex items-center gap-1.5 text-brand-700 text-xs font-medium hover:text-brand-600">
                   {copiedAddr ? <><Check size={12} /> Copied!</> : <><Copy size={12} /> Copy address</>}
                 </button>
@@ -251,11 +312,11 @@ export default function Portal() {
                 <option value="fail">Fail</option>
                 <option value="pending">Pending</option>
               </select>
-            ) : tab !== 'coas' && (
+            ) : (
               <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="input-field py-2 text-sm w-auto">
                 <option value="all">All Statuses</option>
                 {tab === 'orders' && Object.entries(ORDER_STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-                {tab === 'invoices' && <><option value="complete">Paid</option><option value="received">Pending</option></>}
+                {tab === 'invoices' && <><option value="paid">Paid</option><option value="waived">Waived</option><option value="unpaid">Unpaid</option></>}
               </select>
             )}
             <button
@@ -263,7 +324,7 @@ export default function Portal() {
                 if (tab === 'coas') downloadCsv('coas.csv', ['ID', 'Sample', 'Batch', 'Purity', 'Result', 'Issued'], filteredCoas.map(c => [c.slug, c.sample_name, c.batch_number, c.purity_percent, c.overall_result, formatDate(c.issued_at)]));
                 if (tab === 'samples') downloadCsv('samples.csv', ['Sample', 'Type', 'Status', 'Vials', 'Created'], filteredSamples.map(s => [s.sample_name, s.sample_type, s.status, s.vial_count, formatDate(s.created_at)]));
                 if (tab === 'orders') downloadCsv('orders.csv', ['Order', 'Status', 'Total', 'Created'], filteredOrders.map(o => [o.order_number, o.status, o.total, formatDate(o.created_at)]));
-                if (tab === 'invoices') downloadCsv('invoices.csv', ['Invoice', 'Order', 'Amount', 'Status', 'Date'], filteredOrders.map(o => [o.order_number, o.order_number, o.total, o.status === 'complete' ? 'Paid' : 'Pending', formatDate(o.created_at)]));
+                if (tab === 'invoices') downloadCsv('invoices.csv', ['Invoice', 'Order', 'Amount', 'Status', 'Date'], filteredOrders.map(o => [o.order_number, o.order_number, o.total, PAYMENT_STATUS_LABELS[normalizePaymentStatus(o.payment_status)], formatDate(o.created_at)]));
               }}
               className="btn-outline text-sm gap-1.5 py-2"
             >
@@ -304,6 +365,7 @@ export default function Portal() {
                         <tr className="coa-table-header">
                           <th className="text-left px-5 py-3">Name</th>
                           <th className="text-left px-5 py-3">Results</th>
+                          <th className="text-left px-5 py-3">Visibility</th>
                           <th className="text-left px-5 py-3">Lot</th>
                           <th className="text-left px-5 py-3">Date</th>
                           <th className="px-5 py-3"></th>
@@ -317,6 +379,7 @@ export default function Portal() {
                               <p className="text-xs text-neutral-500 font-mono">{coa.slug.slice(0, 16)}</p>
                             </td>
                             <td className="px-5 py-3"><ResultBadge result={coa.overall_result} /></td>
+                            <td className="px-5 py-3"><CoaPublicationBadge coa={coa} /></td>
                             <td className="px-5 py-3 text-neutral-600">{coa.batch_number || '—'}</td>
                             <td className="px-5 py-3 text-neutral-600">{formatDate(coa.issued_at)}</td>
                             <td className="px-5 py-3 text-right">
@@ -459,8 +522,8 @@ export default function Portal() {
                         </div>
                       </div>
                       <div className="flex gap-1">
-                        {['received', 'processing', 'analyzing', 'in_review', 'complete'].map((step, i) => {
-                          const idx = ['received', 'processing', 'analyzing', 'in_review', 'complete'].indexOf(order.status);
+                        {ORDER_STATUS_STEPS.map((step, i) => {
+                          const idx = getStatusStep(order.status);
                           return (
                             <div key={step} className={`h-1.5 flex-1 rounded-full ${i <= idx ? 'bg-brand-500' : 'bg-neutral-200'}`} />
                           );
@@ -470,13 +533,44 @@ export default function Portal() {
 
                     {expanded && (
                       <div className="border-t border-atlas-border divide-y divide-atlas-border">
+                        {order.status === 'awaiting_sample' && !orderIsPayable(order.payment_status) && (
+                          <div className="px-5 py-3 flex items-start gap-2 text-sm bg-amber-50 border-b border-amber-100 text-amber-800">
+                            <AlertTriangle size={15} className="flex-shrink-0 mt-0.5" />
+                            <p>Payment pending — staff will confirm wire/crypto. Card checkout coming soon.</p>
+                          </div>
+                        )}
+                        {order.status === 'awaiting_sample' && orderIsPayable(order.payment_status) && (
+                          <div className="p-5 bg-neutral-50 space-y-3">
+                            <div className="flex items-start gap-3">
+                              <div className="w-9 h-9 rounded-xl bg-brand-50 flex items-center justify-center flex-shrink-0">
+                                <Package size={18} className="text-brand-600" />
+                              </div>
+                              <div>
+                                <p className="font-bold text-black text-sm">Shipping Instructions</p>
+                                <p className="text-xs text-neutral-500 mt-0.5">Include your order number on the outside of the package.</p>
+                              </div>
+                            </div>
+                            <div className="flex items-start gap-3 bg-white border border-atlas-border rounded-xl p-3">
+                              <MapPin size={16} className="text-brand-600 flex-shrink-0 mt-0.5" />
+                              <div>
+                                <p className="font-semibold text-black text-sm">{SHIPPING_ADDRESS.name}</p>
+                                <p className="text-xs text-neutral-600 mt-1">
+                                  {SHIPPING_ADDRESS.line1}<br />
+                                  {SHIPPING_ADDRESS.city}, {SHIPPING_ADDRESS.state} {SHIPPING_ADDRESS.zip}<br />
+                                  {SHIPPING_ADDRESS.country}
+                                </p>
+                                <p className="text-[11px] text-neutral-500 mt-2">Ref: {order.order_number}</p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                         {order.shipping_label_id && (
                           <div className="p-5 bg-neutral-50">
                             <p className="text-xs font-bold uppercase tracking-wider text-neutral-500 mb-3">Prepaid Shipping Label</p>
                             <PrepaidShippingLabel labelId={order.shipping_label_id} orderNumber={order.order_number} />
                           </div>
                         )}
-                        {order.payment_method === 'crypto' && (
+                        {order.payment_method === 'crypto' && orderIsPayable(order.payment_status) && (
                           <p className="px-5 py-3 text-xs text-neutral-600 bg-amber-50 border-b border-amber-100">
                             Paid via cryptocurrency · transaction confirmed at checkout
                           </p>
@@ -486,7 +580,7 @@ export default function Portal() {
                         ) : orderSamples.map(s => {
                           const coa = matchCoaForSample(s, coas);
                           const meta = s.metadata as { tests_label?: string; batch_number?: string } | null;
-                          const tests = expectedPanelNames(s, panels);
+                          const tests = portalTestsForSample(s, panels);
                           return (
                             <div key={s.id} className="px-5 py-4 flex flex-col sm:flex-row sm:items-start justify-between gap-3">
                               <div className="min-w-0">
@@ -524,6 +618,21 @@ export default function Portal() {
                             </div>
                           );
                         })}
+                        {canDiscardOrder(order) && (
+                          <div className="px-5 py-4 border-t border-atlas-border bg-neutral-50">
+                            <button
+                              type="button"
+                              onClick={() => handleDiscardOrder(order)}
+                              disabled={discardingOrderId === order.id}
+                              className="text-sm text-red-600 hover:text-red-700 font-medium disabled:opacity-50"
+                            >
+                              {discardingOrderId === order.id ? 'Discarding…' : 'Discard order'}
+                            </button>
+                            <p className="text-xs text-neutral-500 mt-1">
+                              Permanently removes this order before lab processing begins.
+                            </p>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -538,15 +647,19 @@ export default function Portal() {
                 <table className="w-full text-sm">
                   <thead><tr className="coa-table-header"><th className="text-left px-5 py-3">Invoice</th><th className="text-left px-5 py-3">Date</th><th className="text-left px-5 py-3">Amount</th><th className="text-left px-5 py-3">Status</th><th className="text-left px-5 py-3"></th></tr></thead>
                   <tbody>
-                    {filteredOrders.map((o, i) => (
-                      <tr key={o.id} className={i % 2 ? 'bg-neutral-50' : 'bg-white'}>
-                        <td className="px-5 py-3 font-medium">{o.order_number}</td>
-                        <td className="px-5 py-3">{formatDate(o.created_at)}</td>
-                        <td className="px-5 py-3 font-semibold">{formatCurrency(o.total)}</td>
-                        <td className="px-5 py-3"><span className={o.status === 'complete' ? 'text-atlas-success font-bold' : 'text-amber-600 font-bold'}>{o.status === 'complete' ? 'Paid' : 'Pending'}</span></td>
-                        <td className="px-5 py-3"><button className="text-xs text-brand-700 hover:underline">PDF</button></td>
-                      </tr>
-                    ))}
+                    {filteredOrders.map((o, i) => {
+                      const payment = normalizePaymentStatus(o.payment_status);
+                      const paid = orderIsPayable(o.payment_status);
+                      return (
+                        <tr key={o.id} className={i % 2 ? 'bg-neutral-50' : 'bg-white'}>
+                          <td className="px-5 py-3 font-medium">{o.order_number}</td>
+                          <td className="px-5 py-3">{formatDate(o.created_at)}</td>
+                          <td className="px-5 py-3 font-semibold">{formatCurrency(o.total)}</td>
+                          <td className="px-5 py-3"><span className={paid ? 'text-atlas-success font-bold' : 'text-amber-600 font-bold'}>{PAYMENT_STATUS_LABELS[payment]}</span></td>
+                          <td className="px-5 py-3"><button className="text-xs text-brand-700 hover:underline">PDF</button></td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
                 {orders.length === 0 && <p className="p-12 text-center text-neutral-500">No invoices yet</p>}
@@ -556,17 +669,22 @@ export default function Portal() {
             {/* Payments Tab */}
             {tab === 'payments' && (
               <div className="card p-6">
-                {orders.filter(o => o.status === 'complete').length === 0 ? (
+                {orders.filter(o => orderIsPayable(o.payment_status)).length === 0 ? (
                   <div className="text-center py-8">
                     <CreditCard size={32} className="mx-auto mb-3 text-neutral-300" />
                     <p className="font-medium">No payment records yet</p>
-                    <p className="text-sm text-neutral-500 mt-1">Payments appear here after order completion.</p>
+                    <p className="text-sm text-neutral-500 mt-1">Payments appear here once staff confirm your wire, crypto, or waived payment.</p>
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {orders.filter(o => o.status === 'complete').map(o => (
+                    {orders.filter(o => orderIsPayable(o.payment_status)).map(o => (
                       <div key={o.id} className="flex justify-between py-3 border-b border-atlas-border last:border-0">
-                        <div><p className="font-medium">{o.order_number}</p><p className="text-xs text-neutral-500">{formatDateTime(o.updated_at)}</p></div>
+                        <div>
+                          <p className="font-medium">{o.order_number}</p>
+                          <p className="text-xs text-neutral-500">
+                            {o.paid_at ? formatDateTime(o.paid_at) : formatDateTime(o.updated_at)} · {PAYMENT_STATUS_LABELS[normalizePaymentStatus(o.payment_status)]}
+                          </p>
+                        </div>
                         <p className="font-bold text-atlas-success">{formatCurrency(o.total)}</p>
                       </div>
                     ))}

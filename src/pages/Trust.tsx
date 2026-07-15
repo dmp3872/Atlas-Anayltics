@@ -122,7 +122,7 @@ export default function Trust() {
             <h2 className="text-2xl font-bold text-white mb-3">Ready to get verified results?</h2>
             <p className="text-slate-400 mb-6">No minimums. No contracts. First order 50% off.</p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
-              <Link to="/order" className="btn-primary gap-2">
+              <Link to="/order-new" className="btn-primary gap-2">
                 Submit Samples <ArrowRight size={16} />
               </Link>
               <Link to="/verify" className="inline-flex items-center justify-center gap-2 px-5 py-2.5 border border-neutral-700 text-slate-300 font-medium rounded-lg hover:bg-slate-800 transition-colors">

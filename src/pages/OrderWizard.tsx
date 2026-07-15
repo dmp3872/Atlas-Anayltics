@@ -2,13 +2,14 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, ArrowRight, Plus, Trash2, CheckCircle, Zap,
-  Package, Beaker, ShoppingCart, Copy, Minus, AlertCircle, X, Search,
+  Package, Beaker, ShoppingCart, Copy, Minus, AlertCircle, Search,
   ChevronDown, ChevronUp, Pencil, Check, CreditCard, Bitcoin, Truck,
 } from 'lucide-react';
 import AtlasLogo from '../components/brand/AtlasLogo';
 import OrderSummarySidebar from '../components/order/OrderSummarySidebar';
 import OrderCoaProfileSection from '../components/order/OrderCoaProfileSection';
 import PrepaidShippingLabel from '../components/order/PrepaidShippingLabel';
+import BlendComponentsEditor from '../components/order/BlendComponentsEditor';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { DEFAULT_RECENT_PRODUCTS, searchPeptides } from '../data/peptideCatalog';
@@ -18,7 +19,8 @@ import {
   MULTI_BRAND_PRICE, RUSH_PRICE_PER_SAMPLE, MAX_BRANDS_PER_SAMPLE,
   orderTotals, sampleChipLabel, sampleVialCount, bundledTestsForMode, isPackageMode,
   packageIncludesConformity, panelVialsRequired, billableBrandCount, TestMode,
-  FENTANYL_OPTION_LABEL,
+  FENTANYL_OPTION_LABEL, defaultBlendComponents, activeBlendComponents, formatBlendLabel,
+  normalizeWizardSample,
 } from '../lib/orderCatalog';
 import { clearOrderDraft, loadOrderDraft, saveOrderDraft } from '../lib/orderDraft';
 import { formatCurrency, generateOrderNumber } from '../lib/utils';
@@ -84,7 +86,7 @@ export default function OrderWizard() {
     const draft = loadOrderDraft(user.id);
     if (draft?.samples?.length) {
       setStep(draft.step);
-      setSamples(draft.samples);
+      setSamples(draft.samples.map(normalizeWizardSample));
       setNotes(draft.notes);
       setPromoCode(draft.promoCode);
       setShippingCarrier(draft.shippingCarrier);
@@ -213,6 +215,7 @@ export default function OrderWizard() {
     setSamples(prev => prev.map(s => {
       const names = s.brand_names.filter(Boolean);
       if (names.some(n => n.toLowerCase() === primary.toLowerCase())) return s;
+      // Keep the included COA profile brand in metadata; billing/UI filters it from additional brands.
       return { ...s, brand_names: [primary, ...names].slice(0, MAX_BRANDS_PER_SAMPLE) };
     }));
   }
@@ -261,9 +264,16 @@ export default function OrderWizard() {
   }
 
   async function submitOrder() {
+    if (!user) return;
     setError('');
     if (!selectedCompanyId || !companies.some(c => c.id === selectedCompanyId)) {
       setValidationError('Select a COA profile before submitting.');
+      return;
+    }
+    const step1Error = validateStep1(samples);
+    if (step1Error) {
+      setValidationError(step1Error);
+      setStep(1);
       return;
     }
     if (!paymentAuthorized) {
@@ -285,10 +295,14 @@ export default function OrderWizard() {
         samples_detail: samples.map(s => sampleMetadataPayload(s, companyName)),
       };
 
+      const anyRush = samples.some(s => s.rush);
       const orderPayload: Record<string, unknown> = {
         user_id: user.id,
         order_number: orderNumber,
-        rush_processing: samples.some(s => s.rush),
+        status: 'awaiting_sample',
+        payment_status: 'unpaid',
+        rush_processing: anyRush,
+        lab_priority: anyRush ? 'high' : 'normal',
         notes: notes ? `${notes}\n\n---\n${JSON.stringify(orderMeta)}` : JSON.stringify(orderMeta),
         subtotal,
         discount_amount: promoDiscount,
@@ -316,14 +330,14 @@ export default function OrderWizard() {
         sample_type: s.sample_type,
         vial_count: sampleVialCount(s),
         panel_ids: [],
+        status: 'awaiting_sample',
         metadata: sampleMetadataPayload(s, companyName),
       }));
 
-      let { error: samplesError } = await supabase.from('order_samples').insert(sampleRows);
-      if (samplesError?.message?.includes('metadata')) {
-        const fallback = sampleRows.map(({ metadata: _m, ...row }) => row);
-        ({ error: samplesError } = await supabase.from('order_samples').insert(fallback));
-      }
+      // Metadata carries test_mode/tests_label — every sample MUST persist it.
+      // Never retry without metadata; a sample with no tests on record must
+      // fail loudly instead of silently landing in the queue untested.
+      const { error: samplesError } = await supabase.from('order_samples').insert(sampleRows);
       if (samplesError) throw samplesError;
 
       await notifyOrderUpdate(user.id, orderNumber, 'received');
@@ -350,9 +364,6 @@ export default function OrderWizard() {
             <p className="text-[11px] text-neutral-500">Client Portal</p>
           </div>
           <div className="flex items-center gap-2 sm:gap-4 ml-auto">
-            <button onClick={discardDraft} className="text-sm text-red-400 hover:text-red-300 flex items-center gap-1">
-              <X size={14} /> <span className="hidden sm:inline">Discard</span>
-            </button>
             <Link to="/dashboard" className="text-sm text-neutral-400 hover:text-white flex items-center gap-1">
               <ArrowLeft size={14} /> <span className="hidden sm:inline">Dashboard</span>
             </Link>
@@ -536,20 +547,46 @@ export default function OrderWizard() {
                               <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
                                 <div className="flex items-start justify-between gap-3">
                                   <div className="flex-1">
-                                    <p className="text-sm font-semibold text-amber-900">Peptide Identification *</p>
-                                    <p className="text-xs text-amber-800 mt-1">Enter the actual peptide name (e.g. &quot;Thymosin Beta-4 Acetate&quot;), not the marketing name.</p>
-                                    <input
-                                      value={sample.peptide_identification}
-                                      onChange={e => updateSample(sample.id, { peptide_identification: e.target.value })}
-                                      placeholder="e.g. Thymosin Beta-4 Acetate"
-                                      className="input-field mt-2 bg-white"
-                                    />
+                                    {sample.sample_type === 'blend' ? (
+                                      <>
+                                        <p className="text-sm font-semibold text-amber-900">Blend product</p>
+                                        <p className="text-xs text-amber-800 mt-1">
+                                          Use the product name above (e.g. &quot;Glow Blend&quot;), then list each compound and mg amount below.
+                                        </p>
+                                        <BlendComponentsEditor
+                                          components={sample.blend_components.length ? sample.blend_components : defaultBlendComponents()}
+                                          onChange={components => updateSample(sample.id, {
+                                            blend_components: components,
+                                            blend_compounds: activeBlendComponents(components).length,
+                                          })}
+                                        />
+                                      </>
+                                    ) : (
+                                      <>
+                                        <p className="text-sm font-semibold text-amber-900">Peptide Identification *</p>
+                                        <p className="text-xs text-amber-800 mt-1">Enter the actual peptide name (e.g. &quot;Thymosin Beta-4 Acetate&quot;), not the marketing name.</p>
+                                        <input
+                                          value={sample.peptide_identification}
+                                          onChange={e => updateSample(sample.id, { peptide_identification: e.target.value })}
+                                          placeholder="e.g. Thymosin Beta-4 Acetate"
+                                          className="input-field mt-2 bg-white"
+                                        />
+                                      </>
+                                    )}
                                   </div>
                                   <label className="flex items-center gap-1.5 text-sm whitespace-nowrap mt-1 cursor-pointer">
                                     <input
                                       type="checkbox"
                                       checked={sample.sample_type === 'blend'}
-                                      onChange={e => updateSample(sample.id, { sample_type: e.target.checked ? 'blend' : 'single' })}
+                                      onChange={e => {
+                                        const blend = e.target.checked;
+                                        updateSample(sample.id, {
+                                          sample_type: blend ? 'blend' : 'single',
+                                          blend_components: blend
+                                            ? (sample.blend_components.length ? sample.blend_components : defaultBlendComponents())
+                                            : sample.blend_components,
+                                        });
+                                      }}
                                       className="rounded"
                                     />
                                     Blend
@@ -916,7 +953,11 @@ export default function OrderWizard() {
                       </p>
                     )}
                     <div className="flex items-center gap-2 mt-3 text-sm">
-                      {editingPeptideId === s.id ? (
+                      {s.sample_type === 'blend' ? (
+                        <span className="text-neutral-600">
+                          Blend: <strong>{formatBlendLabel(s.blend_components) || s.sample_name}</strong>
+                        </span>
+                      ) : editingPeptideId === s.id ? (
                         <>
                           <input
                             value={s.peptide_identification}
@@ -1003,6 +1044,10 @@ export default function OrderWizard() {
                       </label>
                     </>
                   )}
+                  <div className="mt-4 pt-4 border-t border-neutral-200 space-y-1 text-xs text-neutral-600">
+                    <p>Pay by wire or crypto — lab staff will mark your order paid before testing begins.</p>
+                    <p className="text-neutral-400">Card checkout (Stripe) coming soon.</p>
+                  </div>
                 </div>
 
                 {generatePrepaidLabel && (
@@ -1023,15 +1068,24 @@ export default function OrderWizard() {
 
       {/* Sticky footer nav — matches ILS */}
       <div className="fixed bottom-0 inset-x-0 bg-white border-t border-atlas-border z-30">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-          <button
-            type="button"
-            onClick={() => { setValidationError(''); setStep(s => s - 1); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-            disabled={step === 1}
-            className="btn-ghost gap-1 disabled:opacity-30"
-          >
-            <ArrowLeft size={16} /> Back
-          </button>
+        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => { setValidationError(''); setStep(s => s - 1); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+              disabled={step === 1}
+              className="btn-ghost gap-1 disabled:opacity-30"
+            >
+              <ArrowLeft size={16} /> Back
+            </button>
+            <button
+              type="button"
+              onClick={discardDraft}
+              className="text-sm text-red-600 hover:text-red-700 font-medium flex items-center gap-1.5"
+            >
+              <Trash2 size={15} /> Discard order
+            </button>
+          </div>
           {step < 3 ? (
             <button type="button" onClick={goNext} className="btn-primary gap-1 px-8">
               Continue <ArrowRight size={16} />

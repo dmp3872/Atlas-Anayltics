@@ -122,7 +122,7 @@ export default function Dashboard() {
                   <p className="text-sm text-slate-600">First-order discount applied automatically at checkout.</p>
                 </div>
               </div>
-              <Link to="/order" className="btn-primary text-sm gap-1.5">
+              <Link to="/order-new" className="btn-primary text-sm gap-1.5">
                 Order Now <ArrowRight size={14} />
               </Link>
             </div>
@@ -182,7 +182,7 @@ export default function Dashboard() {
               <div className="text-center py-10">
                 <ShoppingCart size={28} className="mx-auto mb-3 text-slate-300" />
                 <p className="text-sm text-slate-500 mb-3">No orders yet</p>
-                <Link to="/order" className="btn-primary text-sm">Submit Your First Samples</Link>
+                <Link to="/order-new" className="btn-primary text-sm">Submit Your First Samples</Link>
               </div>
             ) : (
               <div className="space-y-3">

@@ -9,16 +9,24 @@ export const COA_WORKFLOW_LABELS: Record<CoaWorkflowStage, string> = {
   published: 'Published',
 };
 
-/** Kanban column order — all new COAs start in `issued`. */
+/**
+ * Kanban column order. New COAs still start in `issued` — `awaiting_info` is
+ * leftmost because chemists drag a card back to it whenever a client-info gap
+ * (contact, company, intake details) is discovered after the COA was issued.
+ */
 export const COA_WORKFLOW_BOARD_COLUMNS: CoaWorkflowStage[] = [
-  'issued',
   'awaiting_info',
+  'issued',
   'verified',
   'published',
 ];
 
-/** Linear progression hint shown above the board. */
-export const COA_WORKFLOW_STEPS: CoaWorkflowStage[] = [...COA_WORKFLOW_BOARD_COLUMNS];
+/**
+ * Linear progression hint shown above the board — the forward path a COA
+ * actually travels (`awaiting_info` is a backtrack lane, not a forward step,
+ * so it's intentionally excluded here even though it's the leftmost column).
+ */
+export const COA_WORKFLOW_STEPS: CoaWorkflowStage[] = ['issued', 'verified', 'published'];
 
 export function coaWorkflowStage(coa: Pick<COA, 'coa_workflow_stage' | 'is_public'>): CoaWorkflowStage {
   if (

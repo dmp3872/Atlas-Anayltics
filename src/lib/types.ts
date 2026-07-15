@@ -1,5 +1,7 @@
 export type UserRole = 'client' | 'admin' | 'reviewer' | 'chemist' | 'verifier';
 
+export type LabPriority = 'normal' | 'high' | 'urgent';
+
 export type SubmissionStatus =
   | 'draft'
   | 'submitted'
@@ -12,8 +14,24 @@ export type SubmissionStatus =
 
 export type SubmissionUrgency = 'standard' | 'rush';
 
-export type OrderStatus = 'received' | 'processing' | 'analyzing' | 'in_review' | 'complete' | 'cancelled';
-export type SampleStatus = 'received' | 'analyzing' | 'in_review' | 'complete';
+export type PaymentStatus = 'unpaid' | 'paid' | 'waived' | 'refunded';
+
+export type OrderStatus =
+  | 'received'
+  | 'awaiting_sample'
+  | 'processing'
+  | 'analyzing'
+  | 'in_review'
+  | 'complete'
+  | 'cancelled';
+
+export type SampleStatus =
+  | 'awaiting_sample'
+  | 'received'
+  | 'analyzing'
+  | 'in_review'
+  | 'complete';
+
 export type COAResult = 'pass' | 'fail' | 'pending';
 export type SampleType = 'single' | 'blend';
 
@@ -35,6 +53,7 @@ export interface Order {
   order_number: string;
   status: OrderStatus;
   rush_processing: boolean;
+  lab_priority?: LabPriority;
   notes: string;
   subtotal: number;
   discount_amount: number;
@@ -44,6 +63,11 @@ export interface Order {
   prepaid_shipping: boolean;
   shipping_label_id?: string;
   payment_method?: 'card' | 'crypto';
+  payment_status?: PaymentStatus;
+  paid_at?: string | null;
+  paid_by?: string | null;
+  payment_note?: string;
+  due_at?: string | null;
   company_name: string;
   created_at: string;
   updated_at: string;
@@ -62,6 +86,10 @@ export interface OrderSample {
   status: SampleStatus;
   metadata?: Record<string, unknown> | null;
   analysis_results?: Record<string, unknown>[] | null;
+  assigned_to?: string | null;
+  assigned_at?: string | null;
+  lab_priority?: LabPriority | null;
+  accession_number?: string | null;
   created_at: string;
 }
 
@@ -94,10 +122,23 @@ export interface COA {
   /** Snapshotted HPLC watermark from the client's COA profile (`chromatograph_background`). */
   chromatogram_image?: string;
   seal_serial?: string;
+  accession_number?: string;
   coa_workflow_stage?: CoaWorkflowStage;
   verified_at?: string | null;
+  verified_by?: string | null;
   published_at?: string | null;
   issued_at: string;
+  created_at: string;
+}
+
+export interface OrderStatusHistoryEntry {
+  id: string;
+  order_id: string;
+  sample_id?: string | null;
+  from_status: string | null;
+  to_status: string;
+  changed_by?: string | null;
+  note?: string;
   created_at: string;
 }
 

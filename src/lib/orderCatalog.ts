@@ -84,6 +84,27 @@ export const CONFORMITY_PRICE = 50;
 export const MULTI_BRAND_PRICE = 100;
 export const RUSH_PRICE_PER_SAMPLE = 75;
 export const MAX_BRANDS_PER_SAMPLE = 5;
+export const MAX_BLEND_COMPONENTS = 8;
+export const MIN_BLEND_COMPONENTS = 2;
+
+export interface BlendComponent {
+  name: string;
+  amount_mg: string;
+}
+
+export function defaultBlendComponents(count = MIN_BLEND_COMPONENTS): BlendComponent[] {
+  return Array.from({ length: count }, () => ({ name: '', amount_mg: '' }));
+}
+
+export function activeBlendComponents(components: BlendComponent[]): BlendComponent[] {
+  return components.filter(c => c.name.trim() || c.amount_mg.trim());
+}
+
+export function formatBlendLabel(components: BlendComponent[]): string {
+  return activeBlendComponents(components)
+    .map(c => `${c.name.trim()} ${c.amount_mg.trim().replace(/\s*mg\s*$/i, '')}mg`.replace(/\s+/g, ' '))
+    .join(' · ');
+}
 
 export interface WizardSample {
   id: string;
@@ -98,6 +119,7 @@ export interface WizardSample {
   peptide_identification: string;
   sample_type: SampleType;
   blend_compounds: number;
+  blend_components: BlendComponent[];
   test_mode: TestMode;
   individual_tests: string[];
   conformity_extra: number;
@@ -138,6 +160,7 @@ export function createEmptySample(partial?: Partial<WizardSample>): WizardSample
     peptide_identification: '',
     sample_type: 'single',
     blend_compounds: 2,
+    blend_components: [],
     test_mode: 'atlas_pro',
     individual_tests: [...ATLAS_PRO_BUNDLED_TEST_IDS],
     conformity_extra: 0,
@@ -147,6 +170,19 @@ export function createEmptySample(partial?: Partial<WizardSample>): WizardSample
     include_fentanyl: true,
     ...partial,
   };
+}
+
+export function normalizeWizardSample(sample: Partial<WizardSample> & Pick<WizardSample, 'id'>): WizardSample {
+  const base = createEmptySample({ id: sample.id });
+  const merged = { ...base, ...sample };
+  if (!Array.isArray(merged.blend_components)) {
+    merged.blend_components = [];
+  }
+  if (merged.sample_type === 'blend' && merged.blend_components.length === 0) {
+    merged.blend_components = defaultBlendComponents(merged.blend_compounds || MIN_BLEND_COMPONENTS);
+  }
+  merged.blend_compounds = activeBlendComponents(merged.blend_components).length || merged.blend_compounds;
+  return merged;
 }
 
 export function sampleIncludesFentanyl(sample: WizardSample): boolean {
@@ -221,7 +257,20 @@ export function validateStep1(samples: WizardSample[]): string | null {
     if (!s.sample_name.trim()) return `Sample ${i + 1}: enter a product name.`;
     if (!s.batch_number.trim()) return `Sample ${i + 1}: batch / lot number is required.`;
     if (!s.labeled_content.trim()) return `Sample ${i + 1}: labeled content is required.`;
-    if (s.is_peptide && !s.peptide_identification.trim()) return `Sample ${i + 1}: peptide identification is required.`;
+    if (s.is_peptide && s.sample_type !== 'blend' && !s.peptide_identification.trim()) {
+      return `Sample ${i + 1}: peptide identification is required.`;
+    }
+    if (s.sample_type === 'blend') {
+      const components = activeBlendComponents(s.blend_components);
+      if (components.length < MIN_BLEND_COMPONENTS) {
+        return `Sample ${i + 1}: add at least ${MIN_BLEND_COMPONENTS} blend components with names and mg amounts.`;
+      }
+      for (let j = 0; j < components.length; j++) {
+        const c = components[j];
+        if (!c.name.trim()) return `Sample ${i + 1}, component ${j + 1}: enter a compound name.`;
+        if (!c.amount_mg.trim()) return `Sample ${i + 1}, component ${j + 1}: enter the mg amount.`;
+      }
+    }
     if (s.test_mode === 'individual' && s.individual_tests.length === 0) {
       return `Sample ${i + 1}: select at least one individual test.`;
     }
@@ -249,6 +298,10 @@ export function sampleMetadataPayload(sample: WizardSample, primaryBrand = '') {
     sample_matrix: sample.sample_matrix,
     is_peptide: sample.is_peptide,
     peptide_identification: sample.peptide_identification,
+    sample_type: sample.sample_type,
+    blend_compounds: activeBlendComponents(sample.blend_components).length,
+    blend_components: activeBlendComponents(sample.blend_components),
+    blend_label: sample.sample_type === 'blend' ? formatBlendLabel(sample.blend_components) : undefined,
     test_mode: sample.test_mode,
     individual_tests: sample.individual_tests,
     conformity_extra: sample.conformity_extra,

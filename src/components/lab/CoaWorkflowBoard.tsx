@@ -1,15 +1,17 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  ArrowRight, CheckCircle, ExternalLink, FlaskConical, Globe, GripVertical,
-  MessageCircle, Shield,
+  ArrowLeft, ArrowRight, Building2, CheckCircle, Clock, ExternalLink, Fingerprint,
+  FlaskConical, Globe, GripVertical, Hash, MessageCircle, Phone, Shield, UserCircle2,
+  XCircle,
 } from 'lucide-react';
-import { COA } from '../../lib/types';
+import { COA, Order, OrderSample, UserProfile } from '../../lib/types';
 import { formatDate } from '../../lib/utils';
 import {
   COA_WORKFLOW_BOARD_COLUMNS, COA_WORKFLOW_LABELS, COA_WORKFLOW_STEPS,
   CoaWorkflowStage, canPrepareCoa, coaWorkflowStage,
 } from '../../lib/coaWorkflow';
+import { LAB_PRIORITY_LABELS, LAB_PRIORITY_STYLES, QueueSampleItem, testsLabelForSample } from '../../lib/labQueue';
 import CoaPdfPrepModal from './CoaPdfPrepModal';
 
 interface Props {
@@ -17,6 +19,29 @@ interface Props {
   onMoveCoa: (coa: COA, targetStage: CoaWorkflowStage) => void | Promise<void>;
   movingId?: string | null;
   onCoaImagesSaved?: (coa: COA) => void;
+  /** Samples still awaiting a COA (from buildQueueItems(..., true)) — rendered as a lane above the kanban. */
+  pendingSamples?: QueueSampleItem[];
+  onIssueCoa?: (sample: OrderSample) => void;
+  chemists?: { id: string; name: string }[];
+  /** Client profiles, orders, and samples — used to enrich each card with contact/order/test details. */
+  clients?: UserProfile[];
+  orders?: Order[];
+  samples?: OrderSample[];
+}
+
+function ResultBadge({ result }: { result?: COA['overall_result'] }) {
+  if (result === 'pass') return <span className="badge-pass"><CheckCircle size={10} /> Pass</span>;
+  if (result === 'fail') return <span className="badge-fail"><XCircle size={10} /> Fail</span>;
+  if (result === 'pending') return <span className="badge-pending"><Clock size={10} /> Pending</span>;
+  return null;
+}
+
+/** Prefer dedicated accession_number, then seal_serial, then signature. */
+function accessionForCoa(coa: COA): { label: string; value: string } | null {
+  if (coa.accession_number?.trim()) return { label: 'Accession', value: coa.accession_number.trim() };
+  if (coa.seal_serial?.trim()) return { label: 'Seal', value: coa.seal_serial.trim() };
+  if (coa.signature?.trim()) return { label: 'Accession', value: coa.signature.trim() };
+  return null;
 }
 
 const COLUMN_STYLES: Record<CoaWorkflowStage, { header: string; body: string; ring: string }> = {
@@ -68,11 +93,33 @@ function groupCoasByStage(coas: COA[]): Record<CoaWorkflowStage, COA[]> {
   return groups;
 }
 
-export default function CoaWorkflowBoard({ coas, onMoveCoa, movingId, onCoaImagesSaved }: Props) {
+export default function CoaWorkflowBoard({
+  coas, onMoveCoa, movingId, onCoaImagesSaved, pendingSamples = [], onIssueCoa, chemists = [],
+  clients = [], orders = [], samples = [],
+}: Props) {
   const grouped = groupCoasByStage(coas);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [overStage, setOverStage] = useState<CoaWorkflowStage | null>(null);
   const [prepCoa, setPrepCoa] = useState<COA | null>(null);
+
+  function chemistLabel(userId: string | null | undefined): string {
+    if (!userId) return 'Unassigned';
+    return chemists.find(c => c.id === userId)?.name || 'Assigned';
+  }
+
+  function clientForCoa(coa: COA): UserProfile | undefined {
+    return clients.find(c => c.id === coa.user_id);
+  }
+
+  function orderForCoa(coa: COA): Order | undefined {
+    return coa.order_id ? orders.find(o => o.id === coa.order_id) : undefined;
+  }
+
+  function testsLabelForCoa(coa: COA): string | null {
+    if (!coa.sample_id) return null;
+    const sample = samples.find(s => s.id === coa.sample_id);
+    return sample ? testsLabelForSample(sample) : null;
+  }
 
   function handleDragStart(e: React.DragEvent, coaId: string) {
     e.dataTransfer.setData('text/coa-id', coaId);
@@ -116,15 +163,72 @@ export default function CoaWorkflowBoard({ coas, onMoveCoa, movingId, onCoaImage
       </div>
 
       <p className="text-xs text-neutral-500">
-        Drag cards between columns to update workflow stage. <strong>Prepare</strong> (vial photo + panel stats) is only available in Issued and Awaiting Client Info. After verify/publish, open the certificate to download PNG.
+        New COAs start in <strong className="text-black">Issued</strong>, then move through{' '}
+        <strong className="text-black">Verified</strong> to <strong className="text-black">Published</strong>.{' '}
+        <strong className="text-amber-700">Awaiting Client Info</strong> is for missing intake/contact details.
+        <strong className="text-black"> Prepare</strong> (vial + panel stats) is only in Issued / Awaiting Client Info —
+        after verify/publish, open the certificate to download PNG.
       </p>
 
       {prepCoa && (
         <CoaPdfPrepModal
           coa={prepCoa}
           onClose={() => setPrepCoa(null)}
-          onSaved={onCoaImagesSaved}
+          onSaved={updated => {
+            onCoaImagesSaved?.(updated);
+            setPrepCoa(null);
+          }}
         />
+      )}
+
+      {pendingSamples.length > 0 && (
+        <div className="rounded-xl border border-dashed border-amber-300 bg-amber-50/40 overflow-hidden">
+          <div className="px-4 py-3 border-b border-amber-200 bg-amber-50 flex items-center justify-between">
+            <h3 className="font-bold text-sm flex items-center gap-2 text-amber-900">
+              <Clock size={14} /> Awaiting COA
+            </h3>
+            <span className="text-xs font-semibold text-amber-800 bg-white/70 px-2 py-0.5 rounded-full">
+              {pendingSamples.length}
+            </span>
+          </div>
+          <p className="px-4 pt-2 text-xs text-amber-800">
+            Assigned or claimed samples with no COA issued yet — issue their certificate to move them onto the board.
+          </p>
+          <div className="p-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            {pendingSamples.map(item => {
+              const { sample, order, priority, assigned_to: assignedTo } = item;
+              const styles = LAB_PRIORITY_STYLES[priority];
+              return (
+                <article key={sample.id} className={`rounded-lg border bg-white p-3 shadow-sm ${styles.border}`}>
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <span className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${styles.badge}`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${styles.dot}`} />
+                      {LAB_PRIORITY_LABELS[priority]}
+                    </span>
+                  </div>
+                  <p className="font-medium text-sm text-black leading-snug truncate">
+                    {sample.display_name || sample.sample_name}
+                  </p>
+                  <p className="text-xs text-neutral-500 mt-0.5 truncate">
+                    {order.company_name || '—'} · {order.order_number}
+                  </p>
+                  <p className="text-xs text-neutral-400 mt-1 flex items-center gap-1">
+                    <UserCircle2 size={11} /> {chemistLabel(assignedTo)}
+                  </p>
+                  {onIssueCoa && (
+                    <button
+                      type="button"
+                      onClick={() => onIssueCoa(sample)}
+                      className="btn-primary text-xs py-1.5 gap-1 justify-center w-full mt-2"
+                    >
+                      Issue COA <ArrowRight size={11} />
+                    </button>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+        </div>
       )}
 
       <div className="flex gap-4 overflow-x-auto pb-2 min-h-[520px]">
@@ -165,6 +269,12 @@ export default function CoaWorkflowBoard({ coas, onMoveCoa, movingId, onCoaImage
                     const currentStage = coaWorkflowStage(coa);
                     const isDragging = draggingId === coa.id;
                     const isMoving = movingId === coa.id;
+                    const client = clientForCoa(coa);
+                    const order = orderForCoa(coa);
+                    const companyName = order?.company_name || coa.company_name;
+                    const accession = accessionForCoa(coa);
+                    const testsLabel = testsLabelForCoa(coa);
+                    const isAwaitingInfo = currentStage === 'awaiting_info';
 
                     return (
                       <article
@@ -178,13 +288,64 @@ export default function CoaWorkflowBoard({ coas, onMoveCoa, movingId, onCoaImage
                       >
                         <div className="flex items-start gap-2">
                           <GripVertical size={14} className="text-neutral-300 flex-shrink-0 mt-0.5" />
-                          <div className="min-w-0 flex-1">
-                            <p className="font-medium text-sm text-black leading-snug">
-                              {coa.display_name || coa.sample_name}
-                            </p>
-                            <p className="text-xs text-neutral-500 mt-1 truncate">
-                              {coa.company_name || '—'} · {formatDate(coa.issued_at)}
-                            </p>
+                          <div className="min-w-0 flex-1 space-y-1.5">
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="font-medium text-sm text-black leading-snug truncate">
+                                {coa.display_name || coa.sample_name}
+                              </p>
+                              <ResultBadge result={coa.overall_result} />
+                            </div>
+
+                            {isAwaitingInfo && (
+                              <div className="rounded-md border border-amber-300 bg-amber-100/80 px-2 py-1.5 space-y-0.5">
+                                <p className="text-xs font-bold text-amber-900 flex items-center gap-1 truncate">
+                                  <Building2 size={11} className="flex-shrink-0" /> {companyName || 'Unknown company'}
+                                </p>
+                                <p className="text-xs text-amber-800 flex items-center gap-1 truncate">
+                                  <UserCircle2 size={11} className="flex-shrink-0" />
+                                  {client?.full_name || 'Unknown contact'}
+                                </p>
+                                {client?.phone && (
+                                  <p className="text-xs text-amber-800 flex items-center gap-1 truncate">
+                                    <Phone size={11} className="flex-shrink-0" /> {client.phone}
+                                  </p>
+                                )}
+                              </div>
+                            )}
+
+                            {!isAwaitingInfo && (
+                              <>
+                                <p className="text-xs text-neutral-500 truncate flex items-center gap-1">
+                                  <Building2 size={11} className="text-neutral-400 flex-shrink-0" /> {companyName || '—'}
+                                </p>
+                                <p className="text-xs text-neutral-500 truncate flex items-center gap-1">
+                                  <UserCircle2 size={11} className="text-neutral-400 flex-shrink-0" />
+                                  {client?.full_name || 'Unknown contact'}
+                                  {client?.phone && <span className="text-neutral-400"> · {client.phone}</span>}
+                                </p>
+                              </>
+                            )}
+
+                            <div className="flex flex-wrap gap-x-2.5 gap-y-0.5 text-[11px] text-neutral-500">
+                              {order && (
+                                <span className="flex items-center gap-1">
+                                  <Hash size={10} className="text-neutral-400" /> {order.order_number}
+                                </span>
+                              )}
+                              {coa.batch_number && <span>Batch {coa.batch_number}</span>}
+                              {accession && (
+                                <span className="flex items-center gap-1 font-mono" title={accession.label}>
+                                  <Fingerprint size={10} className="text-neutral-400" />
+                                  {accession.label} {accession.value}
+                                </span>
+                              )}
+                            </div>
+
+                            {testsLabel && (
+                              <p className="text-[11px] text-neutral-400 truncate">Tests: {testsLabel}</p>
+                            )}
+
+                            <p className="text-[11px] text-neutral-400">{formatDate(coa.issued_at)}</p>
                           </div>
                         </div>
 
@@ -206,7 +367,7 @@ export default function CoaWorkflowBoard({ coas, onMoveCoa, movingId, onCoaImage
                             className="btn-outline text-xs py-1 px-2 gap-1"
                             onClick={e => e.stopPropagation()}
                           >
-                            <ExternalLink size={11} /> Web view
+                            <ExternalLink size={11} /> Open & download PNG
                           </Link>
 
                           {currentStage === 'issued' && (
@@ -220,10 +381,15 @@ export default function CoaWorkflowBoard({ coas, onMoveCoa, movingId, onCoaImage
                             </button>
                           )}
 
-                          {currentStage === 'awaiting_info' && (
-                            <span className="text-xs text-amber-700 font-medium flex items-center gap-1">
-                              <MessageCircle size={11} /> Waiting on client
-                            </span>
+                          {isAwaitingInfo && (
+                            <button
+                              type="button"
+                              onClick={() => void onMoveCoa(coa, 'issued')}
+                              disabled={!!movingId}
+                              className="btn-secondary text-xs py-1 px-2 gap-1"
+                            >
+                              <ArrowLeft size={11} /> Back to Issued
+                            </button>
                           )}
 
                           {currentStage === 'verified' && (
