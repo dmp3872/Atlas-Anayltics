@@ -93,7 +93,13 @@ export interface OrderSample {
   created_at: string;
 }
 
-export type CoaWorkflowStage = 'issued' | 'awaiting_info' | 'verified' | 'published';
+export type CoaWorkflowStage =
+  | 'awaiting_info'
+  | 'testing_in_progress'
+  | 'issued'
+  | 'pending_review'
+  | 'verified'
+  | 'published';
 
 export interface COA {
   id: string;
@@ -126,6 +132,8 @@ export interface COA {
   coa_workflow_stage?: CoaWorkflowStage;
   verified_at?: string | null;
   verified_by?: string | null;
+  /** Lab director / chemist assigned for second signature while in pending_review. */
+  review_assigned_to?: string | null;
   published_at?: string | null;
   issued_at: string;
   created_at: string;

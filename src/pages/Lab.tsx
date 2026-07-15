@@ -13,7 +13,6 @@ import { fetchUserCompanies } from '../lib/coaProfile';
 import {
   EMPTY_LAB_RESULTS, LabCoaResults, VIAL_SIZE_OPTIONS, VialSizeOption,
   HEAVY_METAL_NAMES, buildLabResultsFromSample, labResultsToPanelResults,
-  joinConformityMg, joinConformityPurity,
   parsePurityPercent, parseMolecularWeight, lookupCas, casForSampleName,
   ENDOTOXIN_SPEC_EU_ML, STERILITY_METHOD_LABELS,
 } from '../lib/labCoaForm';
@@ -22,7 +21,7 @@ import CoaWorkflowBoard from '../components/lab/CoaWorkflowBoard';
 import CompanyFilterSearch from '../components/lab/CompanyFilterSearch';
 import TestingQueuePanel from '../components/lab/TestingQueuePanel';
 import QueueFilters, { QueueFilterValues } from '../components/lab/QueueFilters';
-import { buildQueueItems, filterQueueItems, normalizeLabPriority, sampleHasTestsSpecified } from '../lib/labQueue';
+import { buildQueueItems, filterQueueItems, normalizeLabPriority } from '../lib/labQueue';
 import { setSampleStatus } from '../lib/services/orderWorkflow';
 import LabSampleIntake from '../components/lab/LabSampleIntake';
 import ReceivingDesk from '../components/lab/ReceivingDesk';
@@ -48,7 +47,6 @@ const BLANK = {
   sampleName: '', displayName: '', companyName: '',
   batchNumber: '', casNumber: '', vialSize: '3ml' as VialSizeOption,
   overallResult: 'pass' as COA['overall_result'],
-  accessionNumber: '', sealSerial: '',
 };
 
 
@@ -232,6 +230,17 @@ export default function Lab() {
     [chemists],
   );
 
+  const reviewerOptions = useMemo(
+    () => allProfiles
+      .filter(u => u.role === 'chemist' || u.role === 'admin' || u.role === 'reviewer')
+      .map(u => ({
+        id: u.id,
+        name: u.full_name || clientSubmittedLabel(u, u.company_name),
+        role: u.role === 'admin' ? 'lab director' : u.role || undefined,
+      })),
+    [allProfiles],
+  );
+
   function clientLabel(id: string) {
     const c = clients.find(x => x.id === id);
     if (!c) return id.slice(0, 8);
@@ -243,13 +252,6 @@ export default function Lab() {
   }
 
   function prefillFromSample(s: OrderSample) {
-    if (!sampleHasTestsSpecified(s)) {
-      setMsg({
-        type: 'error',
-        text: `${s.display_name || s.sample_name} has no tests specified. Fix the sample's tests before issuing a COA.`,
-      });
-      return;
-    }
     const meta = parseSampleMetadata(s.metadata);
     const client = clients.find(c => c.id === s.user_id);
     const order = orders.find(o => o.id === s.order_id);
@@ -317,8 +319,6 @@ export default function Lab() {
   const linkedOrder = form.orderId ? orders.find(o => o.id === form.orderId) : null;
   const linkedClient = form.clientId ? clients.find(c => c.id === form.clientId) : undefined;
 
-  const conformityMgPreview = useMemo(() => joinConformityMg(labResults.conformityPeptides), [labResults.conformityPeptides]);
-  const conformityPurityPreview = useMemo(() => joinConformityPurity(labResults.conformityPeptides), [labResults.conformityPeptides]);
 
   async function insertCoa(payload: Record<string, unknown>) {
     const selectCols = 'slug, display_name, sample_name, user_id';
@@ -331,10 +331,14 @@ export default function Lab() {
       .single();
   }
 
-  async function issueCoaForBrand(base: Record<string, unknown>, brandName: string) {
+  async function issueCoaForBrand(
+    base: Record<string, unknown>,
+    brandName: string,
+    _clientId?: string,
+    _sampleName?: string,
+  ) {
     const brandPayload = { ...base, company_name: brandName, sample_id: null };
-    const { error } = await insertCoa(brandPayload);
-    return error;
+    await insertCoa(brandPayload);
   }
 
   async function updateSampleStatus(sampleId: string, status: SampleStatus) {
@@ -392,13 +396,22 @@ export default function Lab() {
     }
   }
 
-  async function moveCoaToStage(coa: COA, targetStage: CoaWorkflowStage) {
-    if (coaWorkflowStage(coa) === targetStage) return;
+  async function moveCoaToStage(
+    coa: COA,
+    targetStage: CoaWorkflowStage,
+    opts?: { reviewAssignedTo?: string | null },
+  ) {
+    if (coaWorkflowStage(coa) === targetStage && targetStage !== 'pending_review') return;
 
     setMovingCoaId(coa.id);
     setMsg(null);
 
-    const patch = buildWorkflowStagePatch(coa, targetStage);
+    const patch = buildWorkflowStagePatch(coa, targetStage, {
+      reviewAssignedTo: opts?.reviewAssignedTo,
+    });
+    if (targetStage === 'pending_review' && opts?.reviewAssignedTo) {
+      patch.review_assigned_to = opts.reviewAssignedTo;
+    }
     if (targetStage === 'verified' && user?.id) {
       patch.verified_by = user.id;
     }
@@ -450,17 +463,6 @@ export default function Lab() {
     e.preventDefault();
     if (!form.clientId) { setMsg({ type: 'error', text: 'Select the client this COA belongs to.' }); return; }
     if (!form.sampleName.trim()) { setMsg({ type: 'error', text: 'Enter a sample name.' }); return; }
-    if (form.sampleId && coas.some(c => c.sample_id === form.sampleId)) {
-      setMsg({ type: 'error', text: 'A COA has already been issued for this sample. Manage it from COA Workflow instead of issuing a duplicate.' });
-      return;
-    }
-    if (form.sampleId) {
-      const linked = samples.find(s => s.id === form.sampleId);
-      if (linked && !sampleHasTestsSpecified(linked)) {
-        setMsg({ type: 'error', text: 'This sample has no tests specified. Fix the sample before issuing a COA.' });
-        return;
-      }
-    }
 
     setSaving(true);
     setMsg(null);
@@ -522,8 +524,6 @@ export default function Lab() {
         coa_profile_id: profile?.id ?? null,
       },
       overall_result: form.overallResult,
-      accession_number: form.accessionNumber.trim(),
-      seal_serial: form.sealSerial.trim(),
       is_public: false,
       coa_workflow_stage: 'issued',
       content_hash,
@@ -539,15 +539,9 @@ export default function Lab() {
     }
 
     const linkedSample = form.sampleId ? samples.find(s => s.id === form.sampleId) : null;
-    const primaryCompany = form.companyName.trim().toLowerCase();
-    const brandNames = (linkedSample?.metadata as { brand_names?: string[] } | null)?.brand_names
-      ?.filter(Boolean)
-      .filter(brand => brand.trim().toLowerCase() !== primaryCompany) ?? [];
-
-    const brandErrors: string[] = [];
+    const brandNames = (linkedSample?.metadata as { brand_names?: string[] } | null)?.brand_names?.filter(Boolean) ?? [];
     for (const brand of brandNames) {
-      const brandError = await issueCoaForBrand({ ...payload, coa_workflow_stage: 'issued' }, brand);
-      if (brandError) brandErrors.push(`${brand}: ${brandError.message}`);
+      await issueCoaForBrand({ ...payload, coa_workflow_stage: 'issued' }, brand, form.clientId, form.sampleName.trim());
     }
 
     if (form.sampleId) {
@@ -563,14 +557,7 @@ export default function Lab() {
     setApplyWatermark(true);
     setCasSuggestions([]);
     setShowCasSuggestions(false);
-    const baseText = 'COA issued (private). Verify it, then publish for the client.';
-    setMsg({
-      type: brandErrors.length ? 'error' : 'success',
-      text: brandErrors.length
-        ? `${baseText} Some brand COAs failed to issue: ${brandErrors.join('; ')}`
-        : baseText,
-      slug: data?.slug,
-    });
+    setMsg({ type: 'success', text: 'COA issued (private). Verify it, then publish for the client.', slug: data?.slug });
     setSaving(false);
     setWorkflowCompanyFilter('');
     setTab('workflow');
@@ -909,16 +896,6 @@ export default function Lab() {
                   </select>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="label">Accession Number</label>
-                  <input value={form.accessionNumber} onChange={e => update({ accessionNumber: e.target.value })} className="input-field" placeholder="Lab accession / sample ID" />
-                </div>
-                <div>
-                  <label className="label">Seal Serial</label>
-                  <input value={form.sealSerial} onChange={e => update({ sealSerial: e.target.value })} className="input-field" placeholder="Tamper seal serial #" />
-                </div>
-              </div>
               <div className="relative">
                 <label className="label">CAS Number</label>
                 <input
@@ -1071,32 +1048,23 @@ export default function Lab() {
                   </div>
                   <div>
                     <div className="flex items-center justify-between mb-2">
-                      <label className="label mb-0">Conformity (multiple peptides / vials)</label>
+                      <label className="label mb-0">Conformity (multiple peptides)</label>
                       <button type="button" onClick={addConformityPeptide} className="text-xs text-brand-700 font-medium inline-flex items-center gap-1">
-                        <Plus size={13} /> Add row
+                        <Plus size={13} /> Add peptide
                       </button>
                     </div>
                     {labResults.conformityPeptides.length === 0 ? (
                       <p className="text-xs text-neutral-500">Add rows for sample-to-sample conformity results.</p>
                     ) : (
                       <div className="space-y-2">
-                        <p className="text-xs text-neutral-500">
-                          These rows stay on this ONE certificate as comma-separated Net Content / Net Purity values — they never create separate COAs.
-                        </p>
                         {labResults.conformityPeptides.map((row, i) => (
                           <div key={i} className="grid grid-cols-12 gap-2 items-center">
-                            <input value={row.name} onChange={e => updateConformityPeptide(i, { name: e.target.value })} className="input-field col-span-4 py-1.5 text-sm" placeholder="Peptide / vial" />
+                            <input value={row.name} onChange={e => updateConformityPeptide(i, { name: e.target.value })} className="input-field col-span-4 py-1.5 text-sm" placeholder="Peptide" />
                             <input value={row.netContent} onChange={e => updateConformityPeptide(i, { netContent: e.target.value })} className="input-field col-span-3 py-1.5 text-sm" placeholder="Net content" />
                             <input value={row.netPurity} onChange={e => updateConformityPeptide(i, { netPurity: e.target.value })} className="input-field col-span-3 py-1.5 text-sm" placeholder="Net purity %" />
                             <button type="button" onClick={() => removeConformityPeptide(i)} className="col-span-2 text-neutral-400 hover:text-red-600 flex justify-center"><Trash2 size={15} /></button>
                           </div>
                         ))}
-                        {(conformityMgPreview || conformityPurityPreview) && (
-                          <div className="text-xs bg-white border border-atlas-border rounded-md px-3 py-2 space-y-1">
-                            {conformityMgPreview && <p><span className="font-semibold">Net Content on COA:</span> {conformityMgPreview}</p>}
-                            {conformityPurityPreview && <p><span className="font-semibold">Net Purity on COA:</span> {conformityPurityPreview}</p>}
-                          </div>
-                        )}
                       </div>
                     )}
                   </div>
@@ -1149,8 +1117,8 @@ export default function Lab() {
         {tab === 'workflow' && (
           <div className="space-y-4">
             <p className="text-sm text-neutral-600">
-              Workflow covers issued COAs plus samples still awaiting issuance — work the Awaiting COA lane first,
-              then move issued certificates through review to Published. Prepare is only available before verify/publish.
+              Testing → Issued → Pending Review (assign lab director/chemist, signatures 1/2) → Verified (2/2) → Published.
+              Cards marked Assigned to you are yours to work or sign off.
             </p>
             <CompanyFilterSearch
               value={workflowCompanyFilter}
@@ -1167,9 +1135,11 @@ export default function Lab() {
               pendingSamples={filteredPendingQueueItems}
               onIssueCoa={prefillFromSample}
               chemists={chemistOptions}
+              reviewers={reviewerOptions}
               clients={allProfiles}
               orders={orders}
               samples={samples}
+              currentUserId={user?.id}
             />
           </div>
         )}

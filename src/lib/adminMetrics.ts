@@ -65,8 +65,10 @@ export function computeAdminAlerts(
 
 export function workflowPipelineCounts(coas: COA[]) {
   return {
-    issued: coas.filter(c => coaWorkflowStage(c) === 'issued').length,
     awaiting_info: coas.filter(c => coaWorkflowStage(c) === 'awaiting_info').length,
+    testing_in_progress: coas.filter(c => coaWorkflowStage(c) === 'testing_in_progress').length,
+    issued: coas.filter(c => coaWorkflowStage(c) === 'issued').length,
+    pending_review: coas.filter(c => coaWorkflowStage(c) === 'pending_review').length,
     verified: coas.filter(c => coaWorkflowStage(c) === 'verified').length,
     published: coas.filter(c => coaWorkflowStage(c) === 'published').length,
   };
@@ -92,7 +94,7 @@ export function adminKpis(samples: OrderSample[], orders: Order[], coas: COA[]) 
     activeOrders: activeOrders.length,
     queueDepth: queue.length,
     coasPublished: pipeline.published,
-    coasInPipeline: pipeline.issued + pipeline.awaiting_info + pipeline.verified,
+    coasInPipeline: pipeline.issued + pipeline.awaiting_info + pipeline.testing_in_progress + pipeline.pending_review + pipeline.verified,
     urgentOrders: normalized.filter(o => o.lab_priority === 'urgent' && o.status !== 'complete').length,
   };
 }

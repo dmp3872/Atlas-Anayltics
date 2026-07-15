@@ -14,6 +14,7 @@ import { COA_DETAIL_COLUMNS, COA_IMAGE_COLUMNS } from '../lib/coaSelect';
 import { casForSampleName } from '../lib/labCoaForm';
 import { compressImageDataUrl } from '../lib/imageCompress';
 import { coaPngFilename, downloadCoaPngFromElement } from '../lib/coaPdf';
+import { coaHasDirectorSignature, coaSignatureProgress, coaWorkflowStage } from '../lib/coaWorkflow';
 import { useAuth } from '../context/AuthContext';
 import Header from '../components/layout/Header';
 import Footer from '../components/layout/Footer';
@@ -535,37 +536,66 @@ export default function COADetail() {
           <div className="coa-cert-footer bg-[#0a1628] text-white px-4 sm:px-5 py-2.5 mt-auto">
             <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 w-full">
               <div className="flex flex-wrap items-center gap-x-5 gap-y-3 min-w-0">
-                <div className="min-w-0 shrink-0">
+                {(() => {
+                  const sig = coaSignatureProgress(coa);
+                  const directorSigned = coaHasDirectorSignature(coa);
+                  const stage = coaWorkflowStage(coa);
+                  const showChemistSig = sig.signed >= 1;
+                  return (
+                    <>
+                      {(stage === 'issued' || stage === 'pending_review' || directorSigned) && (
+                        <p className="w-full text-[10px] font-bold uppercase tracking-wider text-brand-500">
+                          {sig.label}
+                        </p>
+                      )}
+                <div className={`min-w-0 shrink-0 ${showChemistSig ? '' : 'opacity-40'}`}>
                   <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-white/90 mb-1">Results Reviewed By:</p>
                   <div className="flex items-center gap-2.5">
-                    <img
-                      src="/brand/signatures/brad-martin.png"
-                      alt="D. Brad Martin signature"
-                      className="h-8 w-auto max-w-[130px] object-contain object-left shrink-0"
-                    />
+                    {showChemistSig ? (
+                      <img
+                        src="/brand/signatures/brad-martin.png"
+                        alt="D. Brad Martin signature"
+                        className="h-8 w-auto max-w-[130px] object-contain object-left shrink-0"
+                      />
+                    ) : (
+                      <div className="h-8 w-[100px] border border-dashed border-white/30 rounded-sm flex items-center justify-center text-[9px] text-white/50">
+                        Pending
+                      </div>
+                    )}
                     <div className="text-[11px] leading-snug">
                       <p className="font-semibold">D. Brad Martin</p>
                       <p className="text-white/70">Lead Chemist</p>
-                      <p className="text-white/70 tabular-nums">{footerDate(coa.issued_at)}</p>
+                      <p className="text-white/70 tabular-nums">{showChemistSig ? footerDate(coa.issued_at) : '—'}</p>
                     </div>
                   </div>
                 </div>
 
-                <div className="min-w-0 shrink-0">
+                <div className={`min-w-0 shrink-0 ${directorSigned ? '' : 'opacity-40'}`}>
                   <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-white/90 mb-1">Results Certified By:</p>
                   <div className="flex items-center gap-2.5">
-                    <img
-                      src="/brand/signatures/gokul-gondi.png"
-                      alt="Dr. Gokul Gondi signature"
-                      className="h-9 w-auto max-w-[110px] object-contain object-left shrink-0"
-                    />
+                    {directorSigned ? (
+                      <img
+                        src="/brand/signatures/gokul-gondi.png"
+                        alt="Dr. Gokul Gondi signature"
+                        className="h-9 w-auto max-w-[110px] object-contain object-left shrink-0"
+                      />
+                    ) : (
+                      <div className="h-9 w-[100px] border border-dashed border-white/30 rounded-sm flex items-center justify-center text-[9px] text-white/50">
+                        Pending
+                      </div>
+                    )}
                     <div className="text-[11px] leading-snug">
                       <p className="font-semibold">Dr. Gokul Gondi MD</p>
                       <p className="text-white/70">Lab Director</p>
-                      <p className="text-white/70 tabular-nums">{footerDate(coa.issued_at)}</p>
+                      <p className="text-white/70 tabular-nums">
+                        {directorSigned ? footerDate(coa.verified_at || coa.issued_at) : 'Awaiting sign-off'}
+                      </p>
                     </div>
                   </div>
                 </div>
+                    </>
+                  );
+                })()}
               </div>
 
               <div className="min-w-0 flex items-center gap-3 shrink-0">

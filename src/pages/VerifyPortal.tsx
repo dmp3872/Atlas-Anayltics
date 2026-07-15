@@ -26,8 +26,10 @@ type CompanyProfile = {
 type PortalTab = 'pipeline' | 'library';
 
 const STAGE_BADGE_STYLES: Record<CoaWorkflowStage, string> = {
-  issued: 'bg-neutral-100 text-neutral-700 border-neutral-200',
   awaiting_info: 'bg-amber-100 text-amber-800 border-amber-200',
+  testing_in_progress: 'bg-sky-100 text-sky-800 border-sky-200',
+  issued: 'bg-neutral-100 text-neutral-700 border-neutral-200',
+  pending_review: 'bg-violet-100 text-violet-800 border-violet-200',
   verified: 'bg-brand-100 text-brand-800 border-brand-200',
   published: 'bg-emerald-100 text-emerald-700 border-emerald-200',
 };
@@ -35,6 +37,8 @@ const STAGE_BADGE_STYLES: Record<CoaWorkflowStage, string> = {
 function StageIcon({ stage }: { stage: CoaWorkflowStage }) {
   switch (stage) {
     case 'awaiting_info': return <MessageCircle size={11} />;
+    case 'testing_in_progress': return <Clock size={11} />;
+    case 'pending_review': return <Shield size={11} />;
     case 'verified': return <Shield size={11} />;
     case 'published': return <Globe size={11} />;
     default: return <FlaskConical size={11} />;
@@ -100,7 +104,14 @@ export default function VerifyPortal() {
   }, [pipelineCoas, pipelineSearch, stageFilter]);
 
   const pipelineStageCounts = useMemo(() => {
-    const counts: Record<CoaWorkflowStage, number> = { issued: 0, awaiting_info: 0, verified: 0, published: 0 };
+    const counts: Record<CoaWorkflowStage, number> = {
+      awaiting_info: 0,
+      testing_in_progress: 0,
+      issued: 0,
+      pending_review: 0,
+      verified: 0,
+      published: 0,
+    };
     for (const c of pipelineCoas) counts[coaWorkflowStage(c)] += 1;
     return counts;
   }, [pipelineCoas]);
@@ -249,8 +260,8 @@ export default function VerifyPortal() {
 
         {tab === 'pipeline' && (
           <div className="space-y-4">
-            <div className="grid grid-cols-3 gap-3">
-              {(['issued', 'awaiting_info', 'verified'] as CoaWorkflowStage[]).map(stage => (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {(['awaiting_info', 'issued', 'pending_review', 'verified'] as CoaWorkflowStage[]).map(stage => (
                 <button
                   key={stage}
                   type="button"
@@ -281,9 +292,12 @@ export default function VerifyPortal() {
                 className="input-field w-auto"
               >
                 <option value="all">All stages</option>
-                <option value="issued">Issued</option>
                 <option value="awaiting_info">Awaiting Client Info</option>
-                <option value="verified">Verified (ready to publish)</option>
+                <option value="testing_in_progress">Testing in Progress</option>
+                <option value="issued">Issued COAs</option>
+                <option value="pending_review">Pending Review</option>
+                <option value="verified">Verified COAs</option>
+                <option value="published">Published COAs</option>
               </select>
             </div>
 
@@ -332,10 +346,21 @@ export default function VerifyPortal() {
                           <button
                             type="button"
                             disabled={saving}
-                            onClick={() => moveCoaToStage(coa, 'verified')}
+                            onClick={() => moveCoaToStage(coa, 'pending_review')}
                             className="btn-secondary text-xs py-1.5 px-2 gap-1 disabled:opacity-50"
                           >
-                            <Shield size={12} /> {saving ? 'Saving…' : 'Verify'}
+                            <Shield size={12} /> {saving ? 'Saving…' : 'Send for review'}
+                          </button>
+                        )}
+
+                        {stage === 'pending_review' && (
+                          <button
+                            type="button"
+                            disabled={saving}
+                            onClick={() => moveCoaToStage(coa, 'verified')}
+                            className="btn-primary text-xs py-1.5 px-2 gap-1 disabled:opacity-50"
+                          >
+                            <Shield size={12} /> {saving ? 'Saving…' : 'Sign off (2/2)'}
                           </button>
                         )}
 

@@ -145,6 +145,9 @@ export default function AdminCoaRegistry({ coas, onSave }: Props) {
                         <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border ${
                           stage === 'published' ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
                           : stage === 'awaiting_info' ? 'bg-amber-50 text-amber-800 border-amber-200'
+                          : stage === 'pending_review' ? 'bg-violet-50 text-violet-800 border-violet-200'
+                          : stage === 'testing_in_progress' ? 'bg-sky-50 text-sky-800 border-sky-200'
+                          : stage === 'verified' ? 'bg-brand-50 text-brand-800 border-brand-200'
                           : 'bg-neutral-100 text-neutral-700 border-neutral-200'
                         }`}>
                           {COA_WORKFLOW_LABELS[stage]}

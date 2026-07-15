@@ -27,6 +27,8 @@ export const COA_LIST_COLUMNS = [
   'seal_serial',
   'content_hash',
   'signature',
+  'verified_by',
+  'review_assigned_to',
   'panel_results',
   'chromatogram_data',
 ].join(', ');

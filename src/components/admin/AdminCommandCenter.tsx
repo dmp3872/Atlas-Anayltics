@@ -117,7 +117,9 @@ export default function AdminCommandCenter({ samples, orders, coas, users, onNav
             <div className="space-y-2">
               {([
                 ['awaiting_info', MessageCircle],
+                ['testing_in_progress', Clock],
                 ['issued', FlaskConical],
+                ['pending_review', Shield],
                 ['verified', Shield],
                 ['published', Globe],
               ] as const).map(([stage, Icon]) => (
