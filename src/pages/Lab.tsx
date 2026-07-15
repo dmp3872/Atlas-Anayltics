@@ -14,7 +14,8 @@ import {
   EMPTY_LAB_RESULTS, LabCoaResults, VIAL_SIZE_OPTIONS, VialSizeOption,
   HEAVY_METAL_NAMES, buildLabResultsFromSample, labResultsToPanelResults,
   parsePurityPercent, parseMolecularWeight, lookupCas, casForSampleName,
-  ENDOTOXIN_SPEC_EU_ML, STERILITY_METHOD_LABELS,
+  ENDOTOXIN_SPEC_EU_ML, ENDOTOXIN_PASS_RESULT, STERILITY_METHOD_LABELS,
+  HEAVY_METAL_PASS_RESULT, heavyMetalsPassDefaults, computeLabAssayAverages,
 } from '../lib/labCoaForm';
 import { COA_WORKFLOW_LABELS, canPrepareCoa, coaWorkflowStage, buildWorkflowStagePatch, CoaWorkflowStage } from '../lib/coaWorkflow';
 import CoaWorkflowBoard from '../components/lab/CoaWorkflowBoard';
@@ -486,112 +487,134 @@ export default function Lab() {
     setSaving(true);
     setMsg(null);
 
-    const cleanPanels = labResultsToPanelResults(labResults);
+    try {
+      const cleanPanels = labResultsToPanelResults(labResults);
 
-    const purityNum = parsePurityPercent(labResults.netPurity);
-    const includeMw = labResults.includeMolecularWeight && !!labResults.molecularWeight.trim();
-    const mwNum = includeMw ? parseMolecularWeight(labResults.molecularWeight) : null;
-    const content_hash = computeCoaContentHash({
-      sample_name: form.sampleName.trim(),
-      batch_number: form.batchNumber.trim(),
-      purity_percent: purityNum,
-      panel_results: cleanPanels,
-    });
+      const purityNum = parsePurityPercent(labResults.netPurity);
+      const includeMw = labResults.includeMolecularWeight && !!labResults.molecularWeight.trim();
+      const mwNum = includeMw ? parseMolecularWeight(labResults.molecularWeight) : null;
+      const content_hash = computeCoaContentHash({
+        sample_name: form.sampleName.trim(),
+        batch_number: form.batchNumber.trim(),
+        purity_percent: purityNum,
+        panel_results: cleanPanels,
+      });
 
-    const profile = selectedCompany
-      ?? clientCompanies.find(c => c.is_default)
-      ?? clientCompanies[0]
-      ?? null;
+      const profile = selectedCompany
+        ?? clientCompanies.find(c => c.is_default)
+        ?? clientCompanies[0]
+        ?? null;
 
-    const headerLogoRaw = applyHeaderLogo ? (profile?.logo || '') : '';
-    const watermarkRaw = applyWatermark ? (profile?.chromatograph_background || '') : '';
-    const [companyLogoRaw, watermarkRawResolved, hplcRawResolved] = await Promise.all([
-      headerLogoRaw ? resolveImageAsDataUrl(headerLogoRaw) : Promise.resolve(''),
-      watermarkRaw ? resolveImageAsDataUrl(watermarkRaw) : Promise.resolve(''),
-      chromatographImage ? resolveImageAsDataUrl(chromatographImage) : Promise.resolve(''),
-    ]);
-    // Never drop the header logo if compression fails — keep the profile src so the
-    // certificate still shows the client mark on web + PNG.
-    const companyLogo = companyLogoRaw || headerLogoRaw || '';
-    const watermarkImage = watermarkRawResolved || watermarkRaw || '';
-    const hplcImage = hplcRawResolved;
+      const headerLogoRaw = applyHeaderLogo ? (profile?.logo || '') : '';
+      const watermarkRaw = applyWatermark ? (profile?.chromatograph_background || '') : '';
+      const [companyLogoRaw, watermarkRawResolved, hplcRawResolved, vialResolved] = await Promise.all([
+        headerLogoRaw ? resolveImageAsDataUrl(headerLogoRaw) : Promise.resolve(''),
+        watermarkRaw ? resolveImageAsDataUrl(watermarkRaw) : Promise.resolve(''),
+        chromatographImage ? resolveImageAsDataUrl(chromatographImage) : Promise.resolve(''),
+        vialImage ? resolveImageAsDataUrl(vialImage) : Promise.resolve(''),
+      ]);
+      // Prefer compressed copies; fall back to raw only when still a short data/http URL.
+      const pickImage = (resolved: string, raw: string) => {
+        if (resolved) return resolved;
+        if (!raw) return '';
+        if (raw.startsWith('data:image/') && raw.length > 400_000) return '';
+        return raw;
+      };
+      const companyLogo = pickImage(companyLogoRaw, headerLogoRaw);
+      const watermarkImage = pickImage(watermarkRawResolved, watermarkRaw);
+      const hplcImage = hplcRawResolved;
+      const vialForSave = vialResolved || (vialImage.length <= 400_000 ? vialImage : '');
 
-    const intakeAt = sampleIntakeAt(linkedSample);
-    const receivedDate = intakeAt ? formatDate(intakeAt) : '';
+      const intakeAt = sampleIntakeAt(linkedSample);
+      const receivedDate = intakeAt ? formatDate(intakeAt) : '';
+      const assayAverages = computeLabAssayAverages(labResults);
+      const avgPurityNum = parsePurityPercent(assayAverages.avg_purity);
+      const storedPurity = avgPurityNum ?? purityNum;
 
-    const payload = {
-      user_id: form.clientId,
-      sample_id: form.sampleId || null,
-      order_id: form.orderId || null,
-      sample_name: form.sampleName.trim(),
-      display_name: form.displayName.trim() || form.sampleName.trim(),
-      company_name: (form.companyName.trim() || profile?.name || '').trim(),
-      company_logo: companyLogo,
-      peptide_sequence: form.casNumber.trim(),
-      batch_number: form.batchNumber.trim(),
-      purity_percent: purityNum,
-      molecular_weight: mwNum,
-      panel_results: cleanPanels,
-      chromatogram_data: { vial_size: form.vialSize },
-      vial_image: vialImage || '',
-      chromatogram_image: watermarkImage,
-      hplc_image: hplcImage || '',
-      result_summary: {
-        include_molecular_weight: includeMw,
-        molecular_weight: includeMw ? labResults.molecularWeight.trim() : '',
-        sterility_method: labResults.sterilityMethod,
-        sterility_pass: labResults.sterilityPass,
-        sterility_method_label: STERILITY_METHOD_LABELS[labResults.sterilityMethod],
-        sterility_specification: 'Not Detected',
-        endotoxin_eu_ml: labResults.endotoxinEuMl.trim(),
-        endotoxin_pass: labResults.endotoxinPass,
-        apply_company_logo: applyHeaderLogo,
-        apply_watermark: applyWatermark,
-        coa_profile_id: profile?.id ?? null,
-        // Auto-filled from lab intake / accession (Receiving Desk or Add Sample on bench).
-        received_at: intakeAt || '',
-        received_date: receivedDate,
-      },
-      overall_result: form.overallResult,
-      is_public: false,
-      coa_workflow_stage: 'issued',
-      content_hash,
-      signature: `AA-${Date.now().toString(36).toUpperCase()}`,
-    };
+      const payload = {
+        user_id: form.clientId,
+        sample_id: form.sampleId || null,
+        order_id: form.orderId || null,
+        sample_name: form.sampleName.trim(),
+        display_name: form.displayName.trim() || form.sampleName.trim(),
+        company_name: (form.companyName.trim() || profile?.name || '').trim(),
+        company_logo: companyLogo,
+        peptide_sequence: form.casNumber.trim(),
+        batch_number: form.batchNumber.trim(),
+        purity_percent: storedPurity,
+        molecular_weight: mwNum,
+        panel_results: cleanPanels,
+        chromatogram_data: { vial_size: form.vialSize },
+        vial_image: vialForSave || '',
+        chromatogram_image: watermarkImage,
+        hplc_image: hplcImage || '',
+        result_summary: {
+          include_molecular_weight: includeMw,
+          molecular_weight: includeMw ? labResults.molecularWeight.trim() : '',
+          sterility_method: labResults.sterilityMethod,
+          sterility_pass: labResults.sterilityPass,
+          sterility_method_label: STERILITY_METHOD_LABELS[labResults.sterilityMethod],
+          sterility_specification: 'Not Detected',
+          endotoxin_eu_ml: labResults.endotoxinEuMl.trim(),
+          endotoxin_pass: labResults.endotoxinPass,
+          // Pre-calculate Prepare COA averages from assay + conformity vials.
+          avg_net_peptide_content: assayAverages.avg_net_peptide_content,
+          avg_purity: assayAverages.avg_purity,
+          mean_of_vials_tested: assayAverages.mean_of_vials_tested,
+          vials_tested: assayAverages.mean_of_vials_tested,
+          content_values: assayAverages.content_values,
+          purity_values: assayAverages.purity_values,
+          apply_company_logo: applyHeaderLogo,
+          apply_watermark: applyWatermark,
+          coa_profile_id: profile?.id ?? null,
+          // Auto-filled from lab intake / accession (Receiving Desk or Add Sample on bench).
+          received_at: intakeAt || '',
+          received_date: receivedDate,
+        },
+        overall_result: form.overallResult,
+        is_public: false,
+        coa_workflow_stage: 'issued',
+        content_hash,
+        signature: `AA-${Date.now().toString(36).toUpperCase()}`,
+      };
 
-    const { data, error } = await insertCoa(payload);
+      const { data, error } = await insertCoa(payload);
 
-    if (error) {
-      setMsg({ type: 'error', text: error.message });
+      if (error) {
+        setMsg({ type: 'error', text: error.message });
+        return;
+      }
+
+      const sampleRow = form.sampleId ? samples.find(s => s.id === form.sampleId) : null;
+      const brandNames = (sampleRow?.metadata as { brand_names?: string[] } | null)?.brand_names?.filter(Boolean) ?? [];
+      for (const brand of brandNames) {
+        await issueCoaForBrand({ ...payload, coa_workflow_stage: 'issued' }, brand, form.clientId, form.sampleName.trim());
+      }
+
+      if (form.sampleId) {
+        await supabase.from('order_samples').update({ status: 'in_review' }).eq('id', form.sampleId);
+        const orderId = form.orderId;
+        if (orderId) await supabase.from('orders').update({ status: 'in_review' }).eq('id', orderId);
+      }
+
+      setForm({ ...BLANK });
+      setLabResults({ ...EMPTY_LAB_RESULTS });
+      setVialImage('');
+      setChromatographImage('');
+      setApplyHeaderLogo(true);
+      setApplyWatermark(true);
+      setCasSuggestions([]);
+      setShowCasSuggestions(false);
+      setMsg({ type: 'success', text: 'COA issued (private). Verify it, then publish for the client.', slug: data?.slug });
+      setWorkflowCompanyFilter('');
+      setTab('workflow');
+      loadAll();
+    } catch (err) {
+      const text = err instanceof Error ? err.message : 'Could not issue COA. Try smaller images and retry.';
+      setMsg({ type: 'error', text });
+    } finally {
       setSaving(false);
-      return;
     }
-
-    const linkedSample = form.sampleId ? samples.find(s => s.id === form.sampleId) : null;
-    const brandNames = (linkedSample?.metadata as { brand_names?: string[] } | null)?.brand_names?.filter(Boolean) ?? [];
-    for (const brand of brandNames) {
-      await issueCoaForBrand({ ...payload, coa_workflow_stage: 'issued' }, brand, form.clientId, form.sampleName.trim());
-    }
-
-    if (form.sampleId) {
-      await supabase.from('order_samples').update({ status: 'in_review' }).eq('id', form.sampleId);
-      const orderId = form.orderId;
-      if (orderId) await supabase.from('orders').update({ status: 'in_review' }).eq('id', orderId);
-    }
-
-    setForm({ ...BLANK });
-    setLabResults({ ...EMPTY_LAB_RESULTS });
-    setVialImage('');
-    setChromatographImage('');
-    setApplyHeaderLogo(true);
-    setApplyWatermark(true);
-    setCasSuggestions([]);
-    setShowCasSuggestions(false);
-    setMsg({ type: 'success', text: 'COA issued (private). Verify it, then publish for the client.', slug: data?.slug });
-    setSaving(false);
-    setWorkflowCompanyFilter('');
-    setTab('workflow');
-    loadAll();
   }
 
   const receiveCount = useMemo(() => {
@@ -1042,12 +1065,11 @@ export default function Lab() {
                     <div>
                       <label className="label">Endotoxin (EU/mL)</label>
                       <input
-                        type="number"
-                        step="0.01"
+                        type="text"
                         value={labResults.endotoxinEuMl}
                         onChange={e => updateResults({ endotoxinEuMl: e.target.value })}
                         className="input-field"
-                        placeholder="e.g. 0.25"
+                        placeholder={ENDOTOXIN_PASS_RESULT}
                       />
                       <p className="text-xs text-neutral-500 mt-1">Spec: {ENDOTOXIN_SPEC_EU_ML}</p>
                     </div>
@@ -1055,7 +1077,13 @@ export default function Lab() {
                       <label className="label">Endotoxin conformity</label>
                       <select
                         value={labResults.endotoxinPass ? 'pass' : 'fail'}
-                        onChange={e => updateResults({ endotoxinPass: e.target.value === 'pass' })}
+                        onChange={e => {
+                          const pass = e.target.value === 'pass';
+                          updateResults({
+                            endotoxinPass: pass,
+                            ...(pass ? { endotoxinEuMl: ENDOTOXIN_PASS_RESULT } : {}),
+                          });
+                        }}
                         className="input-field"
                       >
                         <option value="pass">PASS</option>
@@ -1066,25 +1094,46 @@ export default function Lab() {
                       <div>
                         <label className="label">Fentanyl Detection</label>
                         <select value={labResults.fentanylPass ? 'none_detected' : 'detected'} onChange={e => updateResults({ fentanylPass: e.target.value === 'none_detected' })} className="input-field">
-                          <option value="none_detected">None Detected</option>
-                          <option value="detected">Detected</option>
+                          <option value="none_detected">Not Detected — PASS</option>
+                          <option value="detected">Detected — FAIL</option>
                         </select>
                       </div>
                     )}
                   </div>
                   <div>
-                    <label className="label mb-2">Heavy Metals (ppm)</label>
+                    <div className="grid sm:grid-cols-2 gap-3 mb-3">
+                      <div>
+                        <label className="label">Heavy Metals</label>
+                        <p className="text-xs text-neutral-500 mt-1">USP {'<232>'} limits apply per metal</p>
+                      </div>
+                      <div>
+                        <label className="label">Heavy metals conformity</label>
+                        <select
+                          value={labResults.heavyMetalsPass ? 'pass' : 'fail'}
+                          onChange={e => {
+                            const pass = e.target.value === 'pass';
+                            updateResults({
+                              heavyMetalsPass: pass,
+                              ...(pass ? { heavyMetals: heavyMetalsPassDefaults() } : {}),
+                            });
+                          }}
+                          className="input-field"
+                        >
+                          <option value="pass">PASS — Not Detected</option>
+                          <option value="fail">FAIL — enter measured values</option>
+                        </select>
+                      </div>
+                    </div>
                     <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
                       {HEAVY_METAL_NAMES.map(metal => (
                         <div key={metal}>
                           <label className="text-xs text-neutral-500 mb-1 block">{metal}</label>
                           <input
-                            type="number"
-                            step="0.001"
+                            type="text"
                             value={labResults.heavyMetals[metal]}
                             onChange={e => updateHeavyMetal(metal, e.target.value)}
                             className="input-field py-1.5 text-sm"
-                            placeholder="ppm"
+                            placeholder={HEAVY_METAL_PASS_RESULT}
                           />
                         </div>
                       ))}

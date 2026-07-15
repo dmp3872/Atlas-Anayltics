@@ -513,7 +513,7 @@ export default function COADetail() {
                 {metalPanels.map((r, i) => {
                   const resultText = r.result?.trim()
                     ? `${r.result}${r.unit ? ` ${r.unit}` : ''}`
-                    : 'None Detected';
+                    : 'Not Detected';
                   const showPass = !r.result?.trim() || r.pass;
                   return (
                     <tr key={`metal-${i}`} className={i % 2 === 0 ? 'bg-white' : 'bg-neutral-50'}>

@@ -391,7 +391,7 @@ function drawFentanylAndShiftedHeavyMetals(
   drawDataRow(
     page,
     fenBottom,
-    ['Fentanyl Detection', 'None Detected', fenLabel, conf],
+    ['Fentanyl Detection', 'Not Detected', fenLabel, conf],
     fonts,
     { boldFirst: false, confColor },
   );

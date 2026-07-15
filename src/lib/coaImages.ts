@@ -2,6 +2,8 @@ import { supabase } from './supabase';
 import { COA, PanelResult } from './types';
 import {
   ENDOTOXIN_SPEC_EU_ML,
+  computeAssayAveragesFromPanels,
+  formatEndotoxinResult,
   SterilityMethod,
   STERILITY_METHOD_LABELS,
   sterilitySpecLabel,
@@ -58,7 +60,7 @@ function parseEndotoxinValue(raw: string): string {
 }
 
 export function fentanylDetectionLabel(mark: FentanylDetectionMark): string {
-  if (mark === 'none_detected') return 'None Detected';
+  if (mark === 'none_detected') return 'Not Detected';
   if (mark === 'detected') return 'Detected';
   return '';
 }
@@ -70,17 +72,21 @@ export function readCoaPdfStats(coa: COA): CoaPdfStats {
   const endotoxinPanel = findPanel(panels, 'endotoxin', 'lal');
   const mwPanel = findPanel(panels, 'molecular weight', 'molecular');
 
+  const fromAssay = computeAssayAveragesFromPanels(panels, coa.purity_percent);
   const content =
-    (typeof summary.avg_net_peptide_content === 'string' && summary.avg_net_peptide_content) ||
-    '';
+    (typeof summary.avg_net_peptide_content === 'string' && summary.avg_net_peptide_content.trim())
+    || fromAssay.avg_net_peptide_content
+    || '';
   const mean =
-    (typeof summary.mean_of_vials_tested === 'string' && summary.mean_of_vials_tested) ||
-    (typeof summary.vial_count === 'number' && String(summary.vial_count)) ||
-    (typeof summary.vials_tested === 'string' && summary.vials_tested) ||
-    '';
+    (typeof summary.mean_of_vials_tested === 'string' && summary.mean_of_vials_tested.trim())
+    || (typeof summary.vial_count === 'number' && String(summary.vial_count))
+    || (typeof summary.vials_tested === 'string' && summary.vials_tested.trim())
+    || fromAssay.mean_of_vials_tested
+    || '';
   const purity =
-    (typeof summary.avg_purity === 'string' && summary.avg_purity) ||
-    (coa.purity_percent != null ? `${coa.purity_percent}%` : '');
+    (typeof summary.avg_purity === 'string' && summary.avg_purity.trim())
+    || fromAssay.avg_purity
+    || (coa.purity_percent != null ? `${coa.purity_percent}%` : '');
 
   const fenRaw = typeof summary.fentanyl_detection === 'string' ? summary.fentanyl_detection : '';
   const fentanyl_detection: FentanylDetectionMark =
@@ -158,58 +164,51 @@ export function hydrateCoaImages(coa: COA): COA {
   };
 }
 
-/** Normalize any image src (data URL, http(s), or site path) into a PNG/JPEG data URL for PDF embed. */
+/** Normalize any image src (data URL, http(s), or site path) into a JPEG data URL for storage. */
 export async function resolveImageAsDataUrl(src: string): Promise<string> {
   const value = (src || '').trim();
   if (!value) return '';
 
-  // Already a JPEG/PNG data URL — re-compress if oversized so callers never embed multi‑MB blobs.
+  // Already a compact data URL — only re-encode when over the size cap.
   if (/^data:image\/(png|jpeg|jpg);base64,/i.test(value)) {
     return compressImageDataUrl(value);
   }
 
-  if (value.startsWith('data:image/')) {
-    try {
+  try {
+    let blob: Blob;
+    if (value.startsWith('data:image/')) {
       const res = await fetch(value);
-      const blob = await res.blob();
-      const png = await blobToPngDataUrl(blob);
-      return compressImageDataUrl(png);
-    } catch {
+      blob = await res.blob();
+    } else {
+      const url = value.startsWith('/') ? `${window.location.origin}${value}` : value;
+      const res = await fetch(url);
+      if (!res.ok) return '';
+      blob = await res.blob();
+    }
+    // Scale while decoding — never build a full-resolution PNG data URL first
+    // (that freezes Issue COA on large logos / chromatographs).
+    const bitmap = await createImageBitmap(blob);
+    const maxEdge = 900;
+    const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
+    const width = Math.max(1, Math.round(bitmap.width * scale));
+    const height = Math.max(1, Math.round(bitmap.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      bitmap.close();
       return '';
     }
-  }
-
-  try {
-    const url = value.startsWith('/') ? `${window.location.origin}${value}` : value;
-    const res = await fetch(url);
-    if (!res.ok) return '';
-    const blob = await res.blob();
-    if (/^image\/(png|jpeg|jpg)$/i.test(blob.type)) {
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
-        reader.onerror = () => reject(new Error('read failed'));
-        reader.readAsDataURL(blob);
-      });
-      return compressImageDataUrl(dataUrl);
-    }
-    const png = await blobToPngDataUrl(blob);
-    return compressImageDataUrl(png);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, width, height);
+    ctx.drawImage(bitmap, 0, 0, width, height);
+    bitmap.close();
+    const draft = canvas.toDataURL('image/jpeg', 0.85);
+    return compressImageDataUrl(draft);
   } catch {
     return '';
   }
-}
-
-async function blobToPngDataUrl(blob: Blob): Promise<string> {
-  const bitmap = await createImageBitmap(blob);
-  const canvas = document.createElement('canvas');
-  canvas.width = bitmap.width;
-  canvas.height = bitmap.height;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return '';
-  ctx.drawImage(bitmap, 0, 0);
-  bitmap.close();
-  return canvas.toDataURL('image/png');
 }
 
 /**
@@ -371,14 +370,13 @@ export function applyPrepToCoaPanels(coa: COA, prep: CoaPdfPrepPayload): {
     },
   );
 
-  const endoVal = prep.endotoxin_eu_ml.trim();
   panels = upsertNamedPanel(
     panels,
     name => name.includes('endotoxin') || name.includes('lal'),
     {
       panel_name: 'Endotoxin',
       specification: ENDOTOXIN_SPEC_EU_ML,
-      result: endoVal ? `${endoVal} EU/mL (LAL)` : '',
+      result: formatEndotoxinResult(prep.endotoxin_eu_ml),
       pass: prep.endotoxin_pass,
     },
   );
@@ -406,8 +404,8 @@ export function applyPrepToCoaPanels(coa: COA, prep: CoaPdfPrepPayload): {
     prep.fentanyl_detection === 'none_detected' || prep.fentanyl_detection === 'detected'
       ? {
           panel_name: 'Fentanyl Detection',
-          specification: 'None Detected',
-          result: prep.fentanyl_detection === 'none_detected' ? 'None Detected' : 'Detected',
+          specification: 'Not Detected',
+          result: prep.fentanyl_detection === 'none_detected' ? 'Not Detected' : 'Detected',
           pass: prep.fentanyl_detection === 'none_detected',
         }
       : null,
