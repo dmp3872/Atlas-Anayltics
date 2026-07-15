@@ -22,9 +22,9 @@ export default function Header() {
   return (
     <header className="sticky top-0 z-50 bg-white/95 backdrop-blur border-b border-atlas-border">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
-          <Link to="/" className="group">
-            <AtlasLogo size="sm" />
+        <div className="flex items-center justify-between h-20">
+          <Link to="/" className="flex items-center shrink-0 h-full py-1">
+            <AtlasLogo size="header" />
           </Link>
 
           <nav className="hidden md:flex items-center gap-1">
