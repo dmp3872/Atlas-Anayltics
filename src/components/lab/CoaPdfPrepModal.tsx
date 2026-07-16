@@ -19,7 +19,7 @@ import {
   SterilityMethod,
   STERILITY_METHOD_LABELS,
 } from '../../lib/labCoaForm';
-import { openCoaPrintView } from '../../lib/coaPdf';
+import { downloadCoaPdf, openCoaPrintView } from '../../lib/coaPdf';
 import LogoDropzone from '../account/LogoDropzone';
 
 const MAX_COA_IMAGE_BYTES = 1024 * 1024;
@@ -52,6 +52,7 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
   const boot = applyPrepDefaults(coa);
   const [vialImage, setVialImage] = useState(boot.next.vial_image || '');
   const [hplcImage, setHplcImage] = useState(boot.next.hplc_image || '');
+  const [watermarkImage, setWatermarkImage] = useState(boot.next.chromatogram_image || '');
   const [avgNetPeptide, setAvgNetPeptide] = useState(boot.avgNetPeptide);
   const [meanOfVials, setMeanOfVials] = useState(boot.meanOfVials);
   const [avgPurity, setAvgPurity] = useState(boot.avgPurity);
@@ -88,8 +89,6 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
   useEffect(() => {
     let cancelled = false;
     const d = applyPrepDefaults(coa);
-    setVialImage(d.next.vial_image || '');
-    setHplcImage(d.next.hplc_image || '');
     setAvgNetPeptide(d.avgNetPeptide);
     setMeanOfVials(d.meanOfVials);
     setAvgPurity(d.avgPurity);
@@ -106,14 +105,16 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
     setError(null);
     setLoadingImages(true);
 
-    // Workflow list rows omit multi‑MB image columns — reload what was saved at Issue.
+    // Workflow list rows omit multi‑MB image columns — reload vial + chromatogram saved at Issue.
     void (async () => {
       const images = await fetchCoaImageRow(coa.id);
       if (cancelled) return;
-      if (images) {
-        setVialImage(prev => prev || images.vial_image || '');
-        setHplcImage(prev => prev || images.hplc_image || '');
-      }
+      const vial = (images?.vial_image || d.next.vial_image || '').trim();
+      const hplc = (images?.hplc_image || d.next.hplc_image || '').trim();
+      const watermark = (images?.chromatogram_image || d.next.chromatogram_image || '').trim();
+      setVialImage(vial);
+      setHplcImage(hplc);
+      setWatermarkImage(watermark);
       setLoadingImages(false);
     })();
 
@@ -141,7 +142,7 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
     try {
       const { coa: saved, error: saveError } = await saveCoaPdfPrep(coa, {
         vial_image: vialImage,
-        chromatogram_image: coa.chromatogram_image || '',
+        chromatogram_image: watermarkImage || coa.chromatogram_image || '',
         hplc_image: hplcImage,
         company_logo: coa.company_logo || '',
         avg_net_peptide_content: avgNetPeptide,
@@ -163,7 +164,12 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
       }
       onSaved?.(saved);
       onClose();
-      // PNG download happens on the live certificate page — open it after save.
+      // Download digital PDF, then open the live certificate for review.
+      try {
+        await downloadCoaPdf(saved);
+      } catch (dlErr) {
+        console.warn('COA PDF download failed:', dlErr);
+      }
       openCoaPrintView(saved.slug);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save the certificate.');
@@ -174,7 +180,7 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
 
   const hydrated = hydrateCoaImages(coa);
   const headerLogo = hydrated.company_logo || '';
-  const watermark = hydrated.chromatogram_image || '';
+  const watermark = watermarkImage || hydrated.chromatogram_image || '';
   const contentBreakdown = assay.content_values.join(' · ') || '—';
   const purityBreakdown = assay.purity_values.join(' · ') || '—';
 
@@ -515,7 +521,7 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
           </button>
           <button type="button" onClick={() => void handleGenerate()} disabled={busy} className="btn-primary gap-2">
             <FileText size={16} />
-            {busy ? 'Saving…' : 'Save'}
+            {busy ? 'Saving…' : 'Save & download PDF'}
           </button>
         </div>
       </div>

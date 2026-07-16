@@ -87,6 +87,7 @@ export default function Lab() {
   const [casSuggestions, setCasSuggestions] = useState<{ name: string; cas: string }[]>([]);
   const [showCasSuggestions, setShowCasSuggestions] = useState(false);
   const [prepCoa, setPrepCoa] = useState<COA | null>(null);
+  const [intakeSampleLive, setIntakeSampleLive] = useState<OrderSample | null>(null);
 
   const selectedCompany = clientCompanies.find(c => c.id === selectedCompanyId) ?? null;
 
@@ -150,6 +151,38 @@ export default function Lab() {
   }
 
   useEffect(() => { loadAll(); }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadIntakeSample() {
+      if (!form.sampleId) {
+        setIntakeSampleLive(null);
+        return;
+      }
+      const fromQueue = samples.find(s => s.id === form.sampleId) || null;
+      if (fromQueue) setIntakeSampleLive(fromQueue);
+      const fresh = await supabase
+        .from('order_samples')
+        .select('id, metadata, received_at, status, created_at, accession_number')
+        .eq('id', form.sampleId)
+        .maybeSingle();
+      let row = fresh.data as OrderSample | null;
+      if (fresh.error && /received_at/i.test(fresh.error.message || '')) {
+        const retry = await supabase
+          .from('order_samples')
+          .select('id, metadata, status, created_at, accession_number')
+          .eq('id', form.sampleId)
+          .maybeSingle();
+        row = retry.data as OrderSample | null;
+      }
+      if (!cancelled && row) {
+        setIntakeSampleLive({ ...(fromQueue || ({} as OrderSample)), ...row });
+      }
+    }
+    void loadIntakeSample();
+    return () => { cancelled = true; };
+  }, [form.sampleId, samples]);
+
 
   useEffect(() => {
     const channel = supabase
@@ -318,7 +351,9 @@ export default function Lab() {
     setForm(prev => ({ ...prev, ...patch }));
   }
 
-  const linkedSample = form.sampleId ? samples.find(s => s.id === form.sampleId) : null;
+  const linkedSample = form.sampleId
+    ? (intakeSampleLive?.id === form.sampleId ? intakeSampleLive : samples.find(s => s.id === form.sampleId) || null)
+    : null;
   const linkedMeta = linkedSample ? parseSampleMetadata(linkedSample.metadata) : null;
   const linkedOrder = form.orderId ? orders.find(o => o.id === form.orderId) : null;
   const linkedClient = form.clientId ? clients.find(c => c.id === form.clientId) : undefined;
@@ -531,11 +566,18 @@ export default function Lab() {
       let intakeSample = linkedSample;
       let matrixType = matrixTypeFromSampleMetadata(linkedMeta);
       if (form.sampleId) {
-        const { data: freshSample } = await supabase
+        const fresh = await supabase
           .from('order_samples')
           .select('id, metadata, received_at, status, created_at, accession_number')
           .eq('id', form.sampleId)
           .maybeSingle();
+        const freshSample = fresh.error && /received_at/i.test(fresh.error.message || '')
+          ? (await supabase
+              .from('order_samples')
+              .select('id, metadata, status, created_at, accession_number')
+              .eq('id', form.sampleId)
+              .maybeSingle()).data
+          : fresh.data;
         if (freshSample) {
           intakeSample = freshSample as typeof linkedSample;
           matrixType = matrixTypeFromSampleMetadata(freshSample.metadata) || matrixType;

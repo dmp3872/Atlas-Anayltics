@@ -129,7 +129,8 @@ export async function markSampleReceived(
   }
 
   const now = new Date().toISOString();
-  const receivedAt = sample.received_at || now;
+  // Prefer an existing physical intake stamp; otherwise this receive moment is the intake date.
+  const receivedAt = sampleIntakeAt(sample) || now;
   const prevMeta =
     sample.metadata && typeof sample.metadata === 'object' ? sample.metadata : {};
   const samplePatch: Partial<OrderSample> = {
@@ -169,6 +170,9 @@ export async function markSampleReceived(
   }
 
   if (sampleErr) return { error: new Error(sampleErr.message) };
+
+  // Keep linked COA "Received Date" in sync with physical intake.
+  await syncCoaReceivedDateFromSample(sample.id, receivedAt);
 
   await logOrderStatusChange(order.id, 'received', {
     fromStatus: sample.status,
@@ -247,6 +251,11 @@ export async function setSampleStatus(
 
   if (error) return { error: new Error(error.message) };
 
+  if (status === 'received') {
+    const intake = sampleIntakeAt(data as OrderSample) || (patch.received_at as string | undefined) || new Date().toISOString();
+    await syncCoaReceivedDateFromSample(sample.id, intake);
+  }
+
   await logOrderStatusChange(sample.order_id, status, {
     fromStatus: sample.status,
     sampleId: sample.id,
@@ -280,6 +289,48 @@ export async function setSampleStatus(
 
 export function paymentLabel(status: unknown): string {
   return normalizePaymentStatus(status);
+}
+
+
+/** Push intake timestamp onto every COA linked to this sample (result_summary). */
+async function syncCoaReceivedDateFromSample(sampleId: string, receivedAt: string): Promise<void> {
+  const receivedDate = formatIntakeDate(receivedAt);
+  const { data: rows, error } = await supabase
+    .from('coas')
+    .select('id, result_summary')
+    .eq('sample_id', sampleId);
+  if (error || !rows?.length) return;
+
+  await Promise.all(rows.map(async (row) => {
+    const summary =
+      row.result_summary && typeof row.result_summary === 'object' && !Array.isArray(row.result_summary)
+        ? { ...(row.result_summary as Record<string, unknown>) }
+        : {};
+    if (summary.received_at === receivedAt && summary.received_date === receivedDate) return;
+    const { error: upErr } = await supabase
+      .from('coas')
+      .update({
+        result_summary: {
+          ...summary,
+          received_at: receivedAt,
+          received_date: receivedDate,
+        },
+      })
+      .eq('id', row.id);
+    if (upErr) console.warn('COA received-date sync failed:', upErr.message);
+  }));
+}
+
+function formatIntakeDate(iso: string): string {
+  try {
+    return new Intl.DateTimeFormat('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    }).format(new Date(iso));
+  } catch {
+    return iso;
+  }
 }
 
 /** ISO timestamp when the sample was physically intaked / accessioned at the lab. */

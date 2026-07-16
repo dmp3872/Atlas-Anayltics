@@ -123,7 +123,7 @@ export default function COADetail() {
 
         // Phase 2: images + profile fallbacks (non-blocking). Compress before state so a
         // leftover multi‑MB base64 row cannot freeze the tab / IDE embedded browser.
-        // Also backfill Matrix Type + Received Date from the linked order sample when blank.
+        // Sync Matrix Type + Received Date from the linked order sample (intake is source of truth).
         const summary0 = (hydrated.result_summary && typeof hydrated.result_summary === 'object'
           ? hydrated.result_summary
           : {}) as Record<string, unknown>;
@@ -132,27 +132,43 @@ export default function COADetail() {
           : {}) as Record<string, unknown>;
         const hasMatrix = [summary0.matrix_type, summary0.sample_matrix, chrom0.sample_matrix]
           .some(v => typeof v === 'string' && v.trim());
-        const hasReceived = [summary0.received_date, summary0.received_at]
-          .some(v => typeof v === 'string' && v.trim());
 
-        const sampleFieldBackfill = (hydrated.sample_id && (!hasMatrix || !hasReceived))
+        const sampleFieldBackfill = hydrated.sample_id
           ? (async () => {
-              const { data: sample } = await supabase
+              let sampleRes = await supabase
                 .from('order_samples')
                 .select('metadata, received_at, status, created_at')
                 .eq('id', hydrated.sample_id)
                 .maybeSingle();
+              if (sampleRes.error && /received_at/i.test(sampleRes.error.message || '')) {
+                sampleRes = await supabase
+                  .from('order_samples')
+                  .select('metadata, status, created_at')
+                  .eq('id', hydrated.sample_id)
+                  .maybeSingle();
+              }
+              const sample = sampleRes.data;
               if (cancelled || !sample) return null;
 
               const matrix = !hasMatrix ? matrixTypeFromSampleMetadata(sample.metadata) : '';
-              const intakeAt = !hasReceived ? sampleIntakeAt(sample) : null;
+              const intakeAt = sampleIntakeAt(sample);
               const receivedDate = intakeAt ? formatDate(intakeAt) : '';
-              if (!matrix && !receivedDate) return null;
+              const receivedNeedsSync = Boolean(
+                intakeAt
+                && (
+                  summary0.received_at !== intakeAt
+                  || summary0.received_date !== receivedDate
+                  || !String(summary0.received_date || summary0.received_at || '').trim()
+                ),
+              );
+              if (!matrix && !receivedNeedsSync) return null;
 
               const nextSummary = {
                 ...summary0,
                 ...(matrix ? { matrix_type: matrix, sample_matrix: matrix } : {}),
-                ...(intakeAt ? { received_at: intakeAt, received_date: receivedDate } : {}),
+                ...(receivedNeedsSync && intakeAt
+                  ? { received_at: intakeAt, received_date: receivedDate }
+                  : {}),
               };
               const nextChrom = matrix
                 ? { ...chrom0, sample_matrix: matrix }

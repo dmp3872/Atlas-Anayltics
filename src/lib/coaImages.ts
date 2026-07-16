@@ -525,18 +525,27 @@ export async function saveCoaPdfPrep(
   coa: COA,
   prep: CoaPdfPrepPayload,
 ): Promise<{ coa: COA; error: string | null }> {
+  // Prefer images from prep, but never blank out vial / chromatogram / watermark already on the COA.
   const hydrated = hydrateCoaImages(coa);
   const { panel_results, molecular_weight } = applyPrepToCoaPanels(coa, prep);
-  // Keep snapshotted header logo / watermark from issue time unless prep replaces HPLC photo.
-  // Zoom/center vial into the certificate frame, then compress.
-  const preparedVial = prep.vial_image ? await prepareVialImage(prep.vial_image) : '';
-  const nextHplc = prep.hplc_image !== undefined ? prep.hplc_image : (hydrated.hplc_image || '');
-  const [vialImage, companyLogo, watermark, hplcImage] = await Promise.all([
+  const prepVial = (prep.vial_image || '').trim() || (hydrated.vial_image || '');
+  const prepHplc = (
+    (prep.hplc_image !== undefined ? prep.hplc_image : '') || hydrated.hplc_image || ''
+  ).trim();
+  const prepWatermark = (prep.chromatogram_image || '').trim() || (hydrated.chromatogram_image || '');
+  const prepLogo = (prep.company_logo || '').trim() || (hydrated.company_logo || '');
+  const preparedVial = prepVial ? await prepareVialImage(prepVial) : '';
+  const [vialCompressed, companyLogoCompressed, watermarkCompressed, hplcCompressed] = await Promise.all([
     compressImageDataUrl(preparedVial),
-    compressImageDataUrl(hydrated.company_logo || ''),
-    compressImageDataUrl(hydrated.chromatogram_image || ''),
-    compressImageDataUrl(nextHplc || ''),
+    compressImageDataUrl(prepLogo),
+    compressImageDataUrl(prepWatermark),
+    compressImageDataUrl(prepHplc),
   ]);
+  // Compression can return '' on failure — fall back to the pre-compress src so attachments survive.
+  const vialImage = vialCompressed || preparedVial || hydrated.vial_image || '';
+  const companyLogo = companyLogoCompressed || prepLogo || hydrated.company_logo || '';
+  const watermark = watermarkCompressed || prepWatermark || hydrated.chromatogram_image || '';
+  const hplcImage = hplcCompressed || prepHplc || hydrated.hplc_image || '';
 
   const baseSummary = {
     ...((coa.result_summary && typeof coa.result_summary === 'object' ? coa.result_summary : {}) as Record<string, unknown>),

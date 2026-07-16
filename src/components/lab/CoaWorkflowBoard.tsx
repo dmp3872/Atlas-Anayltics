@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowLeft, ArrowRight, Building2, CheckCircle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp,
-  Clock, ExternalLink, Fingerprint, FlaskConical, Globe, GripVertical, Hash, MessageCircle, Phone,
+  Clock, Download, ExternalLink, Fingerprint, FlaskConical, Globe, GripVertical, Hash, MessageCircle, Phone,
   Shield, UserCircle2, XCircle,
 } from 'lucide-react';
 import { COA, Order, OrderSample, UserProfile } from '../../lib/types';
@@ -12,6 +12,7 @@ import {
   CoaWorkflowStage, canPrepareCoa, coaSignatureProgress, coaWorkflowStage,
 } from '../../lib/coaWorkflow';
 import { LAB_PRIORITY_LABELS, LAB_PRIORITY_STYLES, QueueSampleItem, testsLabelForSample } from '../../lib/labQueue';
+import { downloadCoaPdf } from '../../lib/coaPdf';
 import CoaPdfPrepModal from './CoaPdfPrepModal';
 
 interface Props {
@@ -117,6 +118,8 @@ export default function CoaWorkflowBoard({
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [overStage, setOverStage] = useState<CoaWorkflowStage | null>(null);
   const [prepCoa, setPrepCoa] = useState<COA | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
   const [reviewPickFor, setReviewPickFor] = useState<string | null>(null);
   const [reviewAssignee, setReviewAssignee] = useState('');
   const [canScrollLeft, setCanScrollLeft] = useState(false);
@@ -302,6 +305,18 @@ export default function CoaWorkflowBoard({
     handleDragEnd();
   }
 
+  async function handleDownloadPdf(coa: COA) {
+    setDownloadError(null);
+    setDownloadingId(coa.id);
+    try {
+      await downloadCoaPdf(coa);
+    } catch (err) {
+      setDownloadError(err instanceof Error ? err.message : 'Could not download PDF.');
+    } finally {
+      setDownloadingId(null);
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2 text-xs">
@@ -382,6 +397,12 @@ export default function CoaWorkflowBoard({
         >
           <ChevronRight size={20} />
         </button>
+
+        {downloadError && (
+          <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+            {downloadError}
+          </div>
+        )}
 
         <div
           ref={boardScrollRef}
@@ -644,8 +665,20 @@ export default function CoaWorkflowBoard({
                             onClick={e => e.stopPropagation()}
                             onDragStart={e => e.preventDefault()}
                           >
-                            <ExternalLink size={11} />                             Open
+                            <ExternalLink size={11} /> Open
                           </Link>
+                          <button
+                            type="button"
+                            disabled={downloadingId === coa.id}
+                            className="btn-outline text-xs py-1 px-2 gap-1"
+                            onClick={e => {
+                              e.stopPropagation();
+                              void handleDownloadPdf(coa);
+                            }}
+                          >
+                            <Download size={11} />
+                            {downloadingId === coa.id ? 'Saving…' : 'Download PDF'}
+                          </button>
 
                           {currentStage === 'issued' && (
                             reviewPickFor === coa.id ? (
