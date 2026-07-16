@@ -86,17 +86,17 @@ export default function InteractiveChromatogram({
   // Unique uploaded chromatograph takes priority over the interactive SVG demo.
   if (photo) {
     return (
-      <div className="relative border border-atlas-border bg-white overflow-hidden flex flex-col h-full min-h-[9.5rem]">
-        <div className="relative px-3 pt-2 pb-0.5 flex items-center justify-between shrink-0 z-[2]">
-          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-700">
+      <div className="coa-chrom-photo relative border border-atlas-border bg-white overflow-hidden flex flex-col h-full min-h-[9.5rem]">
+        <div className="relative px-3 pt-2.5 pb-1.5 flex items-center justify-center shrink-0 z-[2] bg-white">
+          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-700 text-center leading-normal">
             HPLC Chromatogram Report
           </p>
         </div>
-        <div className="relative flex-1 min-h-[8.5rem]">
+        <div className="relative flex-1 min-h-[8.5rem] overflow-hidden bg-white">
           <img
             src={photo}
             alt="HPLC chromatograph"
-            className="absolute inset-0 w-full h-full object-contain bg-white"
+            className="absolute inset-0 m-auto w-full h-full object-contain object-center bg-white"
           />
           <WatermarkLayer logoWatermark={logoWatermark} />
         </div>
@@ -110,12 +110,12 @@ export default function InteractiveChromatogram({
         <img src={backgroundImage} alt="" className="absolute inset-0 w-full h-full object-cover opacity-15 pointer-events-none" />
       )}
       <WatermarkLayer logoWatermark={logoWatermark} />
-      <div className="relative px-3 pt-2 pb-0.5 flex items-center justify-between shrink-0">
-        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-700">
+      <div className="relative px-3 pt-2 pb-0.5 flex items-center justify-center shrink-0">
+        <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-700 text-center">
           HPLC Chromatogram Report
         </p>
         {hover && (
-          <p className="text-[10px] font-mono text-brand-700 bg-brand-50 px-2 py-0.5 rounded border border-brand-200">
+          <p className="absolute right-3 top-2 text-[10px] font-mono text-brand-700 bg-brand-50 px-2 py-0.5 rounded border border-brand-200">
             RT {hover.rt.toFixed(2)} min · {((hover.intensity / maxY) * 100).toFixed(1)}% rel. intensity
           </p>
         )}

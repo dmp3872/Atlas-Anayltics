@@ -2,8 +2,13 @@ import { supabase } from './supabase';
 import { COA, PanelResult } from './types';
 import {
   ENDOTOXIN_SPEC_EU_ML,
+  HEAVY_METAL_NAMES,
+  HEAVY_METAL_PASS_RESULT,
+  HEAVY_METAL_USP_SPECS,
+  HeavyMetalName,
   computeAssayAveragesFromPanels,
   formatEndotoxinResult,
+  heavyMetalsPassDefaults,
   SterilityMethod,
   STERILITY_METHOD_LABELS,
   sterilitySpecLabel,
@@ -27,6 +32,38 @@ export interface CoaPdfStats {
   sterility_pass: boolean;
   endotoxin_eu_ml: string;
   endotoxin_pass: boolean;
+  heavy_metals_pass: boolean;
+  heavy_metals: Record<HeavyMetalName, string>;
+}
+
+function findMetalPanel(panels: PanelResult[], metal: HeavyMetalName): PanelResult | undefined {
+  const stem = metal.replace(/\s*\(.*\)\s*$/, '').trim().toLowerCase();
+  return panels.find(p => {
+    const name = p.panel_name.toLowerCase();
+    return name === metal.toLowerCase() || name.includes(stem);
+  });
+}
+
+export function readHeavyMetalsFromCoa(coa: COA): {
+  heavy_metals_pass: boolean;
+  heavy_metals: Record<HeavyMetalName, string>;
+} {
+  const panels = Array.isArray(coa.panel_results) ? coa.panel_results : [];
+  const heavy_metals = heavyMetalsPassDefaults();
+  let sawAny = false;
+  let allPass = true;
+  for (const metal of HEAVY_METAL_NAMES) {
+    const panel = findMetalPanel(panels, metal);
+    if (!panel) continue;
+    sawAny = true;
+    const result = (panel.result || '').trim();
+    heavy_metals[metal] = result || HEAVY_METAL_PASS_RESULT;
+    if (!panel.pass) allPass = false;
+  }
+  return {
+    heavy_metals_pass: sawAny ? allPass : true,
+    heavy_metals,
+  };
 }
 
 function deriveFentanylFromPanels(coa: COA): FentanylDetectionMark {
@@ -134,6 +171,8 @@ export function readCoaPdfStats(coa: COA): CoaPdfStats {
         ? !!endotoxinPanel.pass
         : true;
 
+  const metals = readHeavyMetalsFromCoa(coa);
+
   return {
     avg_net_peptide_content: content,
     mean_of_vials_tested: mean,
@@ -145,6 +184,8 @@ export function readCoaPdfStats(coa: COA): CoaPdfStats {
     sterility_pass,
     endotoxin_eu_ml,
     endotoxin_pass,
+    heavy_metals_pass: metals.heavy_metals_pass,
+    heavy_metals: metals.heavy_metals,
   };
 }
 
@@ -215,6 +256,15 @@ export async function resolveImageAsDataUrl(src: string): Promise<string> {
  * Crop near-white / empty margins so a vial photo shows just the vial
  * (Vanguard-style product shot), with a small padding margin.
  */
+async function loadHtmlImage(dataUrl: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const el = new Image();
+    el.onload = () => resolve(el);
+    el.onerror = () => reject(new Error('image load failed'));
+    el.src = dataUrl;
+  });
+}
+
 export async function trimImageWhitespace(
   src: string,
   opts?: { threshold?: number; padRatio?: number },
@@ -226,12 +276,7 @@ export async function trimImageWhitespace(
   const padRatio = opts?.padRatio ?? 0.06;
 
   try {
-    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const el = new Image();
-      el.onload = () => resolve(el);
-      el.onerror = () => reject(new Error('image load failed'));
-      el.src = dataUrl;
-    });
+    const img = await loadHtmlImage(dataUrl);
 
     const canvas = document.createElement('canvas');
     canvas.width = img.naturalWidth || img.width;
@@ -274,7 +319,7 @@ export async function trimImageWhitespace(
     const tw = maxX - minX + 1;
     const th = maxY - minY + 1;
     // If trim barely changes anything, keep original.
-    if (tw * th > width * height * 0.92) return dataUrl;
+    if (tw * th > width * height * 0.97) return dataUrl;
 
     const out = document.createElement('canvas');
     out.width = tw;
@@ -285,6 +330,46 @@ export async function trimImageWhitespace(
     outCtx.fillRect(0, 0, tw, th);
     outCtx.drawImage(canvas, minX, minY, tw, th, 0, 0, tw, th);
     return out.toDataURL('image/png');
+  } catch {
+    return dataUrl;
+  }
+}
+
+/**
+ * Crop studio whitespace, then zoom/center the vial into a portrait frame so it
+ * fills the certificate (and preview) box instead of floating in empty space.
+ */
+export async function prepareVialImage(src: string): Promise<string> {
+  const trimmed = await trimImageWhitespace(src, { padRatio: 0.012, threshold: 248 });
+  const dataUrl = trimmed || (await resolveImageAsDataUrl(src));
+  if (!dataUrl) return '';
+
+  try {
+    const img = await loadHtmlImage(dataUrl);
+    const iw = img.naturalWidth || img.width;
+    const ih = img.naturalHeight || img.height;
+    if (iw < 8 || ih < 8) return dataUrl;
+
+    // Portrait frame matching the COA vial column (~104×160).
+    const outW = 520;
+    const outH = 780;
+    const canvas = document.createElement('canvas');
+    canvas.width = outW;
+    canvas.height = outH;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return dataUrl;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, outW, outH);
+
+    // Cover-fit + slight extra zoom, then center.
+    const zoom = 1.18;
+    const scale = Math.max(outW / iw, outH / ih) * zoom;
+    const dw = iw * scale;
+    const dh = ih * scale;
+    const dx = (outW - dw) / 2;
+    const dy = (outH - dh) / 2;
+    ctx.drawImage(img, dx, dy, dw, dh);
+    return canvas.toDataURL('image/jpeg', 0.92);
   } catch {
     return dataUrl;
   }
@@ -332,6 +417,8 @@ export type CoaPdfPrepPayload = {
   sterility_pass: boolean;
   endotoxin_eu_ml: string;
   endotoxin_pass: boolean;
+  heavy_metals_pass: boolean;
+  heavy_metals: Record<HeavyMetalName, string>;
 };
 
 function upsertNamedPanel(
@@ -411,6 +498,22 @@ export function applyPrepToCoaPanels(coa: COA, prep: CoaPdfPrepPayload): {
       : null,
   );
 
+  for (const metal of HEAVY_METAL_NAMES) {
+    const result = (prep.heavy_metals[metal] ?? '').trim()
+      || (prep.heavy_metals_pass ? HEAVY_METAL_PASS_RESULT : '');
+    panels = upsertNamedPanel(
+      panels,
+      name => name.includes(metal.replace(/\s*\(.*\)\s*$/, '').trim().toLowerCase())
+        || name === metal.toLowerCase(),
+      {
+        panel_name: metal,
+        specification: HEAVY_METAL_USP_SPECS[metal],
+        result,
+        pass: prep.heavy_metals_pass,
+      },
+    );
+  }
+
   return {
     panel_results: panels,
     molecular_weight: includeMw ? mwNum : null,
@@ -425,13 +528,11 @@ export async function saveCoaPdfPrep(
   const hydrated = hydrateCoaImages(coa);
   const { panel_results, molecular_weight } = applyPrepToCoaPanels(coa, prep);
   // Keep snapshotted header logo / watermark from issue time unless prep replaces HPLC photo.
-  // Trim empty studio margins so the vial fills the certificate frame, then compress.
-  const trimmedVial = prep.vial_image
-    ? (await trimImageWhitespace(prep.vial_image, { padRatio: 0.04 })) || prep.vial_image
-    : '';
+  // Zoom/center vial into the certificate frame, then compress.
+  const preparedVial = prep.vial_image ? await prepareVialImage(prep.vial_image) : '';
   const nextHplc = prep.hplc_image !== undefined ? prep.hplc_image : (hydrated.hplc_image || '');
   const [vialImage, companyLogo, watermark, hplcImage] = await Promise.all([
-    compressImageDataUrl(trimmedVial),
+    compressImageDataUrl(preparedVial),
     compressImageDataUrl(hydrated.company_logo || ''),
     compressImageDataUrl(hydrated.chromatogram_image || ''),
     compressImageDataUrl(nextHplc || ''),
@@ -537,6 +638,8 @@ export async function saveCoaPdfImages(
     sterility_pass: stats.sterility_pass,
     endotoxin_eu_ml: stats.endotoxin_eu_ml,
     endotoxin_pass: stats.endotoxin_pass,
+    heavy_metals_pass: stats.heavy_metals_pass,
+    heavy_metals: stats.heavy_metals,
   });
 }
 

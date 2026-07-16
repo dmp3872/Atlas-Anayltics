@@ -8,13 +8,15 @@ import { supabase } from '../lib/supabase';
 import { COA, PanelResult } from '../lib/types';
 import { formatDate, formatDateTime } from '../lib/utils';
 import { verifyCoaIntegrity } from '../lib/coaVerify';
-import { hydrateCoaImages, readCoaPdfStats, resolveCoaHeaderLogo, resolveCoaWatermark, trimImageWhitespace } from '../lib/coaImages';
+import { hydrateCoaImages, prepareVialImage, readCoaPdfStats, resolveCoaHeaderLogo, resolveCoaWatermark } from '../lib/coaImages';
+import { matrixTypeFromSampleMetadata } from '../lib/coaPanels';
 import { partitionCoaPanels } from '../lib/coaDisplayPanels';
 import { COA_DETAIL_COLUMNS, fetchCoaImageRow } from '../lib/coaSelect';
 import { casForSampleName } from '../lib/labCoaForm';
 import { compressImageDataUrl } from '../lib/imageCompress';
-import { coaPngFilename, downloadCoaPngFromElement } from '../lib/coaPdf';
+import { coaDigitalPdfFilename, downloadCoaPdfFromElement } from '../lib/coaPdf';
 import { coaHasDirectorSignature, coaSignatureProgress, coaWorkflowStage } from '../lib/coaWorkflow';
+import { sampleIntakeAt } from '../lib/services/orderWorkflow';
 import { useAuth } from '../context/AuthContext';
 import Header from '../components/layout/Header';
 import Footer from '../components/layout/Footer';
@@ -32,9 +34,13 @@ function footerDate(iso: string): string {
 }
 function InfoField({ label, value }: { label: string; value: string }) {
   return (
-    <div className="py-1 border-b border-atlas-border">
-      <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">{label}</p>
-      <p className="text-sm font-medium text-black mt-0.5 truncate">{value || '—'}</p>
+    <div className="coa-info-field py-1.5 border-b border-atlas-border">
+      <p className="coa-info-label text-[10px] font-bold uppercase tracking-wider text-neutral-500 leading-normal">
+        {label}
+      </p>
+      <p className="coa-info-value text-sm font-medium text-black mt-0.5 leading-snug break-all">
+        {value || '—'}
+      </p>
     </div>
   );
 }
@@ -78,7 +84,7 @@ export default function COADetail() {
   const [logoWatermark, setLogoWatermark] = useState('');
   const [hplcPhoto, setHplcPhoto] = useState('');
   const [clientLogo, setClientLogo] = useState('');
-  const [downloadingPng, setDownloadingPng] = useState(false);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
 
   useEffect(() => {
     if (!slug) return;
@@ -117,18 +123,66 @@ export default function COADetail() {
 
         // Phase 2: images + profile fallbacks (non-blocking). Compress before state so a
         // leftover multi‑MB base64 row cannot freeze the tab / IDE embedded browser.
+        // Also backfill Matrix Type + Received Date from the linked order sample when blank.
+        const summary0 = (hydrated.result_summary && typeof hydrated.result_summary === 'object'
+          ? hydrated.result_summary
+          : {}) as Record<string, unknown>;
+        const chrom0 = (hydrated.chromatogram_data && typeof hydrated.chromatogram_data === 'object'
+          ? hydrated.chromatogram_data
+          : {}) as Record<string, unknown>;
+        const hasMatrix = [summary0.matrix_type, summary0.sample_matrix, chrom0.sample_matrix]
+          .some(v => typeof v === 'string' && v.trim());
+        const hasReceived = [summary0.received_date, summary0.received_at]
+          .some(v => typeof v === 'string' && v.trim());
+
+        const sampleFieldBackfill = (hydrated.sample_id && (!hasMatrix || !hasReceived))
+          ? (async () => {
+              const { data: sample } = await supabase
+                .from('order_samples')
+                .select('metadata, received_at, status, created_at')
+                .eq('id', hydrated.sample_id)
+                .maybeSingle();
+              if (cancelled || !sample) return null;
+
+              const matrix = !hasMatrix ? matrixTypeFromSampleMetadata(sample.metadata) : '';
+              const intakeAt = !hasReceived ? sampleIntakeAt(sample) : null;
+              const receivedDate = intakeAt ? formatDate(intakeAt) : '';
+              if (!matrix && !receivedDate) return null;
+
+              const nextSummary = {
+                ...summary0,
+                ...(matrix ? { matrix_type: matrix, sample_matrix: matrix } : {}),
+                ...(intakeAt ? { received_at: intakeAt, received_date: receivedDate } : {}),
+              };
+              const nextChrom = matrix
+                ? { ...chrom0, sample_matrix: matrix }
+                : chrom0;
+
+              setCoa(prev => prev ? {
+                ...prev,
+                result_summary: nextSummary,
+                chromatogram_data: nextChrom as COA['chromatogram_data'],
+              } : prev);
+              // Persist so PDF / public views keep matrix + received without re-query.
+              void supabase.from('coas').update({
+                result_summary: nextSummary,
+                chromatogram_data: nextChrom,
+              }).eq('id', hydrated.id);
+              return { matrix, receivedDate };
+            })()
+          : Promise.resolve(null);
+
         const [imgRow, header, watermark] = await Promise.all([
           fetchCoaImageRow(hydrated.id),
           resolveCoaHeaderLogo(hydrated),
           resolveCoaWatermark(hydrated),
+          sampleFieldBackfill,
         ]);
         if (cancelled) return;
 
         const rawVial = imgRow?.vial_image || hydrated.vial_image || '';
-        // Crop empty margins so the vial spans the frame as large as possible.
-        const trimmedVial = rawVial
-          ? (await trimImageWhitespace(rawVial, { padRatio: 0.04 })) || rawVial
-          : '';
+        // Crop + zoom so the vial fills/centers in the certificate frame.
+        const preparedVial = rawVial ? await prepareVialImage(rawVial) : '';
         // Header logo: keep the original src for display. Re-compressing large brand PNGs
         // can return '' and wipe the client mark from the certificate + PNG export.
         const rawHeader =
@@ -137,7 +191,7 @@ export default function COADetail() {
           || hydrated.company_logo
           || '';
         const [vial, chrom, hplc, nextWatermark] = await Promise.all([
-          compressImageDataUrl(trimmedVial),
+          compressImageDataUrl(preparedVial),
           compressImageDataUrl(imgRow?.chromatogram_image || hydrated.chromatogram_image || ''),
           compressImageDataUrl(imgRow?.hplc_image || hydrated.hplc_image || ''),
           compressImageDataUrl(watermark || ''),
@@ -181,22 +235,33 @@ export default function COADetail() {
     }
   }, [autoPrint, loading, coa]);
 
-  async function downloadPng() {
+  async function downloadPdf() {
     const root = document.querySelector('.coa-print-root');
     if (!(root instanceof HTMLElement) || !coa) return;
-    setDownloadingPng(true);
+    setDownloadingPdf(true);
     try {
-      document.querySelectorAll('.no-print').forEach(el => {
-        (el as HTMLElement).dataset._pngHide = '1';
-        (el as HTMLElement).style.display = 'none';
-      });
-      await downloadCoaPngFromElement(root, coaPngFilename(coa));
+      // Brief wait for phase-2 media; never block download if one image is slow/broken.
+      const mediaReady = () => {
+        const imgs = Array.from(root.querySelectorAll('img')).filter(img => (img.currentSrc || img.src || '').trim());
+        if (imgs.length === 0) return true;
+        const decoded = imgs.filter(img => img.complete && img.naturalWidth > 0).length;
+        return decoded >= Math.min(imgs.length, 1);
+      };
+      for (let i = 0; i < 15 && !mediaReady(); i++) {
+        await new Promise(r => setTimeout(r, 100));
+      }
+      await downloadCoaPdfFromElement(root, coaDigitalPdfFilename(coa));
+    } catch (err) {
+      console.error('COA PDF download failed:', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      const insecure = /insecure|tainted|SecurityError/i.test(msg);
+      window.alert(
+        insecure
+          ? 'Could not save PDF (browser blocked the image export). Hard-refresh and try again.'
+          : (msg || 'Could not download PDF. Try again.'),
+      );
     } finally {
-      document.querySelectorAll('[data-_png-hide="1"]').forEach(el => {
-        (el as HTMLElement).style.display = '';
-        delete (el as HTMLElement).dataset._pngHide;
-      });
-      setDownloadingPng(false);
+      setDownloadingPdf(false);
     }
   }
 
@@ -395,17 +460,17 @@ export default function COADetail() {
             }`}
           >
             {coa.vial_image ? (
-              <div className="coa-print-vial flex flex-col gap-1 w-full sm:w-[104px] h-full min-h-0">
-                <div className="border border-black bg-white flex-1 min-h-[7.5rem] p-0.5 flex items-stretch justify-stretch overflow-hidden">
+              <div className="coa-print-vial flex flex-col gap-1 w-full sm:w-[104px] h-full min-h-0 overflow-visible">
+                <div className="border border-black bg-white flex-1 min-h-[7.5rem] p-0 overflow-hidden flex items-center justify-center">
                   <img
                     src={coa.vial_image}
                     alt="Sample vial"
-                    className="block w-full h-full min-h-[7.5rem] object-contain object-center"
+                    className="block w-full h-full min-h-[7.5rem] object-cover object-center scale-[1.06]"
                   />
                 </div>
                 {vialSizeBadge ? (
-                  <div className="border border-black bg-white px-1 py-0.5 text-center shrink-0">
-                    <p className="text-[10px] font-bold uppercase tracking-wide text-black tabular-nums leading-none">
+                  <div className="coa-vial-size-badge border border-black bg-white px-1.5 py-1 text-center shrink-0 relative z-[1]">
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-black tabular-nums leading-normal">
                       {vialSizeBadge}
                     </p>
                   </div>
@@ -453,7 +518,7 @@ export default function COADetail() {
             </div>
           </div>
 
-          <div className="mb-3 overflow-hidden border border-atlas-border">
+          <div className="mb-3 overflow-hidden border border-atlas-border coa-table-wrap">
             <table className="w-full text-sm coa-print-table table-fixed">
               <colgroup>
                 <col className="w-[28%]" />
@@ -493,7 +558,7 @@ export default function COADetail() {
             </table>
           </div>
 
-          <div className="mb-4 overflow-hidden border border-atlas-border">
+          <div className="mb-4 overflow-hidden border border-atlas-border coa-table-wrap">
             <table className="w-full text-sm coa-print-table table-fixed">
               <colgroup>
                 <col className="w-[28%]" />
@@ -519,7 +584,7 @@ export default function COADetail() {
                     <tr key={`metal-${i}`} className={i % 2 === 0 ? 'bg-white' : 'bg-neutral-50'}>
                       <td className="px-3 py-1 font-medium border-t border-atlas-border">{r.panel_name}</td>
                       <td className="px-3 py-1 text-neutral-600 border-t border-atlas-border">{r.specification || ''}</td>
-                      <td className={`px-3 py-1 border-t border-atlas-border ${r.result?.trim() ? 'font-medium' : 'italic text-neutral-500'}`}>
+                      <td className="px-3 py-1 font-medium border-t border-atlas-border text-black">
                         {resultText}
                       </td>
                       <td className="px-3 py-1 border-t border-atlas-border">
@@ -627,11 +692,11 @@ export default function COADetail() {
           <div className="flex flex-col sm:flex-row gap-3 mt-6 no-print">
             <button
               type="button"
-              onClick={() => void downloadPng()}
-              disabled={downloadingPng}
+              onClick={() => void downloadPdf()}
+              disabled={downloadingPdf}
               className="btn-outline flex-1 gap-2 justify-center"
             >
-              <Download size={16} /> {downloadingPng ? 'Saving…' : 'Download PNG'}
+              <Download size={16} /> {downloadingPdf ? 'Saving…' : 'Download PDF'}
             </button>
             <button type="button" onClick={copyLink} className="btn-outline flex-1 gap-2 justify-center">
               {copied ? <><Check size={16} className="text-atlas-success" /> Copied</> : <><Copy size={16} /> Copy Link</>}

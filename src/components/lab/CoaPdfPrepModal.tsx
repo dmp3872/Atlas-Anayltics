@@ -11,7 +11,11 @@ import { fetchCoaImageRow } from '../../lib/coaSelect';
 import {
   ENDOTOXIN_PASS_RESULT,
   ENDOTOXIN_SPEC_EU_ML,
+  HEAVY_METAL_NAMES,
+  HEAVY_METAL_PASS_RESULT,
+  HeavyMetalName,
   computeAssayAveragesFromPanels,
+  heavyMetalsPassDefaults,
   SterilityMethod,
   STERILITY_METHOD_LABELS,
 } from '../../lib/labCoaForm';
@@ -64,6 +68,10 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
   const [sterilityPass, setSterilityPass] = useState(boot.stats.sterility_pass);
   const [endotoxinEuMl, setEndotoxinEuMl] = useState(boot.endotoxinEuMl);
   const [endotoxinPass, setEndotoxinPass] = useState(boot.stats.endotoxin_pass);
+  const [heavyMetalsPass, setHeavyMetalsPass] = useState(boot.stats.heavy_metals_pass);
+  const [heavyMetals, setHeavyMetals] = useState<Record<HeavyMetalName, string>>(
+    boot.stats.heavy_metals || heavyMetalsPassDefaults(),
+  );
   const [showAssayEdits, setShowAssayEdits] = useState(false);
   const [loadingImages, setLoadingImages] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -92,6 +100,8 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
     setSterilityPass(d.stats.sterility_pass);
     setEndotoxinEuMl(d.endotoxinEuMl);
     setEndotoxinPass(d.stats.endotoxin_pass);
+    setHeavyMetalsPass(d.stats.heavy_metals_pass);
+    setHeavyMetals(d.stats.heavy_metals || heavyMetalsPassDefaults());
     setShowAssayEdits(false);
     setError(null);
     setLoadingImages(true);
@@ -144,6 +154,8 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
         sterility_pass: sterilityPass,
         endotoxin_eu_ml: endotoxinEuMl,
         endotoxin_pass: endotoxinPass,
+        heavy_metals_pass: heavyMetalsPass,
+        heavy_metals: heavyMetals,
       });
       if (saveError) {
         setError(saveError);
@@ -330,7 +342,7 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
               <div>
                 <p className="text-sm font-bold text-black">Assay details already on COA</p>
                 <p className="text-xs text-neutral-500 mt-0.5">
-                  Sterility, endotoxin, fentanyl, molecular weight — filled at Issue. Expand only to edit.
+                  Sterility, endotoxin, heavy metals, fentanyl, molecular weight — filled at Issue. Expand only to edit.
                 </p>
               </div>
               <ChevronDown
@@ -430,6 +442,45 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
                         <option value="fail">FAIL</option>
                       </select>
                     </div>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="grid sm:grid-cols-2 gap-3">
+                    <div>
+                      <h3 className="text-sm font-bold uppercase tracking-wide text-black">Heavy Metals</h3>
+                      <p className="text-xs text-neutral-500 mt-1">USP {'<232>'} limits apply per metal</p>
+                    </div>
+                    <div>
+                      <label className="label" htmlFor="heavy-metals-conformity">Heavy metals conformity</label>
+                      <select
+                        id="heavy-metals-conformity"
+                        value={heavyMetalsPass ? 'pass' : 'fail'}
+                        onChange={e => {
+                          const pass = e.target.value === 'pass';
+                          setHeavyMetalsPass(pass);
+                          if (pass) setHeavyMetals(heavyMetalsPassDefaults());
+                        }}
+                        className="input-field"
+                      >
+                        <option value="pass">PASS — Not Detected</option>
+                        <option value="fail">FAIL — enter measured values</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {HEAVY_METAL_NAMES.map(metal => (
+                      <div key={metal}>
+                        <label className="text-xs text-neutral-500 mb-1 block">{metal}</label>
+                        <input
+                          type="text"
+                          value={heavyMetals[metal]}
+                          onChange={e => setHeavyMetals(prev => ({ ...prev, [metal]: e.target.value }))}
+                          className="input-field py-1.5 text-sm"
+                          placeholder={HEAVY_METAL_PASS_RESULT}
+                        />
+                      </div>
+                    ))}
                   </div>
                 </div>
 

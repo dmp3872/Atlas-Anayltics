@@ -233,8 +233,9 @@
     width: 100% !important;
     height: 100% !important;
     max-height: none !important;
-    object-fit: contain !important;
+    object-fit: cover !important;
     object-position: center !important;
+    transform: scale(1.06) !important;
   }
 
   .coa-print-chromatogram {
@@ -251,6 +252,13 @@
     height: 100% !important;
     display: flex !important;
     flex-direction: column !important;
+  }
+
+  .coa-print-chromatogram .coa-chrom-photo img {
+    object-fit: contain !important;
+    object-position: center !important;
+    width: 100% !important;
+    height: 100% !important;
   }
 
   .coa-chrom-svg {
@@ -309,11 +317,24 @@
   }
 }
 
-/* PNG export clone — viewport-independent letter layout (html-to-image is not @media print). */
+/*
+ * PDF export — always the professional desktop certificate (max-w-4xl),
+ * independent of the user’s browser window width. Also loosens typography
+ * so html2canvas does not clip mg / ppm / 3 mL glyphs.
+ */
 .coa-png-export.coa-print-root {
-  width: 816px !important;
-  max-width: 816px !important;
+  width: 896px !important;
+  max-width: 896px !important;
+  min-height: 0 !important;
+  height: auto !important;
+  margin: 0 auto !important;
+  background: #ffffff !important;
+  overflow: visible !important;
   box-sizing: border-box !important;
+}
+
+.coa-png-export .coa-header-bar {
+  overflow: visible !important;
 }
 
 .coa-png-export .coa-header-bar > div {
@@ -322,51 +343,194 @@
   align-items: center !important;
   justify-content: space-between !important;
   gap: 0.75rem !important;
+  max-width: 896px !important;
+  width: 100% !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  padding-left: 1.25rem !important;
+  padding-right: 1.25rem !important;
 }
 
-.coa-png-export .coa-client-logo-chip {
+.coa-png-export .coa-header-bar .hidden.sm\:block {
   display: block !important;
-  background: #fff !important;
-  padding: 2px !important;
-  border-radius: 2px !important;
 }
 
-.coa-png-export .coa-client-logo-chip img {
-  display: block !important;
-  height: 36px !important;
-  width: 36px !important;
-  max-height: 36px !important;
-  max-width: 36px !important;
-  object-fit: contain !important;
+.coa-png-export .coa-print-body {
+  max-width: 896px !important;
+  width: 100% !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  padding-left: 1.25rem !important;
+  padding-right: 1.25rem !important;
+  flex: 0 0 auto !important;
+  height: auto !important;
+  min-height: 0 !important;
+  overflow: visible !important;
+}
+
+/* Force desktop grids (do not depend on viewport `sm:`). */
+.coa-png-export .coa-print-body .grid.grid-cols-1.sm\:grid-cols-2,
+.coa-png-export .grid.grid-cols-1.sm\:grid-cols-2 {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
 }
 
 .coa-png-export .coa-print-media {
   display: grid !important;
   grid-template-columns: 104px 1fr !important;
-  gap: 0.35rem !important;
+  gap: 0.5rem !important;
+  flex: 0 0 auto !important;
+  overflow: visible !important;
   align-items: stretch !important;
-  min-height: 11rem !important;
+  min-height: 12rem !important;
 }
 
 .coa-png-export .coa-print-media:not(:has(.coa-print-vial)) {
   grid-template-columns: 1fr !important;
 }
 
+.coa-png-export p,
+.coa-png-export span,
+.coa-png-export td,
+.coa-png-export th,
+.coa-png-export li,
+.coa-png-export h1,
+.coa-png-export h2,
+.coa-png-export h3 {
+  overflow: visible !important;
+  text-overflow: clip !important;
+  -webkit-line-clamp: unset !important;
+}
+
+.coa-png-export .truncate {
+  overflow: visible !important;
+  text-overflow: clip !important;
+  white-space: normal !important;
+}
+
+.coa-png-export .leading-none,
+.coa-png-export .leading-tight {
+  line-height: 1.35 !important;
+}
+
+.coa-png-export .coa-info-field {
+  overflow: visible !important;
+  padding-top: 0.45rem !important;
+  padding-bottom: 0.45rem !important;
+}
+
+.coa-png-export .coa-info-label {
+  line-height: 1.4 !important;
+  overflow: visible !important;
+}
+
+.coa-png-export .coa-info-value {
+  line-height: 1.45 !important;
+  overflow: visible !important;
+  white-space: normal !important;
+  word-break: break-word !important;
+  padding-top: 2px !important;
+  padding-bottom: 2px !important;
+}
+
 .coa-png-export .coa-print-vial {
+  overflow: visible !important;
+  height: auto !important;
+  min-height: 0 !important;
   width: 104px !important;
   max-width: 104px !important;
+  align-self: stretch !important;
+}
+
+.coa-png-export .coa-print-vial > div:first-child {
+  overflow: hidden !important;
+  flex: 1 1 auto !important;
+  min-height: 8rem !important;
+}
+
+.coa-png-export .coa-print-vial img {
+  transform: none !important;
+}
+
+.coa-png-export .coa-vial-size-badge {
+  overflow: visible !important;
+  box-sizing: border-box !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0.4rem 0.35rem !important;
+  min-height: 1.6rem !important;
+}
+
+.coa-png-export .coa-vial-size-badge p {
+  line-height: 1.4 !important;
+  overflow: visible !important;
+  white-space: nowrap !important;
+  padding: 0 !important;
+  margin: 0 !important;
 }
 
 .coa-png-export .coa-print-chromatogram {
-  min-height: 10.5rem !important;
-  height: 100% !important;
+  overflow: visible !important;
+  min-height: 11rem !important;
+}
+
+.coa-png-export .coa-chrom-photo {
+  overflow: hidden !important;
+}
+
+.coa-png-export .coa-chrom-photo > div:first-child {
+  flex-shrink: 0 !important;
+  position: relative !important;
+  z-index: 2 !important;
+  background: #ffffff !important;
+  overflow: visible !important;
+  padding-top: 0.4rem !important;
+  padding-bottom: 0.3rem !important;
+}
+
+.coa-png-export .coa-chrom-photo > div:first-child p {
+  line-height: 1.4 !important;
+  overflow: visible !important;
+  padding-top: 1px !important;
+  padding-bottom: 1px !important;
+}
+
+.coa-png-export .coa-stat-card {
+  overflow: visible !important;
+}
+
+.coa-png-export .coa-stat-card .text-xl {
+  line-height: 1.3 !important;
+  overflow: visible !important;
+  padding-bottom: 3px !important;
+}
+
+/* Table wrappers use overflow-hidden on-screen — that clips mg/ppm in capture. */
+.coa-png-export .coa-table-wrap {
+  overflow: visible !important;
+}
+
+.coa-png-export .coa-print-table {
+  table-layout: fixed !important;
+  width: 100% !important;
+  border-collapse: collapse !important;
+}
+
+.coa-png-export .coa-print-table td,
+.coa-png-export .coa-print-table th {
+  overflow: visible !important;
+  line-height: 1.45 !important;
+  vertical-align: middle !important;
+  padding-top: 0.45rem !important;
+  padding-bottom: 0.45rem !important;
+  white-space: normal !important;
+  word-break: break-word !important;
 }
 
 .coa-png-export .coa-cert-footer {
-  flex: 0 0 auto !important;
-  margin-top: 0.5rem !important;
-  padding: 0.55rem 0.85rem !important;
-  box-sizing: border-box !important;
+  margin-top: 1.25rem !important;
+  overflow: visible !important;
 }
 
 .coa-png-export .coa-footer-row {
@@ -374,59 +538,6 @@
   flex-wrap: nowrap !important;
   align-items: center !important;
   justify-content: space-between !important;
-  gap: 0.65rem !important;
-  width: 100% !important;
-}
-
-.coa-png-export .coa-footer-sigs {
-  display: flex !important;
-  flex-wrap: wrap !important;
-  align-items: flex-start !important;
-  gap: 0.75rem 1rem !important;
-  min-width: 0 !important;
-  flex: 1 1 auto !important;
-}
-
-.coa-png-export .coa-footer-sigs > p {
-  flex: 0 0 100% !important;
-  width: 100% !important;
-  margin: 0 !important;
-}
-
-.coa-png-export .coa-footer-sigs > div {
-  flex: 0 1 auto !important;
-  min-width: 0 !important;
-  max-width: 48% !important;
-}
-
-.coa-png-export .coa-footer-sigs img {
-  height: 28px !important;
-  max-height: 28px !important;
-  max-width: 96px !important;
-  width: auto !important;
-}
-
-.coa-png-export .coa-footer-verify {
-  display: flex !important;
-  flex-wrap: nowrap !important;
-  align-items: center !important;
-  gap: 0.55rem !important;
-  flex: 0 0 auto !important;
-  margin-left: auto !important;
-}
-
-.coa-png-export .coa-footer-verify img,
-.coa-png-export .coa-print-qr-img,
-.coa-png-export .coa-footer-verify canvas {
-  width: 56px !important;
-  height: 56px !important;
-  max-width: 56px !important;
-  max-height: 56px !important;
-}
-
-.coa-png-export .coa-footer-disclaimer {
-  margin-top: 0.4rem !important;
-  white-space: normal !important;
 }
 
 @layer utilities {

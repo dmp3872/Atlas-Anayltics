@@ -8,7 +8,7 @@ import { supabase } from '../lib/supabase';
 import { COA, Company, LabPriority, Order, OrderSample, SampleStatus, UserProfile } from '../lib/types';
 import { computeCoaContentHash } from '../lib/coaVerify';
 import { notifyCoaReady, notifyOrderUpdate } from '../lib/notifications';
-import { clientSubmittedLabel, parseSampleMetadata } from '../lib/coaPanels';
+import { clientSubmittedLabel, matrixTypeFromSampleMetadata, parseSampleMetadata } from '../lib/coaPanels';
 import { fetchUserCompanies } from '../lib/coaProfile';
 import {
   EMPTY_LAB_RESULTS, LabCoaResults, VIAL_SIZE_OPTIONS, VialSizeOption,
@@ -33,6 +33,7 @@ import {
   hydrateCoaImages,
   isMissingCoaImageColumnError,
   payloadWithoutImageColumns,
+  prepareVialImage,
   resolveImageAsDataUrl,
 } from '../lib/coaImages';
 import CoaPdfPrepModal from '../components/lab/CoaPdfPrepModal';
@@ -511,7 +512,7 @@ export default function Lab() {
         headerLogoRaw ? resolveImageAsDataUrl(headerLogoRaw) : Promise.resolve(''),
         watermarkRaw ? resolveImageAsDataUrl(watermarkRaw) : Promise.resolve(''),
         chromatographImage ? resolveImageAsDataUrl(chromatographImage) : Promise.resolve(''),
-        vialImage ? resolveImageAsDataUrl(vialImage) : Promise.resolve(''),
+        vialImage ? prepareVialImage(vialImage) : Promise.resolve(''),
       ]);
       // Prefer compressed copies; fall back to raw only when still a short data/http URL.
       const pickImage = (resolved: string, raw: string) => {
@@ -525,7 +526,22 @@ export default function Lab() {
       const hplcImage = hplcRawResolved;
       const vialForSave = vialResolved || (vialImage.length <= 400_000 ? vialImage : '');
 
-      const intakeAt = sampleIntakeAt(linkedSample);
+      // Fresh sample row so Matrix Type / Received Date are snapshotted even if the
+      // queue list was stale or incomplete.
+      let intakeSample = linkedSample;
+      let matrixType = matrixTypeFromSampleMetadata(linkedMeta);
+      if (form.sampleId) {
+        const { data: freshSample } = await supabase
+          .from('order_samples')
+          .select('id, metadata, received_at, status, created_at')
+          .eq('id', form.sampleId)
+          .maybeSingle();
+        if (freshSample) {
+          intakeSample = freshSample as typeof linkedSample;
+          matrixType = matrixTypeFromSampleMetadata(freshSample.metadata) || matrixType;
+        }
+      }
+      const intakeAt = sampleIntakeAt(intakeSample);
       const receivedDate = intakeAt ? formatDate(intakeAt) : '';
       const assayAverages = computeLabAssayAverages(labResults);
       const avgPurityNum = parsePurityPercent(assayAverages.avg_purity);
@@ -544,7 +560,10 @@ export default function Lab() {
         purity_percent: storedPurity,
         molecular_weight: mwNum,
         panel_results: cleanPanels,
-        chromatogram_data: { vial_size: form.vialSize },
+        chromatogram_data: {
+          vial_size: form.vialSize,
+          ...(matrixType ? { sample_matrix: matrixType } : {}),
+        },
         vial_image: vialForSave || '',
         chromatogram_image: watermarkImage,
         hplc_image: hplcImage || '',
@@ -570,6 +589,7 @@ export default function Lab() {
           // Auto-filled from lab intake / accession (Receiving Desk or Add Sample on bench).
           received_at: intakeAt || '',
           received_date: receivedDate,
+          ...(matrixType ? { matrix_type: matrixType, sample_matrix: matrixType } : {}),
         },
         overall_result: form.overallResult,
         is_public: false,
@@ -948,6 +968,17 @@ export default function Lab() {
                     <option value="pass">Pass</option><option value="fail">Fail</option><option value="pending">Pending</option>
                   </select>
                 </div>
+              </div>
+              <div>
+                <label className="label">Matrix Type</label>
+                <input
+                  className="input-field bg-neutral-50"
+                  readOnly
+                  value={matrixTypeFromSampleMetadata(linkedMeta) || '—'}
+                />
+                <p className="text-[11px] text-neutral-500 mt-1">
+                  From the order sample (Lyophilized, Liquid/Solution, etc.) — written to the certificate on Issue.
+                </p>
               </div>
               <div>
                 <label className="label">Received date (COA)</label>

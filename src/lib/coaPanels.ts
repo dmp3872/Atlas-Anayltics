@@ -21,6 +21,30 @@ export function parseSampleMetadata(metadata: OrderSample['metadata']): OrderSam
   return metadata as OrderSampleMetadata;
 }
 
+/** Product form shown on COAs (Lyophilized, Liquid/Solution, etc.). */
+export function matrixTypeFromSampleMetadata(
+  metadata: OrderSample['metadata'] | OrderSampleMetadata | null | undefined,
+): string {
+  const meta = parseSampleMetadata(metadata as OrderSample['metadata']);
+  const direct = (meta.sample_matrix || '').trim();
+  if (direct) return direct;
+  // Some older / walk-in rows stored the matrix in sample_type.
+  const sampleType = (meta.sample_type || '').trim();
+  const known = [
+    'Powder',
+    'Liquid/Solution',
+    'Lyophilized',
+    'Capsule/Tablet',
+    'Raw Material',
+    'Creams/Gels',
+    'Capsules',
+    'BAC Water',
+    'Other',
+  ];
+  if (known.includes(sampleType)) return sampleType;
+  return '';
+}
+
 export function orderSampleIncludesFentanyl(metadata: OrderSample['metadata']): boolean {
   const meta = parseSampleMetadata(metadata);
   if (typeof meta.include_fentanyl === 'boolean') return meta.include_fentanyl;
