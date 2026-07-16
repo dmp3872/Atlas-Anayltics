@@ -26,3 +26,4 @@ tmp/
 .bin/
 *.dataurl.txt
 *-raw.txt
+.vercel
