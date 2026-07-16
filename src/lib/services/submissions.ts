@@ -1,4 +1,5 @@
 import { buildCOAInsertPayload } from '../coaBuilder';
+import { allocateUniqueSampleCode } from '../sampleCode';
 import { supabase } from '../supabase';
 import {
   Submission,
@@ -357,7 +358,7 @@ export async function releaseCOA(
 
   const result = sample.submission_results?.[0];
   const panel = panels.find((p) => p.id === sample.panel_id);
-  const slug = `${submission.submission_number.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${sample.sample_number.slice(-4)}-${Math.random().toString(36).slice(2, 6)}`;
+  const slug = await allocateUniqueSampleCode(sample.created_at || submission.created_at || new Date());
   const insertPayload = buildCOAInsertPayload(submission, sample, panel, result, slug);
 
   const { data: coa, error } = await supabase

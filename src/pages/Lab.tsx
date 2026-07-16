@@ -9,6 +9,7 @@ import { COA, Company, LabPriority, Order, OrderSample, SampleStatus, UserProfil
 import { computeCoaContentHash } from '../lib/coaVerify';
 import { notifyCoaReady, notifyOrderUpdate } from '../lib/notifications';
 import { clientSubmittedLabel, matrixTypeFromSampleMetadata, parseSampleMetadata } from '../lib/coaPanels';
+import { allocateUniqueSampleCode } from '../lib/sampleCode';
 import { fetchUserCompanies } from '../lib/coaProfile';
 import {
   EMPTY_LAB_RESULTS, LabCoaResults, VIAL_SIZE_OPTIONS, VialSizeOption,
@@ -25,7 +26,6 @@ import QueueFilters, { QueueFilterValues } from '../components/lab/QueueFilters'
 import { buildQueueItems, filterQueueItems, normalizeLabPriority } from '../lib/labQueue';
 import { sampleIntakeAt, setSampleStatus } from '../lib/services/orderWorkflow';
 import { formatDate } from '../lib/utils';
-import LabSampleIntake from '../components/lab/LabSampleIntake';
 import ReceivingDesk from '../components/lab/ReceivingDesk';
 import StaffHeader from '../components/layout/StaffHeader';
 import LogoDropzone from '../components/account/LogoDropzone';
@@ -43,7 +43,7 @@ import { useAuth } from '../context/AuthContext';
 const MAX_COA_IMAGE_BYTES = 1024 * 1024;
 
 type Message = { type: 'success' | 'error'; text: string; slug?: string } | null;
-type LabTab = 'receive' | 'queue' | 'intake' | 'issue' | 'workflow';
+type LabTab = 'receive' | 'queue' | 'issue' | 'workflow';
 
 const BLANK = {
   clientId: '', sampleId: '', orderId: '',
@@ -355,10 +355,10 @@ export default function Lab() {
   async function issueCoaForBrand(
     base: Record<string, unknown>,
     brandName: string,
-    _clientId?: string,
-    _sampleName?: string,
+    createdAt?: string | null,
   ) {
-    const brandPayload = { ...base, company_name: brandName, sample_id: null };
+    const slug = await allocateUniqueSampleCode(createdAt || new Date());
+    const brandPayload = { ...base, company_name: brandName, sample_id: null, slug };
     await insertCoa(brandPayload);
   }
 
@@ -546,11 +546,20 @@ export default function Lab() {
       const assayAverages = computeLabAssayAverages(labResults);
       const avgPurityNum = parsePurityPercent(assayAverages.avg_purity);
       const storedPurity = avgPurityNum ?? purityNum;
+      // Human-readable sample code (YY-XXXXXX), year from sample creation when known.
+      const sampleCreatedAt =
+        (intakeSample && 'created_at' in intakeSample && typeof intakeSample.created_at === 'string'
+          ? intakeSample.created_at
+          : null)
+        || linkedSample?.created_at
+        || new Date().toISOString();
+      const sampleCode = await allocateUniqueSampleCode(sampleCreatedAt);
 
       const payload = {
         user_id: form.clientId,
         sample_id: form.sampleId || null,
         order_id: form.orderId || null,
+        slug: sampleCode,
         sample_name: form.sampleName.trim(),
         display_name: form.displayName.trim() || form.sampleName.trim(),
         company_name: (form.companyName.trim() || profile?.name || '').trim(),
@@ -586,7 +595,7 @@ export default function Lab() {
           apply_company_logo: applyHeaderLogo,
           apply_watermark: applyWatermark,
           coa_profile_id: profile?.id ?? null,
-          // Auto-filled from lab intake / accession (Receiving Desk or Add Sample on bench).
+          // Auto-filled from lab intake / accession (Receiving Desk).
           received_at: intakeAt || '',
           received_date: receivedDate,
           ...(matrixType ? { matrix_type: matrixType, sample_matrix: matrixType } : {}),
@@ -608,7 +617,7 @@ export default function Lab() {
       const sampleRow = form.sampleId ? samples.find(s => s.id === form.sampleId) : null;
       const brandNames = (sampleRow?.metadata as { brand_names?: string[] } | null)?.brand_names?.filter(Boolean) ?? [];
       for (const brand of brandNames) {
-        await issueCoaForBrand({ ...payload, coa_workflow_stage: 'issued' }, brand, form.clientId, form.sampleName.trim());
+        await issueCoaForBrand({ ...payload, coa_workflow_stage: 'issued' }, brand, sampleCreatedAt);
       }
 
       if (form.sampleId) {
@@ -648,16 +657,9 @@ export default function Lab() {
   const tabs: { id: LabTab; label: string; count?: number }[] = [
     { id: 'receive', label: 'Receive', count: receiveCount || undefined },
     { id: 'queue', label: 'Testing Queue', count: pendingQueueCount || undefined },
-    { id: 'intake', label: 'Add Sample' },
     { id: 'issue', label: 'Issue COA' },
     { id: 'workflow', label: 'COA Workflow', count: workflowActiveCount || undefined },
   ];
-
-  function handleSampleCreated(successText: string) {
-    setMsg({ type: 'success', text: successText });
-    setTab('queue');
-    loadAll();
-  }
 
   return (
     <div className="min-h-screen bg-neutral-100">
@@ -678,7 +680,7 @@ export default function Lab() {
             <FlaskConical size={24} className="text-brand-500" /> Lab Console
           </h1>
           <p className="text-sm text-neutral-500 mt-1">
-            Receive samples → Testing queue → Issue COA → Verify → Publish for clients.
+            Receive samples → Testing queue → Issue COA → Workflow (verify &amp; publish).
           </p>
         </div>
 
@@ -801,16 +803,6 @@ export default function Lab() {
               onAssign={isAdmin ? assignSample : undefined}
               onSetSamplePriority={isAdmin ? setSamplePriority : undefined}
             />
-          </div>
-        )}
-
-        {tab === 'intake' && (
-          <div className="space-y-4">
-            <p className="text-sm text-neutral-600">
-              Add a sample for a client who wasn&apos;t already in the system — e.g. a walk-in drop-off or mailed-in
-              vial that never went through the client portal. Tests are required; samples can never be created without them.
-            </p>
-            <LabSampleIntake clients={clients} chemists={chemistOptions} onCreated={handleSampleCreated} />
           </div>
         )}
 
@@ -987,11 +979,11 @@ export default function Lab() {
                   readOnly
                   value={(() => {
                     const at = sampleIntakeAt(linkedSample);
-                    return at ? formatDate(at) : 'Set when sample is accessioned at Receiving / Add Sample';
+                    return at ? formatDate(at) : 'Set when sample is accessioned at Receiving';
                   })()}
                 />
                 <p className="text-[11px] text-neutral-500 mt-1">
-                  Auto-filled from lab intake — not editable here.
+                  Auto-filled from Receiving Desk intake — not editable here.
                 </p>
               </div>
               <div className="relative">

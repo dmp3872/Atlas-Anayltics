@@ -1,9 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  ArrowLeft, ArrowRight, Building2, CheckCircle, Clock, ExternalLink, Fingerprint,
-  FlaskConical, Globe, GripVertical, Hash, MessageCircle, Phone, Shield, UserCircle2,
-  XCircle,
+  ArrowLeft, ArrowRight, Building2, CheckCircle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp,
+  Clock, ExternalLink, Fingerprint, FlaskConical, Globe, GripVertical, Hash, MessageCircle, Phone,
+  Shield, UserCircle2, XCircle,
 } from 'lucide-react';
 import { COA, Order, OrderSample, UserProfile } from '../../lib/types';
 import { formatDate } from '../../lib/utils';
@@ -112,11 +112,26 @@ export default function CoaWorkflowBoard({
   coas, onMoveCoa, movingId, onCoaImagesSaved, pendingSamples = [], onIssueCoa, chemists = [],
   reviewers = [], clients = [], orders = [], samples = [], currentUserId = null,
 }: Props) {
+  const boardScrollRef = useRef<HTMLDivElement>(null);
+  const columnScrollRefs = useRef<Partial<Record<CoaWorkflowStage, HTMLDivElement | null>>>({});
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [overStage, setOverStage] = useState<CoaWorkflowStage | null>(null);
   const [prepCoa, setPrepCoa] = useState<COA | null>(null);
   const [reviewPickFor, setReviewPickFor] = useState<string | null>(null);
   const [reviewAssignee, setReviewAssignee] = useState('');
+
+  function scrollBoard(direction: -1 | 1) {
+    const el = boardScrollRef.current;
+    if (!el) return;
+    const step = Math.min(340, Math.max(260, el.clientWidth * 0.8));
+    el.scrollBy({ left: direction * step, behavior: 'smooth' });
+  }
+
+  function scrollColumn(stage: CoaWorkflowStage, direction: -1 | 1) {
+    const el = columnScrollRefs.current[stage];
+    if (!el) return;
+    el.scrollBy({ top: direction * Math.min(280, el.clientHeight * 0.75), behavior: 'smooth' });
+  }
 
   const reviewerOptions = reviewers.length > 0 ? reviewers : chemists;
 
@@ -257,7 +272,37 @@ export default function CoaWorkflowBoard({
         />
       )}
 
-      <div className="flex gap-4 overflow-x-auto pb-2 min-h-[520px]">
+      <div className="sticky top-0 z-20 -mx-1 px-1 py-2 bg-neutral-100/95 backdrop-blur-sm border-b border-atlas-border/80 flex items-center justify-between gap-3">
+        <p className="text-xs text-neutral-600 min-w-0">
+          Scroll stages left/right · use column arrows to move up/down without missing cards.
+        </p>
+        <div className="flex items-center gap-1 shrink-0">
+          <button
+            type="button"
+            onClick={() => scrollBoard(-1)}
+            className="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-atlas-border bg-white text-neutral-700 hover:bg-neutral-50 hover:border-brand-400 shadow-sm"
+            aria-label="Scroll workflow left"
+            title="Previous stages"
+          >
+            <ChevronLeft size={18} />
+          </button>
+          <button
+            type="button"
+            onClick={() => scrollBoard(1)}
+            className="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-atlas-border bg-white text-neutral-700 hover:bg-neutral-50 hover:border-brand-400 shadow-sm"
+            aria-label="Scroll workflow right"
+            title="Next stages"
+          >
+            <ChevronRight size={18} />
+          </button>
+        </div>
+      </div>
+
+      <div
+        ref={boardScrollRef}
+        className="flex gap-4 overflow-x-auto pb-3 scroll-smooth snap-x snap-mandatory overscroll-x-contain"
+        style={{ WebkitOverflowScrolling: 'touch' }}
+      >
         {COA_WORKFLOW_BOARD_COLUMNS.map(stage => {
           const styles = COLUMN_STYLES[stage];
           const isTestingCol = stage === 'testing_in_progress';
@@ -268,24 +313,51 @@ export default function CoaWorkflowBoard({
           return (
             <div
               key={stage}
-              className={`flex-shrink-0 w-[280px] sm:w-[300px] flex flex-col rounded-xl border border-atlas-border overflow-hidden transition-shadow ${
+              className={`flex-shrink-0 w-[280px] sm:w-[300px] snap-start flex flex-col rounded-xl border border-atlas-border overflow-hidden transition-shadow h-[min(70vh,720px)] ${
                 isOver ? `ring-2 ${styles.ring} shadow-md` : ''
               }`}
               onDragOver={e => handleDragOver(e, stage)}
               onDragLeave={() => setOverStage(prev => (prev === stage ? null : prev))}
               onDrop={e => handleDrop(e, stage)}
             >
-              <div className={`px-4 py-3 border-b flex items-center justify-between ${styles.header}`}>
-                <h3 className="font-bold text-sm flex items-center gap-2">
+              <div className={`px-3 py-2.5 border-b flex items-center justify-between gap-2 shrink-0 sticky top-0 z-10 ${styles.header}`}>
+                <h3 className="font-bold text-sm flex items-center gap-2 min-w-0 truncate">
                   {stageIcon(stage)}
-                  {COA_WORKFLOW_LABELS[stage]}
+                  <span className="truncate">{COA_WORKFLOW_LABELS[stage]}</span>
                 </h3>
-                <span className="text-xs font-semibold text-neutral-500 bg-white/70 px-2 py-0.5 rounded-full">
-                  {columnCount}
-                </span>
+                <div className="flex items-center gap-1 shrink-0">
+                  <span className="text-xs font-semibold text-neutral-500 bg-white/70 px-2 py-0.5 rounded-full">
+                    {columnCount}
+                  </span>
+                  <div className="flex flex-col -space-y-0.5">
+                    <button
+                      type="button"
+                      onClick={() => scrollColumn(stage, -1)}
+                      className="p-0.5 rounded text-neutral-500 hover:text-black hover:bg-white/80"
+                      aria-label={`Scroll ${COA_WORKFLOW_LABELS[stage]} up`}
+                      title="Scroll up"
+                    >
+                      <ChevronUp size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => scrollColumn(stage, 1)}
+                      className="p-0.5 rounded text-neutral-500 hover:text-black hover:bg-white/80"
+                      aria-label={`Scroll ${COA_WORKFLOW_LABELS[stage]} down`}
+                      title="Scroll down"
+                    >
+                      <ChevronDown size={14} />
+                    </button>
+                  </div>
+                </div>
               </div>
 
-              <div className={`flex-1 p-2 space-y-2 overflow-y-auto max-h-[560px] ${styles.body}`}>
+              <div
+                ref={el => {
+                  columnScrollRefs.current[stage] = el;
+                }}
+                className={`flex-1 min-h-0 p-2 space-y-2 overflow-y-auto overscroll-contain scroll-smooth ${styles.body}`}
+              >
                 {isTestingCol && (
                   <>
                     {sortedPending.length === 0 && cards.length === 0 ? (
@@ -486,7 +558,7 @@ export default function CoaWorkflowBoard({
                             onClick={e => e.stopPropagation()}
                             onDragStart={e => e.preventDefault()}
                           >
-                            <ExternalLink size={11} /> Open & download PNG
+                            <ExternalLink size={11} />                             Open
                           </Link>
 
                           {currentStage === 'issued' && (
