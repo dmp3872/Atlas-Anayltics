@@ -6,6 +6,10 @@ import { computeDueAt, normalizePaymentStatus, orderIsPayable } from '../utils';
 import { notifyOrderUpdate } from '../notifications';
 import { allocateUniqueAccessionNumber } from '../sampleCode';
 
+function isMissingReceivedAtColumnError(message: string | undefined): boolean {
+  return /received_at/i.test(message || '') && /schema cache|does not exist|could not find/i.test(message || '');
+}
+
 export const ORDER_ADMIN_NEXT_STATUS: Partial<Record<OrderStatus, OrderStatus[]>> = {
   received: ['awaiting_sample', 'processing'],
   awaiting_sample: ['processing'],
@@ -97,6 +101,8 @@ export async function markSampleReceived(
   opts: {
     /** Optional override. When omitted/blank, a YY-XXXXXX code is auto-assigned. */
     accessionNumber?: string;
+    /** Required — name of the person who physically received the sample. */
+    receivedBy: string;
     note?: string;
     changedBy?: string | null;
     vialCountConfirmed?: number;
@@ -104,6 +110,11 @@ export async function markSampleReceived(
 ): Promise<{ error: Error | null; sample?: OrderSample; order?: Order }> {
   if (!orderIsPayable(order.payment_status)) {
     return { error: new Error('Order must be paid (or waived) before receiving samples.') };
+  }
+
+  const receivedBy = (opts.receivedBy || '').trim();
+  if (!receivedBy) {
+    return { error: new Error('Received by name is required.') };
   }
 
   let accession = (opts.accessionNumber || sample.accession_number || '').trim();
@@ -126,25 +137,45 @@ export async function markSampleReceived(
     accession_number: accession,
     // Preserve original intake time if already set (re-accession should not rewrite COA date).
     received_at: receivedAt,
-    metadata: { ...prevMeta, received_at: receivedAt, sample_code: accession },
+    metadata: {
+      ...prevMeta,
+      received_at: receivedAt,
+      sample_code: accession,
+      received_by: receivedBy,
+    },
   };
   if (opts.vialCountConfirmed != null && opts.vialCountConfirmed > 0) {
     samplePatch.vial_count = opts.vialCountConfirmed;
   }
 
-  const { data: updatedSample, error: sampleErr } = await supabase
+  let { data: updatedSample, error: sampleErr } = await supabase
     .from('order_samples')
     .update(samplePatch)
     .eq('id', sample.id)
     .select('*')
     .single();
 
+  // Migration 20260715221000 may not be applied yet — keep intake time in metadata only.
+  if (sampleErr && isMissingReceivedAtColumnError(sampleErr.message)) {
+    const { received_at: _drop, ...withoutCol } = samplePatch;
+    const retry = await supabase
+      .from('order_samples')
+      .update(withoutCol)
+      .eq('id', sample.id)
+      .select('*')
+      .single();
+    updatedSample = retry.data;
+    sampleErr = retry.error;
+  }
+
   if (sampleErr) return { error: new Error(sampleErr.message) };
 
   await logOrderStatusChange(order.id, 'received', {
     fromStatus: sample.status,
     sampleId: sample.id,
-    note: opts.note || `Accessioned as ${accession}`,
+    note: opts.note
+      ? `${opts.note} · Received by ${receivedBy}`
+      : `Accessioned as ${accession} · Received by ${receivedBy}`,
     changedBy: opts.changedBy,
   });
 
@@ -187,16 +218,32 @@ export async function setSampleStatus(
   status: SampleStatus,
   opts?: { note?: string; changedBy?: string | null; order?: Order },
 ): Promise<{ error: Error | null; sample?: OrderSample }> {
+  const now = new Date().toISOString();
   const patch: Partial<OrderSample> = { status };
-  if (status === 'received' && !sample.received_at) {
-    patch.received_at = new Date().toISOString();
+  if (status === 'received' && !sampleIntakeAt(sample)) {
+    patch.received_at = now;
+    const prevMeta =
+      sample.metadata && typeof sample.metadata === 'object' ? sample.metadata : {};
+    patch.metadata = { ...prevMeta, received_at: now };
   }
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('order_samples')
     .update(patch)
     .eq('id', sample.id)
     .select('*')
     .single();
+
+  if (error && isMissingReceivedAtColumnError(error.message) && 'received_at' in patch) {
+    const { received_at: _drop, ...withoutCol } = patch;
+    const retry = await supabase
+      .from('order_samples')
+      .update(withoutCol)
+      .eq('id', sample.id)
+      .select('*')
+      .single();
+    data = retry.data;
+    error = retry.error;
+  }
 
   if (error) return { error: new Error(error.message) };
 
@@ -249,4 +296,13 @@ export function sampleIntakeAt(
     return sample.created_at;
   }
   return null;
+}
+
+/** Name of the person who received / accessioned the sample at the lab. */
+export function sampleReceivedBy(
+  sample: Pick<OrderSample, 'metadata'> | null | undefined,
+): string | null {
+  if (!sample?.metadata || typeof sample.metadata !== 'object') return null;
+  const name = sample.metadata.received_by;
+  return typeof name === 'string' && name.trim() ? name.trim() : null;
 }

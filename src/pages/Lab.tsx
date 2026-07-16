@@ -22,7 +22,8 @@ import CompanyFilterSearch from '../components/lab/CompanyFilterSearch';
 import TestingQueuePanel from '../components/lab/TestingQueuePanel';
 import QueueFilters, { QueueFilterValues } from '../components/lab/QueueFilters';
 import { buildQueueItems, filterQueueItems, normalizeLabPriority } from '../lib/labQueue';
-import { sampleIntakeAt, setSampleStatus } from '../lib/services/orderWorkflow';
+import { sampleIntakeAt, sampleReceivedBy, setSampleStatus } from '../lib/services/orderWorkflow';
+import { allocateUniqueSampleCode, isValidSampleCode } from '../lib/sampleCode';
 import { formatDate } from '../lib/utils';
 import LabSampleIntake from '../components/lab/LabSampleIntake';
 import ReceivingDesk from '../components/lab/ReceivingDesk';
@@ -353,10 +354,10 @@ export default function Lab() {
   async function issueCoaForBrand(
     base: Record<string, unknown>,
     brandName: string,
-    _clientId?: string,
-    _sampleName?: string,
+    createdAt?: string | null,
   ) {
-    const brandPayload = { ...base, company_name: brandName, sample_id: null };
+    const slug = await allocateUniqueSampleCode(createdAt || new Date());
+    const brandPayload = { ...base, company_name: brandName, sample_id: null, slug };
     await insertCoa(brandPayload);
   }
 
@@ -516,13 +517,47 @@ export default function Lab() {
     const watermarkImage = watermarkRawResolved || watermarkRaw || '';
     const hplcImage = hplcRawResolved;
 
-    const intakeAt = sampleIntakeAt(linkedSample);
+    // Prefer accession assigned at Receiving; otherwise allocate a new YY-XXXXXX.
+    let intakeSample = linkedSample;
+    if (form.sampleId) {
+      const fresh = await supabase
+        .from('order_samples')
+        .select('id, metadata, received_at, status, created_at, accession_number')
+        .eq('id', form.sampleId)
+        .maybeSingle();
+      const freshSample = fresh.error && /received_at/i.test(fresh.error.message)
+        ? (await supabase
+            .from('order_samples')
+            .select('id, metadata, status, created_at, accession_number')
+            .eq('id', form.sampleId)
+            .maybeSingle()).data
+        : fresh.data;
+      if (freshSample) intakeSample = freshSample as typeof linkedSample;
+    }
+    const intakeAt = sampleIntakeAt(intakeSample);
     const receivedDate = intakeAt ? formatDate(intakeAt) : '';
+    const sampleCreatedAt =
+      (intakeSample && 'created_at' in intakeSample && typeof intakeSample.created_at === 'string'
+        ? intakeSample.created_at
+        : null)
+      || linkedSample?.created_at
+      || new Date().toISOString();
+    const existingAccession = (
+      (intakeSample && 'accession_number' in intakeSample
+        ? (intakeSample as { accession_number?: string | null }).accession_number
+        : null)
+      || linkedSample?.accession_number
+      || ''
+    ).trim().toUpperCase();
+    const sampleCode = isValidSampleCode(existingAccession)
+      ? existingAccession
+      : await allocateUniqueSampleCode(sampleCreatedAt);
 
     const payload = {
       user_id: form.clientId,
       sample_id: form.sampleId || null,
       order_id: form.orderId || null,
+      slug: sampleCode,
       sample_name: form.sampleName.trim(),
       display_name: form.displayName.trim() || form.sampleName.trim(),
       company_name: (form.companyName.trim() || profile?.name || '').trim(),
@@ -548,7 +583,7 @@ export default function Lab() {
         apply_company_logo: applyHeaderLogo,
         apply_watermark: applyWatermark,
         coa_profile_id: profile?.id ?? null,
-        // Auto-filled from lab intake / accession (Receiving Desk or Add Sample on bench).
+        // Auto-filled from lab intake / accession (Receiving Desk).
         received_at: intakeAt || '',
         received_date: receivedDate,
       },
@@ -567,10 +602,10 @@ export default function Lab() {
       return;
     }
 
-    const linkedSample = form.sampleId ? samples.find(s => s.id === form.sampleId) : null;
-    const brandNames = (linkedSample?.metadata as { brand_names?: string[] } | null)?.brand_names?.filter(Boolean) ?? [];
+    const brandSample = form.sampleId ? samples.find(s => s.id === form.sampleId) : null;
+    const brandNames = (brandSample?.metadata as { brand_names?: string[] } | null)?.brand_names?.filter(Boolean) ?? [];
     for (const brand of brandNames) {
-      await issueCoaForBrand({ ...payload, coa_workflow_stage: 'issued' }, brand, form.clientId, form.sampleName.trim());
+      await issueCoaForBrand({ ...payload, coa_workflow_stage: 'issued' }, brand, sampleCreatedAt);
     }
 
     if (form.sampleId) {
@@ -926,19 +961,40 @@ export default function Lab() {
                   </select>
                 </div>
               </div>
-              <div>
-                <label className="label">Received date (COA)</label>
-                <input
-                  className="input-field bg-neutral-50"
-                  readOnly
-                  value={(() => {
-                    const at = sampleIntakeAt(linkedSample);
-                    return at ? formatDate(at) : 'Set when sample is accessioned at Receiving / Add Sample';
-                  })()}
-                />
-                <p className="text-[11px] text-neutral-500 mt-1">
-                  Auto-filled from lab intake — not editable here.
-                </p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="label">Sample Code / Accession</label>
+                  <input
+                    className="input-field bg-neutral-50 font-mono"
+                    readOnly
+                    value={(linkedSample?.accession_number || '').trim() || 'Assigned at Receiving (YY-XXXXXX)'}
+                  />
+                  <p className="text-[11px] text-neutral-500 mt-1">
+                    Auto-set when received — becomes the COA Sample Code on Issue.
+                  </p>
+                </div>
+                <div>
+                  <label className="label">Received by</label>
+                  <input
+                    className="input-field bg-neutral-50"
+                    readOnly
+                    value={sampleReceivedBy(linkedSample) || 'Set when sample is received'}
+                  />
+                </div>
+                <div>
+                  <label className="label">Received date (COA)</label>
+                  <input
+                    className="input-field bg-neutral-50"
+                    readOnly
+                    value={(() => {
+                      const at = sampleIntakeAt(linkedSample);
+                      return at ? formatDate(at) : 'Set when sample is accessioned at Receiving';
+                    })()}
+                  />
+                  <p className="text-[11px] text-neutral-500 mt-1">
+                    Auto-filled from Receiving Desk — not editable here.
+                  </p>
+                </div>
               </div>
               <div className="relative">
                 <label className="label">CAS Number</label>

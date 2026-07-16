@@ -17,6 +17,7 @@ import {
 } from '../../lib/utils';
 import {
   ORDER_ADMIN_NEXT_STATUS, fetchOrderHistory, logOrderStatusChange, markOrderPaid, markSampleReceived,
+  sampleReceivedBy,
 } from '../../lib/services/orderWorkflow';
 import OrderStatusPipeline from '../../components/order/OrderStatusPipeline';
 
@@ -29,7 +30,7 @@ const ACTIVITY_LABELS: Record<string, string> = {
 export default function AdminOrderDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [order, setOrder] = useState<Order | null>(null);
   const [samples, setSamples] = useState<OrderSample[]>([]);
   const [history, setHistory] = useState<OrderStatusHistoryEntry[]>([]);
@@ -38,7 +39,13 @@ export default function AdminOrderDetail() {
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [payNote, setPayNote] = useState('');
   const [statusNote, setStatusNote] = useState('');
+  const [receivedByBySample, setReceivedByBySample] = useState<Record<string, string>>({});
   const [receiveNoteBySample, setReceiveNoteBySample] = useState<Record<string, string>>({});
+  const defaultReceivedBy = (profile?.full_name || '').trim();
+
+  function receivedByFor(sampleId: string) {
+    return (receivedByBySample[sampleId] ?? defaultReceivedBy).trim();
+  }
 
   async function reload() {
     if (!id) return;
@@ -108,9 +115,15 @@ export default function AdminOrderDetail() {
 
   async function handleReceiveSample(sample: OrderSample) {
     if (!order) return;
+    const receivedBy = receivedByFor(sample.id);
+    if (!receivedBy) {
+      setMsg({ type: 'error', text: 'Enter who received this sample before continuing.' });
+      return;
+    }
     setActionLoading(true);
     setMsg(null);
     const { error, sample: updated } = await markSampleReceived(sample, order, {
+      receivedBy,
       note: receiveNoteBySample[sample.id] || '',
       changedBy: user?.id,
       vialCountConfirmed: sample.vial_count,
@@ -122,8 +135,8 @@ export default function AdminOrderDetail() {
       setMsg({
         type: 'success',
         text: code
-          ? `${sample.display_name || sample.sample_name} received as ${code}.`
-          : `${sample.display_name || sample.sample_name} received.`,
+          ? `${sample.display_name || sample.sample_name} received as ${code} (by ${receivedBy}).`
+          : `${sample.display_name || sample.sample_name} received (by ${receivedBy}).`,
       });
       await reload();
     }
@@ -292,6 +305,7 @@ export default function AdminOrderDetail() {
           ) : (
             samples.map(sample => {
               const canReceive = sample.status === 'awaiting_sample';
+              const receivedByName = sampleReceivedBy(sample);
               return (
                 <div key={sample.id} className="border border-atlas-border rounded-xl p-4 space-y-3">
                   <div className="flex items-start justify-between gap-3">
@@ -303,6 +317,7 @@ export default function AdminOrderDetail() {
                       <p className="text-xs text-neutral-500 mt-0.5">
                         {sample.vial_count} vial{sample.vial_count === 1 ? '' : 's'}
                         {sample.accession_number && <> · Accession {sample.accession_number}</>}
+                        {receivedByName && <> · Received by {receivedByName}</>}
                       </p>
                     </div>
                     <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border bg-neutral-100 text-neutral-600 border-neutral-200 flex-shrink-0">
@@ -313,28 +328,36 @@ export default function AdminOrderDetail() {
                   {canReceive && (
                     <div className="rounded-lg border border-brand-200 bg-brand-50/40 p-3 space-y-2">
                       <p className="text-xs font-semibold text-brand-900 flex items-center gap-1">
-                        <Fingerprint size={12} /> Accession & receive
+                        <Fingerprint size={12} /> Receive into lab
                       </p>
                       {!paid && (
                         <p className="text-xs text-amber-700">Order must be paid or waived before this sample can be received.</p>
                       )}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <p className="text-[11px] text-brand-900/80">
+                        Accession # is auto-generated (YY-XXXXXX) and becomes the COA sample code.
+                      </p>
+                      <div>
+                        <label className="text-[11px] font-semibold text-brand-900">
+                          Received by <span className="text-red-500">*</span>
+                        </label>
                         <input
-                          value={accessionBySample[sample.id] ?? ''}
-                          onChange={e => setAccessionBySample(prev => ({ ...prev, [sample.id]: e.target.value }))}
-                          placeholder="Accession # (required)"
-                          className="input-field text-sm font-mono"
-                        />
-                        <input
-                          value={receiveNoteBySample[sample.id] ?? ''}
-                          onChange={e => setReceiveNoteBySample(prev => ({ ...prev, [sample.id]: e.target.value }))}
-                          placeholder="Receiving note (optional)"
-                          className="input-field text-sm"
+                          value={receivedByBySample[sample.id] ?? defaultReceivedBy}
+                          onChange={e => setReceivedByBySample(prev => ({ ...prev, [sample.id]: e.target.value }))}
+                          placeholder="Full name of person receiving"
+                          className="input-field text-sm mt-1"
+                          autoComplete="name"
+                          required
                         />
                       </div>
+                      <input
+                        value={receiveNoteBySample[sample.id] ?? ''}
+                        onChange={e => setReceiveNoteBySample(prev => ({ ...prev, [sample.id]: e.target.value }))}
+                        placeholder="Receiving note (optional)"
+                        className="input-field text-sm"
+                      />
                       <button
                         type="button"
-                        disabled={actionLoading || !paid || !(accessionBySample[sample.id] ?? '').trim()}
+                        disabled={actionLoading || !paid || !receivedByFor(sample.id)}
                         onClick={() => handleReceiveSample(sample)}
                         className="btn-primary text-xs py-1.5 gap-1"
                       >

@@ -19,12 +19,18 @@ interface Props {
 type DeskFilter = 'needs_payment' | 'awaiting_shipment' | 'ready_to_receive' | 'all';
 
 export default function ReceivingDesk({ orders, samples, clients, onChanged }: Props) {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [filter, setFilter] = useState<DeskFilter>('ready_to_receive');
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [receivedByBySample, setReceivedByBySample] = useState<Record<string, string>>({});
   const [noteBySample, setNoteBySample] = useState<Record<string, string>>({});
   const [payNoteByOrder, setPayNoteByOrder] = useState<Record<string, string>>({});
+  const defaultReceivedBy = (profile?.full_name || '').trim();
+
+  function receivedByFor(sampleId: string) {
+    return (receivedByBySample[sampleId] ?? defaultReceivedBy).trim();
+  }
 
   const clientName = (userId: string) => {
     const c = clients.find(x => x.id === userId);
@@ -84,9 +90,15 @@ export default function ReceivingDesk({ orders, samples, clients, onChanged }: P
   }
 
   async function handleReceive(sample: OrderSample, order: Order) {
+    const receivedBy = receivedByFor(sample.id);
+    if (!receivedBy) {
+      setMsg({ type: 'error', text: 'Enter who received this sample before continuing.' });
+      return;
+    }
     setBusyId(sample.id);
     setMsg(null);
     const { error, sample: updated } = await markSampleReceived(sample, order, {
+      receivedBy,
       note: noteBySample[sample.id] || '',
       changedBy: user?.id,
       vialCountConfirmed: sample.vial_count,
@@ -97,8 +109,8 @@ export default function ReceivingDesk({ orders, samples, clients, onChanged }: P
       setMsg({
         type: 'success',
         text: code
-          ? `Received ${sample.display_name || sample.sample_name} as ${code} — now in testing queue.`
-          : `Received ${sample.display_name || sample.sample_name} — now in testing queue.`,
+          ? `Received ${sample.display_name || sample.sample_name} as ${code} (by ${receivedBy}) — now in testing queue.`
+          : `Received ${sample.display_name || sample.sample_name} (by ${receivedBy}) — now in testing queue.`,
       });
       onChanged();
     }
@@ -226,6 +238,19 @@ export default function ReceivingDesk({ orders, samples, clients, onChanged }: P
                     <p className="text-[11px] text-brand-900/80">
                       Accession # will be auto-generated (e.g. 26-K7M4Q9) and used as the COA sample code.
                     </p>
+                    <div>
+                      <label className="text-[11px] font-semibold text-brand-900">
+                        Received by <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        value={receivedByBySample[sample.id] ?? defaultReceivedBy}
+                        onChange={e => setReceivedByBySample(prev => ({ ...prev, [sample.id]: e.target.value }))}
+                        placeholder="Full name of person receiving"
+                        className="input-field text-sm mt-1"
+                        autoComplete="name"
+                        required
+                      />
+                    </div>
                     <input
                       value={noteBySample[sample.id] ?? ''}
                       onChange={e => setNoteBySample(prev => ({ ...prev, [sample.id]: e.target.value }))}
@@ -234,7 +259,7 @@ export default function ReceivingDesk({ orders, samples, clients, onChanged }: P
                     />
                     <button
                       type="button"
-                      disabled={busyId === sample.id}
+                      disabled={busyId === sample.id || !receivedByFor(sample.id)}
                       onClick={() => handleReceive(sample, order)}
                       className="btn-primary text-xs py-1.5 gap-1"
                     >
