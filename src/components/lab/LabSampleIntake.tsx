@@ -159,7 +159,11 @@ export default function LabSampleIntake({ clients, chemists, onCreated }: Props)
         assigned_at: form.assignedTo ? new Date().toISOString() : null,
       };
 
-      const { error: sampleError } = await supabase.from('order_samples').insert(sampleRow);
+      let { error: sampleError } = await supabase.from('order_samples').insert(sampleRow);
+      if (sampleError && /received_at/i.test(sampleError.message || '')) {
+        const { received_at: _drop, ...withoutCol } = sampleRow;
+        ({ error: sampleError } = await supabase.from('order_samples').insert(withoutCol));
+      }
       if (sampleError) throw sampleError;
 
       const clientLabel = clientSubmittedLabel(client, companyName);

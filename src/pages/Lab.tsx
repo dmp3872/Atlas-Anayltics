@@ -24,7 +24,7 @@ import CompanyFilterSearch from '../components/lab/CompanyFilterSearch';
 import TestingQueuePanel from '../components/lab/TestingQueuePanel';
 import QueueFilters, { QueueFilterValues } from '../components/lab/QueueFilters';
 import { buildQueueItems, filterQueueItems, normalizeLabPriority } from '../lib/labQueue';
-import { sampleIntakeAt, setSampleStatus } from '../lib/services/orderWorkflow';
+import { sampleIntakeAt, sampleReceivedBy, setSampleStatus } from '../lib/services/orderWorkflow';
 import { formatDate } from '../lib/utils';
 import ReceivingDesk from '../components/lab/ReceivingDesk';
 import StaffHeader from '../components/layout/StaffHeader';
@@ -983,6 +983,16 @@ export default function Lab() {
                   </p>
                 </div>
                 <div>
+                  <label className="label">Received by</label>
+                  <input
+                    className="input-field bg-neutral-50"
+                    readOnly
+                    value={sampleReceivedBy(linkedSample) || 'Set when sample is received'}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
                   <label className="label">Matrix Type</label>
                   <input
                     className="input-field bg-neutral-50"
@@ -993,20 +1003,20 @@ export default function Lab() {
                     From the order sample (Lyophilized, Liquid/Solution, etc.).
                   </p>
                 </div>
-              </div>
-              <div>
-                <label className="label">Received date (COA)</label>
-                <input
-                  className="input-field bg-neutral-50"
-                  readOnly
-                  value={(() => {
-                    const at = sampleIntakeAt(linkedSample);
-                    return at ? formatDate(at) : 'Set when sample is accessioned at Receiving';
-                  })()}
-                />
-                <p className="text-[11px] text-neutral-500 mt-1">
-                  Auto-filled from Receiving Desk intake — not editable here.
-                </p>
+                <div>
+                  <label className="label">Received date (COA)</label>
+                  <input
+                    className="input-field bg-neutral-50"
+                    readOnly
+                    value={(() => {
+                      const at = sampleIntakeAt(linkedSample);
+                      return at ? formatDate(at) : 'Set when sample is accessioned at Receiving';
+                    })()}
+                  />
+                  <p className="text-[11px] text-neutral-500 mt-1">
+                    Auto-filled from Receiving Desk intake — not editable here.
+                  </p>
+                </div>
               </div>
               <div className="relative">
                 <label className="label">CAS Number</label>
