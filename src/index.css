@@ -540,6 +540,26 @@
   justify-content: space-between !important;
 }
 
+/* Lab COA workflow — always-visible horizontal scrollbar so chemists can drag or arrow. */
+.coa-workflow-board-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #a3a3a3 #e5e5e5;
+}
+.coa-workflow-board-scroll::-webkit-scrollbar {
+  height: 10px;
+}
+.coa-workflow-board-scroll::-webkit-scrollbar-track {
+  background: #e5e5e5;
+  border-radius: 999px;
+}
+.coa-workflow-board-scroll::-webkit-scrollbar-thumb {
+  background: #a3a3a3;
+  border-radius: 999px;
+}
+.coa-workflow-board-scroll::-webkit-scrollbar-thumb:hover {
+  background: #737373;
+}
+
 @layer utilities {
   .text-balance {
     text-wrap: balance;

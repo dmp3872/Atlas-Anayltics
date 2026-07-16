@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowLeft, ArrowRight, Building2, CheckCircle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp,
@@ -119,12 +119,27 @@ export default function CoaWorkflowBoard({
   const [prepCoa, setPrepCoa] = useState<COA | null>(null);
   const [reviewPickFor, setReviewPickFor] = useState<string | null>(null);
   const [reviewAssignee, setReviewAssignee] = useState('');
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  function updateBoardScrollHints() {
+    const el = boardScrollRef.current;
+    if (!el) {
+      setCanScrollLeft(false);
+      setCanScrollRight(false);
+      return;
+    }
+    const max = el.scrollWidth - el.clientWidth;
+    setCanScrollLeft(el.scrollLeft > 4);
+    setCanScrollRight(max > 4 && el.scrollLeft < max - 4);
+  }
 
   function scrollBoard(direction: -1 | 1) {
     const el = boardScrollRef.current;
     if (!el) return;
-    const step = Math.min(340, Math.max(260, el.clientWidth * 0.8));
+    const step = Math.min(340, Math.max(260, el.clientWidth * 0.75));
     el.scrollBy({ left: direction * step, behavior: 'smooth' });
+    window.setTimeout(updateBoardScrollHints, 280);
   }
 
   function scrollColumn(stage: CoaWorkflowStage, direction: -1 | 1) {
@@ -132,6 +147,52 @@ export default function CoaWorkflowBoard({
     if (!el) return;
     el.scrollBy({ top: direction * Math.min(280, el.clientHeight * 0.75), behavior: 'smooth' });
   }
+
+  useEffect(() => {
+    const el = boardScrollRef.current;
+    if (!el) return;
+    updateBoardScrollHints();
+    const onScroll = () => updateBoardScrollHints();
+    el.addEventListener('scroll', onScroll, { passive: true });
+    const ro = new ResizeObserver(() => updateBoardScrollHints());
+    ro.observe(el);
+    return () => {
+      el.removeEventListener('scroll', onScroll);
+      ro.disconnect();
+    };
+  }, [coas, pendingSamples]);
+
+  // Trackpad / mouse wheel: vertical wheel scrolls stages horizontally when
+  // the pointer is not actively scrolling a tall column list.
+  useEffect(() => {
+    const el = boardScrollRef.current;
+    if (!el) return;
+
+    const onWheel = (e: WheelEvent) => {
+      if (el.scrollWidth <= el.clientWidth + 1) return;
+
+      const target = e.target instanceof Element ? e.target : null;
+      const colBody = target?.closest('[data-coa-column-scroll]') as HTMLElement | null;
+      if (colBody && colBody.scrollHeight > colBody.clientHeight + 1) {
+        const goingUp = e.deltaY < 0;
+        const goingDown = e.deltaY > 0;
+        const roomUp = colBody.scrollTop > 0;
+        const roomDown = colBody.scrollTop + colBody.clientHeight < colBody.scrollHeight - 1;
+        if ((goingUp && roomUp) || (goingDown && roomDown)) return;
+      }
+
+      // Native horizontal trackpad gesture — leave alone.
+      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+      if (e.deltaY === 0) return;
+
+      e.preventDefault();
+      el.scrollLeft += e.deltaY;
+      updateBoardScrollHints();
+    };
+
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [coas, pendingSamples]);
 
   const reviewerOptions = reviewers.length > 0 ? reviewers : chemists;
 
@@ -274,13 +335,14 @@ export default function CoaWorkflowBoard({
 
       <div className="sticky top-0 z-20 -mx-1 px-1 py-2 bg-neutral-100/95 backdrop-blur-sm border-b border-atlas-border/80 flex items-center justify-between gap-3">
         <p className="text-xs text-neutral-600 min-w-0">
-          Scroll stages left/right · use column arrows to move up/down without missing cards.
+          Drag the board or use the arrows · scroll each column up/down for every card.
         </p>
         <div className="flex items-center gap-1 shrink-0">
           <button
             type="button"
             onClick={() => scrollBoard(-1)}
-            className="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-atlas-border bg-white text-neutral-700 hover:bg-neutral-50 hover:border-brand-400 shadow-sm"
+            disabled={!canScrollLeft}
+            className="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-atlas-border bg-white text-neutral-700 hover:bg-neutral-50 hover:border-brand-400 shadow-sm disabled:opacity-35 disabled:pointer-events-none"
             aria-label="Scroll workflow left"
             title="Previous stages"
           >
@@ -289,7 +351,8 @@ export default function CoaWorkflowBoard({
           <button
             type="button"
             onClick={() => scrollBoard(1)}
-            className="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-atlas-border bg-white text-neutral-700 hover:bg-neutral-50 hover:border-brand-400 shadow-sm"
+            disabled={!canScrollRight}
+            className="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-atlas-border bg-white text-neutral-700 hover:bg-neutral-50 hover:border-brand-400 shadow-sm disabled:opacity-35 disabled:pointer-events-none"
             aria-label="Scroll workflow right"
             title="Next stages"
           >
@@ -298,11 +361,33 @@ export default function CoaWorkflowBoard({
         </div>
       </div>
 
-      <div
-        ref={boardScrollRef}
-        className="flex gap-4 overflow-x-auto pb-3 scroll-smooth snap-x snap-mandatory overscroll-x-contain"
-        style={{ WebkitOverflowScrolling: 'touch' }}
-      >
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => scrollBoard(-1)}
+          disabled={!canScrollLeft}
+          className="hidden sm:inline-flex absolute left-0 top-1/2 -translate-y-1/2 z-10 items-center justify-center w-10 h-10 rounded-full border border-atlas-border bg-white/95 text-neutral-800 shadow-md hover:border-brand-500 disabled:opacity-0 disabled:pointer-events-none"
+          aria-label="Scroll workflow left"
+          title="Scroll left"
+        >
+          <ChevronLeft size={20} />
+        </button>
+        <button
+          type="button"
+          onClick={() => scrollBoard(1)}
+          disabled={!canScrollRight}
+          className="hidden sm:inline-flex absolute right-0 top-1/2 -translate-y-1/2 z-10 items-center justify-center w-10 h-10 rounded-full border border-atlas-border bg-white/95 text-neutral-800 shadow-md hover:border-brand-500 disabled:opacity-0 disabled:pointer-events-none"
+          aria-label="Scroll workflow right"
+          title="Scroll right"
+        >
+          <ChevronRight size={20} />
+        </button>
+
+        <div
+          ref={boardScrollRef}
+          className="coa-workflow-board-scroll flex gap-4 overflow-x-scroll pb-3 scroll-smooth snap-x snap-proximity overscroll-x-contain px-1 sm:px-8"
+          style={{ WebkitOverflowScrolling: 'touch' }}
+        >
         {COA_WORKFLOW_BOARD_COLUMNS.map(stage => {
           const styles = COLUMN_STYLES[stage];
           const isTestingCol = stage === 'testing_in_progress';
@@ -356,6 +441,7 @@ export default function CoaWorkflowBoard({
                 ref={el => {
                   columnScrollRefs.current[stage] = el;
                 }}
+                data-coa-column-scroll
                 className={`flex-1 min-h-0 p-2 space-y-2 overflow-y-auto overscroll-contain scroll-smooth ${styles.body}`}
               >
                 {isTestingCol && (
@@ -667,6 +753,7 @@ export default function CoaWorkflowBoard({
             </div>
           );
         })}
+        </div>
       </div>
     </div>
   );
