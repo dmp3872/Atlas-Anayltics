@@ -38,7 +38,6 @@ export default function AdminOrderDetail() {
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [payNote, setPayNote] = useState('');
   const [statusNote, setStatusNote] = useState('');
-  const [accessionBySample, setAccessionBySample] = useState<Record<string, string>>({});
   const [receiveNoteBySample, setReceiveNoteBySample] = useState<Record<string, string>>({});
 
   async function reload() {
@@ -111,8 +110,7 @@ export default function AdminOrderDetail() {
     if (!order) return;
     setActionLoading(true);
     setMsg(null);
-    const { error } = await markSampleReceived(sample, order, {
-      accessionNumber: accessionBySample[sample.id] || '',
+    const { error, sample: updated } = await markSampleReceived(sample, order, {
       note: receiveNoteBySample[sample.id] || '',
       changedBy: user?.id,
       vialCountConfirmed: sample.vial_count,
@@ -120,8 +118,13 @@ export default function AdminOrderDetail() {
     if (error) {
       setMsg({ type: 'error', text: error.message });
     } else {
-      setMsg({ type: 'success', text: `${sample.display_name || sample.sample_name} received.` });
-      setAccessionBySample(prev => ({ ...prev, [sample.id]: '' }));
+      const code = updated?.accession_number?.trim();
+      setMsg({
+        type: 'success',
+        text: code
+          ? `${sample.display_name || sample.sample_name} received as ${code}.`
+          : `${sample.display_name || sample.sample_name} received.`,
+      });
       await reload();
     }
     setActionLoading(false);
@@ -310,28 +313,23 @@ export default function AdminOrderDetail() {
                   {canReceive && (
                     <div className="rounded-lg border border-brand-200 bg-brand-50/40 p-3 space-y-2">
                       <p className="text-xs font-semibold text-brand-900 flex items-center gap-1">
-                        <Fingerprint size={12} /> Accession & receive
+                        <Fingerprint size={12} /> Receive into lab
                       </p>
                       {!paid && (
                         <p className="text-xs text-amber-700">Order must be paid or waived before this sample can be received.</p>
                       )}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        <input
-                          value={accessionBySample[sample.id] ?? ''}
-                          onChange={e => setAccessionBySample(prev => ({ ...prev, [sample.id]: e.target.value }))}
-                          placeholder="Accession # (required)"
-                          className="input-field text-sm font-mono"
-                        />
-                        <input
-                          value={receiveNoteBySample[sample.id] ?? ''}
-                          onChange={e => setReceiveNoteBySample(prev => ({ ...prev, [sample.id]: e.target.value }))}
-                          placeholder="Receiving note (optional)"
-                          className="input-field text-sm"
-                        />
-                      </div>
+                      <p className="text-[11px] text-brand-900/80">
+                        Accession # is auto-generated (YY-XXXXXX) and becomes the COA sample code.
+                      </p>
+                      <input
+                        value={receiveNoteBySample[sample.id] ?? ''}
+                        onChange={e => setReceiveNoteBySample(prev => ({ ...prev, [sample.id]: e.target.value }))}
+                        placeholder="Receiving note (optional)"
+                        className="input-field text-sm"
+                      />
                       <button
                         type="button"
-                        disabled={actionLoading || !paid || !(accessionBySample[sample.id] ?? '').trim()}
+                        disabled={actionLoading || !paid}
                         onClick={() => handleReceiveSample(sample)}
                         className="btn-primary text-xs py-1.5 gap-1"
                       >

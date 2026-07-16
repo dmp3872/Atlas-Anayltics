@@ -9,7 +9,7 @@ import { COA, Company, LabPriority, Order, OrderSample, SampleStatus, UserProfil
 import { computeCoaContentHash } from '../lib/coaVerify';
 import { notifyCoaReady, notifyOrderUpdate } from '../lib/notifications';
 import { clientSubmittedLabel, matrixTypeFromSampleMetadata, parseSampleMetadata } from '../lib/coaPanels';
-import { allocateUniqueSampleCode } from '../lib/sampleCode';
+import { allocateUniqueSampleCode, isValidSampleCode } from '../lib/sampleCode';
 import { fetchUserCompanies } from '../lib/coaProfile';
 import {
   EMPTY_LAB_RESULTS, LabCoaResults, VIAL_SIZE_OPTIONS, VialSizeOption,
@@ -533,7 +533,7 @@ export default function Lab() {
       if (form.sampleId) {
         const { data: freshSample } = await supabase
           .from('order_samples')
-          .select('id, metadata, received_at, status, created_at')
+          .select('id, metadata, received_at, status, created_at, accession_number')
           .eq('id', form.sampleId)
           .maybeSingle();
         if (freshSample) {
@@ -546,14 +546,23 @@ export default function Lab() {
       const assayAverages = computeLabAssayAverages(labResults);
       const avgPurityNum = parsePurityPercent(assayAverages.avg_purity);
       const storedPurity = avgPurityNum ?? purityNum;
-      // Human-readable sample code (YY-XXXXXX), year from sample creation when known.
+      // Prefer accession assigned at Receiving; otherwise allocate a new YY-XXXXXX.
       const sampleCreatedAt =
         (intakeSample && 'created_at' in intakeSample && typeof intakeSample.created_at === 'string'
           ? intakeSample.created_at
           : null)
         || linkedSample?.created_at
         || new Date().toISOString();
-      const sampleCode = await allocateUniqueSampleCode(sampleCreatedAt);
+      const existingAccession = (
+        (intakeSample && 'accession_number' in intakeSample
+          ? (intakeSample as { accession_number?: string | null }).accession_number
+          : null)
+        || linkedSample?.accession_number
+        || ''
+      ).trim().toUpperCase();
+      const sampleCode = isValidSampleCode(existingAccession)
+        ? existingAccession
+        : await allocateUniqueSampleCode(sampleCreatedAt);
 
       const payload = {
         user_id: form.clientId,
@@ -961,16 +970,29 @@ export default function Lab() {
                   </select>
                 </div>
               </div>
-              <div>
-                <label className="label">Matrix Type</label>
-                <input
-                  className="input-field bg-neutral-50"
-                  readOnly
-                  value={matrixTypeFromSampleMetadata(linkedMeta) || '—'}
-                />
-                <p className="text-[11px] text-neutral-500 mt-1">
-                  From the order sample (Lyophilized, Liquid/Solution, etc.) — written to the certificate on Issue.
-                </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="label">Sample Code / Accession</label>
+                  <input
+                    className="input-field bg-neutral-50 font-mono"
+                    readOnly
+                    value={(linkedSample?.accession_number || '').trim() || 'Assigned at Receiving (YY-XXXXXX)'}
+                  />
+                  <p className="text-[11px] text-neutral-500 mt-1">
+                    Auto-set when received — becomes the COA Sample Code on Issue.
+                  </p>
+                </div>
+                <div>
+                  <label className="label">Matrix Type</label>
+                  <input
+                    className="input-field bg-neutral-50"
+                    readOnly
+                    value={matrixTypeFromSampleMetadata(linkedMeta) || '—'}
+                  />
+                  <p className="text-[11px] text-neutral-500 mt-1">
+                    From the order sample (Lyophilized, Liquid/Solution, etc.).
+                  </p>
+                </div>
               </div>
               <div>
                 <label className="label">Received date (COA)</label>

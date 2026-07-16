@@ -23,7 +23,6 @@ export default function ReceivingDesk({ orders, samples, clients, onChanged }: P
   const [filter, setFilter] = useState<DeskFilter>('ready_to_receive');
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [accessionBySample, setAccessionBySample] = useState<Record<string, string>>({});
   const [noteBySample, setNoteBySample] = useState<Record<string, string>>({});
   const [payNoteByOrder, setPayNoteByOrder] = useState<Record<string, string>>({});
 
@@ -87,15 +86,20 @@ export default function ReceivingDesk({ orders, samples, clients, onChanged }: P
   async function handleReceive(sample: OrderSample, order: Order) {
     setBusyId(sample.id);
     setMsg(null);
-    const { error } = await markSampleReceived(sample, order, {
-      accessionNumber: accessionBySample[sample.id] || '',
+    const { error, sample: updated } = await markSampleReceived(sample, order, {
       note: noteBySample[sample.id] || '',
       changedBy: user?.id,
       vialCountConfirmed: sample.vial_count,
     });
     if (error) setMsg({ type: 'error', text: error.message });
     else {
-      setMsg({ type: 'success', text: `Received ${sample.display_name || sample.sample_name} — now in testing queue.` });
+      const code = updated?.accession_number?.trim();
+      setMsg({
+        type: 'success',
+        text: code
+          ? `Received ${sample.display_name || sample.sample_name} as ${code} — now in testing queue.`
+          : `Received ${sample.display_name || sample.sample_name} — now in testing queue.`,
+      });
       onChanged();
     }
     setBusyId(null);
@@ -115,7 +119,8 @@ export default function ReceivingDesk({ orders, samples, clients, onChanged }: P
           <Package size={20} className="text-brand-500" /> Receiving desk
         </h2>
         <p className="text-sm text-neutral-500 mt-1">
-          Confirm payment, then accession samples when the package arrives. Only received samples enter the testing queue.
+          Confirm payment, then receive samples when the package arrives. Accession # (YY-XXXXXX) is assigned automatically.
+          Only received samples enter the testing queue.
         </p>
       </div>
 
@@ -217,25 +222,20 @@ export default function ReceivingDesk({ orders, samples, clients, onChanged }: P
                 {readyToReceive && (
                   <div className="rounded-lg border border-brand-200 bg-brand-50/40 p-3 space-y-2">
                     <p className="text-xs font-semibold text-brand-900 flex items-center gap-1">
-                      <Fingerprint size={12} /> Accession & receive
+                      <Fingerprint size={12} /> Receive into lab
                     </p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <input
-                        value={accessionBySample[sample.id] ?? ''}
-                        onChange={e => setAccessionBySample(prev => ({ ...prev, [sample.id]: e.target.value }))}
-                        placeholder="Accession # (required)"
-                        className="input-field text-sm font-mono"
-                      />
-                      <input
-                        value={noteBySample[sample.id] ?? ''}
-                        onChange={e => setNoteBySample(prev => ({ ...prev, [sample.id]: e.target.value }))}
-                        placeholder="Receiving note (optional)"
-                        className="input-field text-sm"
-                      />
-                    </div>
+                    <p className="text-[11px] text-brand-900/80">
+                      Accession # will be auto-generated (e.g. 26-K7M4Q9) and used as the COA sample code.
+                    </p>
+                    <input
+                      value={noteBySample[sample.id] ?? ''}
+                      onChange={e => setNoteBySample(prev => ({ ...prev, [sample.id]: e.target.value }))}
+                      placeholder="Receiving note (optional)"
+                      className="input-field text-sm"
+                    />
                     <button
                       type="button"
-                      disabled={busyId === sample.id || !(accessionBySample[sample.id] ?? '').trim()}
+                      disabled={busyId === sample.id}
                       onClick={() => handleReceive(sample, order)}
                       className="btn-primary text-xs py-1.5 gap-1"
                     >

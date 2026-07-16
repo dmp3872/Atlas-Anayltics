@@ -37,22 +37,32 @@ export function isValidSampleCode(code: string): boolean {
   ).test((code || '').trim().toUpperCase());
 }
 
-/** Generate a unique COA sample code, checking `coas.slug`. */
+async function codeIsTaken(code: string): Promise<boolean> {
+  const [{ data: coa }, { data: sample }] = await Promise.all([
+    supabase.from('coas').select('id').eq('slug', code).maybeSingle(),
+    supabase.from('order_samples').select('id').eq('accession_number', code).maybeSingle(),
+  ]);
+  return Boolean(coa || sample);
+}
+
+/**
+ * Allocate a unique YY-XXXXXX code unused as a COA slug or sample accession.
+ * Used at receiving (accession) and at Issue (sample code) so both can share one ID.
+ */
 export async function allocateUniqueSampleCode(
   createdAt: Date | string | number = new Date(),
 ): Promise<string> {
   for (let attempt = 0; attempt < MAX_ALLOC_ATTEMPTS; attempt++) {
     const code = generateSampleCode(createdAt);
-    const { data, error } = await supabase
-      .from('coas')
-      .select('id')
-      .eq('slug', code)
-      .maybeSingle();
-    if (error) {
+    try {
+      if (!(await codeIsTaken(code))) return code;
+    } catch {
       // If lookup fails, still return a code — insert uniqueness will catch collisions.
       return code;
     }
-    if (!data) return code;
   }
   throw new Error('Could not allocate a unique sample code. Try again.');
 }
+
+/** Alias — accession numbers use the same YY-XXXXXX system as COA sample codes. */
+export const allocateUniqueAccessionNumber = allocateUniqueSampleCode;
