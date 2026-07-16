@@ -38,7 +38,6 @@ export default function AdminOrderDetail() {
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [payNote, setPayNote] = useState('');
   const [statusNote, setStatusNote] = useState('');
-  const [accessionBySample, setAccessionBySample] = useState<Record<string, string>>({});
   const [receiveNoteBySample, setReceiveNoteBySample] = useState<Record<string, string>>({});
 
   async function reload() {
@@ -111,8 +110,7 @@ export default function AdminOrderDetail() {
     if (!order) return;
     setActionLoading(true);
     setMsg(null);
-    const { error } = await markSampleReceived(sample, order, {
-      accessionNumber: accessionBySample[sample.id] || '',
+    const { error, sample: updated } = await markSampleReceived(sample, order, {
       note: receiveNoteBySample[sample.id] || '',
       changedBy: user?.id,
       vialCountConfirmed: sample.vial_count,
@@ -120,8 +118,13 @@ export default function AdminOrderDetail() {
     if (error) {
       setMsg({ type: 'error', text: error.message });
     } else {
-      setMsg({ type: 'success', text: `${sample.display_name || sample.sample_name} received.` });
-      setAccessionBySample(prev => ({ ...prev, [sample.id]: '' }));
+      const code = updated?.accession_number?.trim();
+      setMsg({
+        type: 'success',
+        text: code
+          ? `${sample.display_name || sample.sample_name} received as ${code}.`
+          : `${sample.display_name || sample.sample_name} received.`,
+      });
       await reload();
     }
     setActionLoading(false);

@@ -4,6 +4,7 @@ import {
 } from '../types';
 import { computeDueAt, normalizePaymentStatus, orderIsPayable } from '../utils';
 import { notifyOrderUpdate } from '../notifications';
+import { allocateUniqueAccessionNumber } from '../sampleCode';
 
 export const ORDER_ADMIN_NEXT_STATUS: Partial<Record<OrderStatus, OrderStatus[]>> = {
   received: ['awaiting_sample', 'processing'],
@@ -94,7 +95,8 @@ export async function markSampleReceived(
   sample: OrderSample,
   order: Order,
   opts: {
-    accessionNumber: string;
+    /** Optional override. When omitted/blank, a YY-XXXXXX code is auto-assigned. */
+    accessionNumber?: string;
     note?: string;
     changedBy?: string | null;
     vialCountConfirmed?: number;
@@ -103,8 +105,17 @@ export async function markSampleReceived(
   if (!orderIsPayable(order.payment_status)) {
     return { error: new Error('Order must be paid (or waived) before receiving samples.') };
   }
-  const accession = opts.accessionNumber.trim();
-  if (!accession) return { error: new Error('Accession number is required.') };
+
+  let accession = (opts.accessionNumber || sample.accession_number || '').trim();
+  if (!accession) {
+    try {
+      accession = await allocateUniqueAccessionNumber(sample.created_at || new Date());
+    } catch (err) {
+      return {
+        error: err instanceof Error ? err : new Error('Could not generate accession number.'),
+      };
+    }
+  }
 
   const now = new Date().toISOString();
   const receivedAt = sample.received_at || now;
@@ -115,7 +126,7 @@ export async function markSampleReceived(
     accession_number: accession,
     // Preserve original intake time if already set (re-accession should not rewrite COA date).
     received_at: receivedAt,
-    metadata: { ...prevMeta, received_at: receivedAt },
+    metadata: { ...prevMeta, received_at: receivedAt, sample_code: accession },
   };
   if (opts.vialCountConfirmed != null && opts.vialCountConfirmed > 0) {
     samplePatch.vial_count = opts.vialCountConfirmed;
