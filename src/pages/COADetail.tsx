@@ -612,7 +612,7 @@ export default function COADetail() {
 
               <div className="coa-footer-verify min-w-0 flex items-center gap-3 shrink-0">
                 <div className="text-[11px] leading-snug text-right">
-                  <p className="font-bold uppercase tracking-wide">atlasanalytics.io</p>
+                  <p className="font-bold uppercase tracking-wide">atlasanalyticlab.com</p>
                   <p className="font-mono text-white/80 mt-0.5">
                     {(coa.signature || `AM-${coa.slug.slice(0, 8).toUpperCase()}`).slice(0, 12)}
                   </p>
