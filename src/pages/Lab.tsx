@@ -44,7 +44,7 @@ import OrderActionChecklist from '../components/order/OrderActionChecklist';
 import OrderNotesThread from '../components/order/OrderNotesThread';
 import OrderEtaEditor from '../components/order/OrderEtaEditor';
 import { fetchOrderActionItems, openActionCount } from '../lib/orderActions';
-import { createEmptySample, type TestMode } from '../lib/orderCatalog';
+import { createEmptySample, type TestMode, type WizardSample } from '../lib/orderCatalog';
 import { assayResultsFromPanels } from '../lib/coaDisplayPanels';
 const MAX_COA_IMAGE_BYTES = 1024 * 1024;
 
@@ -356,6 +356,8 @@ export default function Lab() {
       individual_tests: individualTests,
       conformity_extra: Number(linkedMeta?.conformity_extra) || 0,
       include_fentanyl: !!labResults.includeFentanyl,
+      category: (linkedMeta?.category as WizardSample['category'] | undefined) || undefined,
+      sample_matrix: (linkedMeta?.sample_matrix as WizardSample['sample_matrix'] | undefined) || undefined,
     });
   }, [form.sampleName, form.displayName, form.batchNumber, linkedMeta, linkedSample, labResults.includeFentanyl]);
 
@@ -670,7 +672,10 @@ export default function Lab() {
       purity_percent: purityNum,
       molecular_weight: mwNum,
       panel_results: cleanPanels,
-      chromatogram_data: { vial_size: form.vialSize },
+      chromatogram_data: {
+        vial_size: form.vialSize,
+        sample_matrix: linkedMeta?.sample_matrix || '',
+      },
       vial_image: vialImage || '',
       chromatogram_image: watermarkImage,
       hplc_image: hplcImage || '',
@@ -689,6 +694,12 @@ export default function Lab() {
         // Auto-filled from lab intake / accession (Receiving Desk).
         received_at: intakeAt || '',
         received_date: receivedDate,
+        sample_matrix: linkedMeta?.sample_matrix || '',
+        matrix_type: linkedMeta?.sample_matrix || '',
+        category: linkedMeta?.category || '',
+        test_mode: linkedMeta?.test_mode || '',
+        labeled_content: linkedMeta?.labeled_content || '',
+        label_claim_unit: linkedMeta?.label_claim_unit || '',
       },
       overall_result: form.overallResult,
       is_public: false,

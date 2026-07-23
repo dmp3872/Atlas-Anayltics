@@ -7,6 +7,7 @@ export interface OrderSampleMetadata {
   peptide_identification?: string;
   vial_size?: string;
   sample_matrix?: string;
+  category?: string;
   sample_type?: string;
   blend_compounds?: number;
   blend_components?: { name: string; amount_mg: string }[];

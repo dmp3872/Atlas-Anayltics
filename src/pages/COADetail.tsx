@@ -249,6 +249,10 @@ export default function COADetail() {
     || (typeof summary.sample_matrix === 'string' && summary.sample_matrix.trim())
     || (typeof chrom.sample_matrix === 'string' && chrom.sample_matrix.trim())
     || '—';
+  const matrixLabel =
+    (typeof summary.category === 'string' && summary.category === 'other' && matrix !== '—')
+      ? 'Material Type'
+      : 'Matrix Type';
   const received =
     (typeof summary.received_date === 'string' && summary.received_date.trim())
     || (typeof summary.received_at === 'string' && formatDate(summary.received_at))
@@ -291,7 +295,7 @@ export default function COADetail() {
       { label: 'Sample Name', value: coa.display_name || coa.sample_name || '—' },
     ],
     [
-      { label: 'Matrix Type', value: matrix },
+      { label: matrixLabel, value: matrix },
       { label: 'Lot Code', value: coa.batch_number || '—' },
     ],
     [

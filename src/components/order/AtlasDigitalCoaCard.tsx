@@ -454,12 +454,15 @@ function productLabel(sample: WizardSample): string {
 }
 
 function typeLabel(sample: WizardSample): string {
-  const raw = categoryLabel(sample.category);
-  // Card header uses a short matrix-style word (PEPTIDE / BLEND / …)
+  // Card header uses a short matrix-style word (PEPTIDE / BLEND / CAPSULES / …)
   if (sample.category === 'single_peptide') return 'Peptide';
   if (sample.category === 'peptide_blend') return 'Blend';
   if (sample.category === 'bac_water') return 'BAC Water';
-  return raw || sample.sample_matrix || 'Sample';
+  if (sample.category === 'other') {
+    const matrix = (sample.sample_matrix || '').trim();
+    return matrix || 'Other';
+  }
+  return sample.sample_matrix?.trim() || categoryLabel(sample.category) || 'Sample';
 }
 
 function hasConformityTesting(sample: WizardSample): boolean {

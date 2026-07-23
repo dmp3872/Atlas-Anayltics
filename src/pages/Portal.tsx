@@ -34,7 +34,7 @@ import OrderShippingChecklist from '../components/order/OrderShippingChecklist';
 import AtlasDigitalCoaCard from '../components/order/AtlasDigitalCoaCard';
 import OrderNotesThread from '../components/order/OrderNotesThread';
 import { assayResultsFromPanels } from '../lib/coaDisplayPanels';
-import { createEmptySample, TestMode } from '../lib/orderCatalog';
+import { createEmptySample, TestMode, type SampleCategory, type SampleMatrix } from '../lib/orderCatalog';
 import { trackingStageFromStatuses } from '../lib/orderProjection';
 import { queueNotification } from '../lib/notifications';
 import { hydrateCoaImages } from '../lib/coaImages';
@@ -664,6 +664,8 @@ export default function Portal() {
                             include_fentanyl?: boolean;
                             conformity_extra?: number;
                             primary_test_id?: string;
+                            sample_matrix?: string;
+                            category?: string;
                           } | null;
                           const tests = portalTestsForSample(s, panels);
                           const mode = (meta?.test_mode as TestMode | undefined) ?? 'individual';
@@ -678,6 +680,8 @@ export default function Portal() {
                             include_fentanyl: !!meta?.include_fentanyl,
                             conformity_extra: Number(meta?.conformity_extra) || 0,
                             sample_type: s.sample_type,
+                            category: meta?.category as SampleCategory | undefined,
+                            sample_matrix: meta?.sample_matrix as SampleMatrix | undefined,
                           });
                           const trackStage = trackingStageFromStatuses({
                             orderStatus: order.status,
@@ -689,7 +693,9 @@ export default function Portal() {
                               <div className="min-w-0 flex-1">
                                 <div className="flex items-center gap-2 flex-wrap">
                                   <p className="font-semibold text-black">{s.display_name || s.sample_name}</p>
-                                  <span className="text-xs text-neutral-400 capitalize">{s.sample_type}</span>
+                                  <span className="text-xs text-neutral-400 capitalize">
+                                    {meta?.sample_matrix || meta?.category || s.sample_type}
+                                  </span>
                                   {coa ? <ResultBadge result={coa.overall_result} /> : <span className="badge-pending"><Clock size={10} /> {SAMPLE_STATUS_LABELS[s.status]}</span>}
                                 </div>
                                 <p className="text-xs font-semibold uppercase tracking-wider text-neutral-400 mt-2 mb-1">

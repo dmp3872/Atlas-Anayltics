@@ -3,7 +3,7 @@ import { ExternalLink, Loader, ShieldCheck } from 'lucide-react';
 import { Link, useParams } from 'react-router-dom';
 import AtlasDigitalCoaCard from '../components/order/AtlasDigitalCoaCard';
 import { assayResultsFromPanels } from '../lib/coaDisplayPanels';
-import { createEmptySample, type TestMode, type WizardSample } from '../lib/orderCatalog';
+import { createEmptySample, type TestMode, type WizardSample, isOtherResearchMaterial } from '../lib/orderCatalog';
 import { supabase } from '../lib/supabase';
 import type { COA, PanelResult } from '../lib/types';
 
@@ -74,6 +74,19 @@ function sampleFromCoa(coa: COA): WizardSample {
       ? testMode
       : individualTests[0] || 'identity_purity_quantity';
 
+  const matrixStored =
+    stringValue(summary.sample_matrix) || stringValue(summary.matrix_type);
+  const categoryStored = stringValue(summary.category);
+  const category: WizardSample['category'] | undefined =
+    categoryStored === 'other'
+    || categoryStored === 'single_peptide'
+    || categoryStored === 'peptide_blend'
+    || categoryStored === 'bac_water'
+      ? categoryStored
+      : isOtherResearchMaterial(matrixStored)
+        ? 'other'
+        : undefined;
+
   return createEmptySample({
     sample_name: coa.sample_name || coa.display_name,
     display_name: coa.display_name || coa.sample_name,
@@ -89,6 +102,8 @@ function sampleFromCoa(coa: COA): WizardSample {
     individual_tests: individualTests.filter(id => id !== primaryId),
     include_fentanyl: includeFentanyl,
     conformity_extra: conformityExtra,
+    category,
+    sample_matrix: (matrixStored || undefined) as WizardSample['sample_matrix'] | undefined,
   });
 }
 
