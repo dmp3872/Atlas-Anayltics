@@ -19,7 +19,7 @@ interface Props {
   onMoveCoa: (
     coa: COA,
     targetStage: CoaWorkflowStage,
-    opts?: { reviewAssignedTo?: string | null },
+    opts?: { reviewAssignedTo?: string | null; force?: boolean },
   ) => void | Promise<void>;
   movingId?: string | null;
   onCoaImagesSaved?: (coa: COA) => void;
@@ -244,6 +244,7 @@ export default function CoaWorkflowBoard({
         After issue, send the certificate to <strong className="text-violet-800">Pending Review</strong> and assign a
         lab director or chemist for the second signature (shows <strong>1/2</strong>). After they sign off it becomes
         Verified (2/2), then Published. Cards marked <strong className="text-sky-800">Assigned to you</strong> are yours.
+        Chemists can <strong>Publish now</strong> from any stage to override stopping points when needed.
       </p>
 
       {prepCoa && (
@@ -572,6 +573,18 @@ export default function CoaWorkflowBoard({
                               className="btn-primary text-xs py-1 px-2 gap-1"
                             >
                               <Globe size={11} /> Publish
+                            </button>
+                          )}
+
+                          {(currentStage === 'issued' || currentStage === 'pending_review' || currentStage === 'awaiting_info') && (
+                            <button
+                              type="button"
+                              onClick={() => void onMoveCoa(coa, 'published')}
+                              disabled={!!movingId}
+                              className="btn-secondary text-xs py-1 px-2 gap-1 border-emerald-300 text-emerald-800 hover:bg-emerald-50"
+                              title="Override workflow stopping points and publish immediately"
+                            >
+                              <Globe size={11} /> Publish now
                             </button>
                           )}
 

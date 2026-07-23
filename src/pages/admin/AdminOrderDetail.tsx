@@ -21,6 +21,7 @@ import {
 } from '../../lib/services/orderWorkflow';
 import OrderStatusPipeline from '../../components/order/OrderStatusPipeline';
 import OrderNotesThread from '../../components/order/OrderNotesThread';
+import OrderActionChecklist from '../../components/order/OrderActionChecklist';
 
 const ACTIVITY_LABELS: Record<string, string> = {
   ...ORDER_STATUS_LABELS,
@@ -373,7 +374,11 @@ export default function AdminOrderDetail() {
         </div>
 
         <div className="mb-6">
-          <OrderNotesThread orderId={order.id} />
+          <OrderNotesThread orderId={order.id} allowActions />
+        </div>
+
+        <div className="mb-6">
+          <OrderActionChecklist orderId={order.id} />
         </div>
 
         <div className="card p-6">

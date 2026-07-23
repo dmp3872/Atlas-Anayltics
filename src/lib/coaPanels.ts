@@ -3,6 +3,7 @@ import { COA, OrderSample, PanelResult, SampleStatus, TestPanel } from './types'
 export interface OrderSampleMetadata {
   batch_number?: string;
   labeled_content?: string;
+  label_claim_unit?: string;
   peptide_identification?: string;
   vial_size?: string;
   sample_matrix?: string;
@@ -12,9 +13,11 @@ export interface OrderSampleMetadata {
   blend_label?: string;
   tests_label?: string;
   test_mode?: string;
+  primary_test_id?: string;
   individual_tests?: string[];
   conformity_extra?: number;
   include_fentanyl?: boolean;
+  brand_names?: string[];
 }
 
 export function parseSampleMetadata(metadata: OrderSample['metadata']): OrderSampleMetadata {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   FlaskConical, Plus, Trash2, CheckCircle, AlertCircle, ClipboardList,
@@ -21,6 +21,7 @@ import CoaWorkflowBoard from '../components/lab/CoaWorkflowBoard';
 import CompanyFilterSearch from '../components/lab/CompanyFilterSearch';
 import TestingQueuePanel from '../components/lab/TestingQueuePanel';
 import QueueFilters, { QueueFilterValues } from '../components/lab/QueueFilters';
+import ClaimVsResultStrip from '../components/lab/ClaimVsResultStrip';
 import { buildQueueItems, filterQueueItems, normalizeLabPriority } from '../lib/labQueue';
 import { sampleIntakeAt, sampleReceivedBy, setSampleStatus } from '../lib/services/orderWorkflow';
 import { allocateUniqueSampleCode, isValidSampleCode } from '../lib/sampleCode';
@@ -38,8 +39,12 @@ import {
 import CoaPdfPrepModal from '../components/lab/CoaPdfPrepModal';
 import { COA_LIST_COLUMNS } from '../lib/coaSelect';
 import { useAuth } from '../context/AuthContext';
+import AtlasDigitalCoaCard, { type DigitalCoaAssayResults } from '../components/order/AtlasDigitalCoaCard';
+import OrderActionChecklist from '../components/order/OrderActionChecklist';
 import OrderNotesThread from '../components/order/OrderNotesThread';
-
+import { fetchOrderActionItems, openActionCount } from '../lib/orderActions';
+import { createEmptySample, type TestMode } from '../lib/orderCatalog';
+import { assayResultsFromPanels } from '../lib/coaDisplayPanels';
 const MAX_COA_IMAGE_BYTES = 1024 * 1024;
 
 type Message = { type: 'success' | 'error'; text: string; slug?: string } | null;
@@ -87,8 +92,12 @@ export default function Lab() {
   const [casSuggestions, setCasSuggestions] = useState<{ name: string; cas: string }[]>([]);
   const [showCasSuggestions, setShowCasSuggestions] = useState(false);
   const [prepCoa, setPrepCoa] = useState<COA | null>(null);
+  const [issueOpenActions, setIssueOpenActions] = useState(0);
 
   const selectedCompany = clientCompanies.find(c => c.id === selectedCompanyId) ?? null;
+  const onIssueOpenActionsChange = useCallback((count: number) => {
+    setIssueOpenActions(count);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -323,6 +332,62 @@ export default function Lab() {
   const linkedOrder = form.orderId ? orders.find(o => o.id === form.orderId) : null;
   const linkedClient = form.clientId ? clients.find(c => c.id === form.clientId) : undefined;
 
+  const issuePreviewSample = useMemo(() => {
+    const modeValue = linkedMeta?.test_mode;
+    const mode: TestMode =
+      modeValue === 'atlas_pro' || modeValue === 'full_qc' ? modeValue : 'individual';
+    const individualTests = Array.isArray(linkedMeta?.individual_tests)
+      ? linkedMeta!.individual_tests!.filter((value): value is string => typeof value === 'string')
+      : [];
+    if (mode === 'individual' && individualTests.length === 0) {
+      individualTests.push('identity_purity_quantity');
+    }
+    return createEmptySample({
+      sample_name: form.sampleName || linkedSample?.sample_name || '',
+      display_name: form.displayName || linkedSample?.display_name || form.sampleName,
+      batch_number: form.batchNumber || linkedMeta?.batch_number || '',
+      labeled_content: linkedMeta?.labeled_content || '',
+      label_claim_unit: linkedMeta?.label_claim_unit || 'mg',
+      primary_test_id:
+        linkedMeta?.primary_test_id ||
+        (mode === 'individual' ? 'identity_purity_quantity' : mode),
+      test_mode: mode,
+      individual_tests: individualTests,
+      conformity_extra: Number(linkedMeta?.conformity_extra) || 0,
+      include_fentanyl: !!labResults.includeFentanyl,
+    });
+  }, [form.sampleName, form.displayName, form.batchNumber, linkedMeta, linkedSample, labResults.includeFentanyl]);
+
+  const issueAssayResults = useMemo((): DigitalCoaAssayResults | null => {
+    const panels = labResultsToPanelResults(labResults);
+    const fromPanels = assayResultsFromPanels(panels, {
+      quantityUnit: linkedMeta?.label_claim_unit || 'mg',
+    });
+    const purity = parsePurityPercent(labResults.netPurity);
+    const quantityMatch = labResults.netContent.replace(/,/g, '').match(/-?\d+(?:\.\d+)?/);
+    const quantity = quantityMatch ? Number(quantityMatch[0]) : null;
+    const identity = labResults.identification.trim()
+      ? [form.overallResult !== 'fail']
+      : undefined;
+
+    if (!fromPanels && purity == null && quantity == null && !identity) return null;
+    return {
+      purity: fromPanels?.purity ?? (purity != null ? [purity] : undefined),
+      quantity: fromPanels?.quantity ?? (quantity != null ? [quantity] : undefined),
+      identity: fromPanels?.identity ?? identity,
+      quantityUnit: linkedMeta?.label_claim_unit || 'mg',
+    };
+  }, [labResults, linkedMeta?.label_claim_unit, form.overallResult]);
+
+  const issueTrackingStage =
+    form.overallResult === 'pass' || form.overallResult === 'fail'
+      ? 'in_review'
+      : linkedSample?.status === 'analyzing'
+        ? 'analyzing'
+        : linkedSample?.status === 'received'
+          ? 'received'
+          : 'awaiting_sample';
+
 
   async function insertCoa(payload: Record<string, unknown>) {
     const selectCols = 'slug, display_name, sample_name, user_id';
@@ -420,9 +485,45 @@ export default function Lab() {
   async function moveCoaToStage(
     coa: COA,
     targetStage: CoaWorkflowStage,
-    opts?: { reviewAssignedTo?: string | null },
+    opts?: { reviewAssignedTo?: string | null; force?: boolean },
   ) {
-    if (coaWorkflowStage(coa) === targetStage && targetStage !== 'pending_review') return;
+    const currentStage = coaWorkflowStage(coa);
+    if (currentStage === targetStage && targetStage !== 'pending_review') return;
+
+    // Chemists may override stopping points (open checklist, incomplete review) and publish.
+    if (targetStage === 'published' && !opts?.force) {
+      const warnings: string[] = [];
+      if (currentStage !== 'verified' && currentStage !== 'published') {
+        warnings.push(
+          `This COA is still in “${COA_WORKFLOW_LABELS[currentStage]}” (review / sign-off not complete).`,
+        );
+      }
+      if (coa.order_id) {
+        try {
+          const open = openActionCount(await fetchOrderActionItems(coa.order_id));
+          if (open > 0) {
+            warnings.push(
+              `${open} open publish checklist action${open === 1 ? '' : 's'} still pending.`,
+            );
+          }
+        } catch (err) {
+          // Checklist table may not be migrated yet — allow publish to continue.
+          console.warn('Publish checklist check unavailable:', err);
+        }
+      }
+      if (warnings.length > 0) {
+        const ok = window.confirm(
+          [
+            'Publish override?',
+            '',
+            ...warnings,
+            '',
+            'Publish this COA anyway?',
+          ].join('\n'),
+        );
+        if (!ok) return;
+      }
+    }
 
     setMovingCoaId(coa.id);
     setMsg(null);
@@ -830,6 +931,12 @@ export default function Lab() {
                 </div>
               )}
 
+              <ClaimVsResultStrip
+                labelClaim={linkedMeta?.labeled_content || ''}
+                labelClaimUnit={linkedMeta?.label_claim_unit || 'mg'}
+                results={labResults}
+                overallResult={form.overallResult}
+              />
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="label">Client <span className="text-red-500">*</span></label>
@@ -1222,12 +1329,35 @@ export default function Lab() {
               </button>
             </form>
             <div className="space-y-4">
+              <div className="card p-4">
+                <p className="mb-3 text-sm font-bold text-black">Live digital COA</p>
+                <p className="mb-3 text-xs text-neutral-500">
+                  Same card the client will see — updates as you enter results.
+                </p>
+                <div className="mx-auto max-w-[300px]">
+                  <AtlasDigitalCoaCard
+                    samples={[issuePreviewSample]}
+                    companyName={form.companyName || linkedOrder?.company_name || ''}
+                    stage="tracking"
+                    trackingStage={issueTrackingStage}
+                    accession={linkedSample?.accession_number || null}
+                    readinessPercent={
+                      labResults.netPurity.trim() && labResults.netContent.trim() && labResults.identification.trim()
+                        ? 100
+                        : 55
+                    }
+                    overallResult={form.overallResult}
+                    assayResults={issueAssayResults}
+                  />
+                </div>
+              </div>
+
               <div className="card overflow-hidden h-fit">
                 <div className="px-5 py-3 border-b border-atlas-border flex items-center gap-2">
                   <ClipboardList size={15} className="text-brand-500" />
                   <h3 className="font-bold text-sm">Quick load — pending samples</h3>
                 </div>
-                <div className="divide-y divide-atlas-border max-h-[520px] overflow-y-auto">
+                <div className="divide-y divide-atlas-border max-h-[320px] overflow-y-auto">
                   {pendingSamples.length === 0 ? (
                     <p className="p-5 text-sm text-neutral-500">All samples have COAs.</p>
                   ) : pendingSamples.slice(0, 20).map(s => {
@@ -1245,7 +1375,28 @@ export default function Lab() {
                   })}
                 </div>
               </div>
-              {form.orderId && <OrderNotesThread orderId={form.orderId} compact />}
+
+              {form.orderId && (
+                <>
+                  <OrderNotesThread
+                    orderId={form.orderId}
+                    sampleId={form.sampleId || null}
+                    compact
+                    allowActions
+                  />
+                  <OrderActionChecklist
+                    orderId={form.orderId}
+                    compact
+                    onOpenCountChange={onIssueOpenActionsChange}
+                  />
+                  {issueOpenActions > 0 && (
+                    <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                      {issueOpenActions} open checklist action{issueOpenActions === 1 ? '' : 's'}.
+                      Clear them when you can — or confirm override when publishing.
+                    </p>
+                  )}
+                </>
+              )}
             </div>
           </div>
         )}
@@ -1254,7 +1405,7 @@ export default function Lab() {
           <div className="space-y-4">
             <p className="text-sm text-neutral-600">
               Testing → Issued → Pending Review (assign lab director/chemist, signatures 1/2) → Verified (2/2) → Published.
-              Cards marked Assigned to you are yours to work or sign off.
+              Cards marked Assigned to you are yours to work or sign off. Use Publish now to override checklist or incomplete review when needed.
             </p>
             <CompanyFilterSearch
               value={workflowCompanyFilter}

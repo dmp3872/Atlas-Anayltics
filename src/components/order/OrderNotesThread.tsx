@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
-import { Loader, MessageCircle, Send } from 'lucide-react';
+import { CheckSquare, Loader, MessageCircle, Send } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { createOrderActionItem } from '../../lib/orderActions';
 import {
   fetchOrderMessages,
   OrderMessage,
@@ -12,25 +13,36 @@ import { formatDateTime } from '../../lib/utils';
 
 interface Props {
   orderId: string;
+  sampleId?: string | null;
   compact?: boolean;
+  /** When true, staff see "Make action" on each note. */
+  allowActions?: boolean;
 }
 
 function friendlyError(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
-  if (/order_messages|schema cache|relation .* does not exist/i.test(message)) {
+  if (/order_messages|order_action_items|schema cache|relation .* does not exist/i.test(message)) {
     return 'Order notes will be available after the latest database migration is applied.';
   }
   return message || 'Could not load order notes.';
 }
 
-export default function OrderNotesThread({ orderId, compact = false }: Props) {
+export default function OrderNotesThread({
+  orderId,
+  sampleId = null,
+  compact = false,
+  allowActions = false,
+}: Props) {
   const { user, profile } = useAuth();
   const role = resolveUserRole(profile, user?.email);
+  const isStaff = role === 'admin' || role === 'chemist';
   const [messages, setMessages] = useState<OrderMessage[]>([]);
   const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [actionBusyId, setActionBusyId] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [actionHint, setActionHint] = useState('');
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -100,6 +112,29 @@ export default function OrderNotesThread({ orderId, compact = false }: Props) {
     }
   }
 
+  async function makeAction(message: OrderMessage) {
+    if (!user || !isStaff || actionBusyId) return;
+    setActionBusyId(message.id);
+    setError('');
+    setActionHint('');
+    try {
+      await createOrderActionItem({
+        orderId,
+        sampleId,
+        sourceMessageId: message.id,
+        title: message.body.trim().slice(0, 500),
+        createdBy: user.id,
+        createdByName: profile?.full_name || user.email?.split('@')[0] || '',
+      });
+      setActionHint('Added to publish checklist.');
+      window.setTimeout(() => setActionHint(''), 2200);
+    } catch (err) {
+      setError(friendlyError(err));
+    } finally {
+      setActionBusyId(null);
+    }
+  }
+
   return (
     <section className={`rounded-xl border border-atlas-border bg-white ${compact ? 'p-4' : 'p-5'}`}>
       <div className="flex items-start justify-between gap-3">
@@ -110,6 +145,7 @@ export default function OrderNotesThread({ orderId, compact = false }: Props) {
           </h3>
           <p className="mt-1 text-xs text-neutral-500">
             Shared privately between the client and Atlas laboratory team.
+            {allowActions && isStaff ? ' Turn a note into a publish checklist action.' : ''}
           </p>
         </div>
         {messages.length > 0 && (
@@ -161,9 +197,28 @@ export default function OrderNotesThread({ orderId, compact = false }: Props) {
                   <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-relaxed">
                     {message.body}
                   </p>
-                  <p className={`mt-1 text-[10px] ${mine ? 'text-black/55' : 'text-neutral-400'}`}>
-                    {formatDateTime(message.created_at)}
-                  </p>
+                  <div className="mt-1 flex items-center justify-between gap-2">
+                    <p className={`text-[10px] ${mine ? 'text-black/55' : 'text-neutral-400'}`}>
+                      {formatDateTime(message.created_at)}
+                    </p>
+                    {allowActions && isStaff && (
+                      <button
+                        type="button"
+                        disabled={actionBusyId === message.id}
+                        onClick={() => void makeAction(message)}
+                        className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide ${
+                          mine ? 'text-black/70 hover:text-black' : 'text-atlas-gold hover:text-white'
+                        }`}
+                      >
+                        {actionBusyId === message.id ? (
+                          <Loader size={11} className="animate-spin" />
+                        ) : (
+                          <CheckSquare size={11} />
+                        )}
+                        Make action
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             );
@@ -173,6 +228,7 @@ export default function OrderNotesThread({ orderId, compact = false }: Props) {
       </div>
 
       {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+      {actionHint && <p className="mt-2 text-xs text-emerald-700">{actionHint}</p>}
 
       <form onSubmit={submit} className="mt-3 flex items-end gap-2">
         <label className="sr-only" htmlFor={`order-note-${orderId}`}>Add an order note</label>
