@@ -10,7 +10,7 @@ export const ATLAS_SAFETY_PRO_PANEL: TestPanel = {
   description:
     'Complete safety bundle per sample: HPLC Purity, Net Content, Identity (ID), Heavy Metals, Endotoxin (LAL), Sterility (PCR), and Conformity Vials included. Fentanyl Detection available as an optional add-on.',
   price_per_sample: ATLAS_SAFETY_PRO_PRICE,
-  turnaround_days: 10,
+  turnaround_days: 5,
   category: 'package',
   is_active: true,
   sort_order: -1,

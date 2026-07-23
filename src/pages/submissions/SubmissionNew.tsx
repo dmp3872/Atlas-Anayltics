@@ -301,7 +301,7 @@ export default function SubmissionNew() {
               </div>
               <div className="text-right flex-shrink-0">
                 <p className="text-2xl font-bold text-brand-700">{formatCurrency(safetyPro.price_per_sample)}</p>
-                <p className="text-xs text-slate-500">per sample · {safetyPro.turnaround_days} day TAT</p>
+                <p className="text-xs text-slate-500">per sample · 3–5 business days</p>
               </div>
             </div>
           </div>

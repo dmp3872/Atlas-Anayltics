@@ -127,7 +127,7 @@ export default function Pricing() {
                     <p className="text-3xl font-bold text-brand-700">
                       {formatCurrency(pkg.price_per_sample ?? ATLAS_SAFETY_PRO_PRICE)}
                     </p>
-                    <p className="text-sm text-neutral-500 mt-1">per sample · {pkg.turnaround_days} business days</p>
+                    <p className="text-sm text-neutral-500 mt-1">per sample · 3–5 business days</p>
                     <Link
                       to="/dashboard/submissions/new"
                       className="inline-flex items-center gap-2 mt-4 btn-primary text-sm"
