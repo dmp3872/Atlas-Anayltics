@@ -30,7 +30,7 @@ import ClientPortalLayout from '../components/layout/ClientPortalLayout';
 import GettingStarted from '../components/portal/GettingStarted';
 import PeptideRequests from '../components/portal/PeptideRequests';
 import PortalHome from '../components/portal/PortalHome';
-import PrepaidShippingLabel from '../components/order/PrepaidShippingLabel';
+import OrderShippingChecklist from '../components/order/OrderShippingChecklist';
 import AtlasDigitalCoaCard from '../components/order/AtlasDigitalCoaCard';
 import OrderNotesThread from '../components/order/OrderNotesThread';
 import { assayResultsFromPanels } from '../lib/coaDisplayPanels';
@@ -68,7 +68,7 @@ function portalTestsForSample(sample: OrderSample, panels: TestPanel[]): string[
 }
 
 export default function Portal() {
-  const { user, profile } = useAuth();
+  const { user, profile, refreshProfile } = useAuth();
   const location = useLocation();
   const [params, setParams] = useSearchParams();
   const pathTab = location.pathname.includes('/orders') ? 'orders' : location.pathname.includes('/coas') ? 'coas' : null;
@@ -195,6 +195,9 @@ export default function Portal() {
     const next = { ...notifs, [key]: !notifs[key] };
     setNotifs(next);
     saveNotificationPrefs(user.id, next);
+    if (key === 'orderUpdates') {
+      void supabase.from('user_profiles').update({ notify_email: next.orderUpdates }).eq('id', user.id);
+    }
     if (next[key]) {
       const labels: Record<keyof NotificationPrefs, string> = {
         orderUpdates: 'Order Updates',
@@ -202,13 +205,27 @@ export default function Portal() {
         paymentReceipts: 'Payment Receipts',
         promotions: 'Promotions',
       };
-      queueNotification({
+      void queueNotification({
         userId: user.id,
         type: key === 'coaReady' ? 'coa_ready' : key === 'paymentReceipts' ? 'payment_receipt' : key === 'promotions' ? 'promotion' : 'order_update',
         subject: `${labels[key]} enabled`,
-        body: `You will receive email notifications for: ${labels[key]}.`,
+        body: `You will receive notifications for: ${labels[key]}.`,
       });
     }
+  }
+
+  async function toggleSmsNotify() {
+    if (!user) return;
+    const next = !(profile?.notify_sms);
+    const { error } = await supabase.from('user_profiles').update({ notify_sms: next }).eq('id', user.id);
+    if (error) {
+      setPromoMsg(`Could not update SMS preference: ${error.message}`);
+      return;
+    }
+    await refreshProfile();
+    setPromoMsg(next
+      ? 'SMS updates enabled (requires a phone number on your account).'
+      : 'SMS updates disabled.');
   }
 
   function inviteMember() {
@@ -588,6 +605,11 @@ export default function Portal() {
                         <div className="text-right">
                           <p className="font-bold">{formatCurrency(order.total)}</p>
                           <span className="text-xs font-semibold uppercase text-brand-700">{ORDER_STATUS_LABELS[order.status]}</span>
+                          {(order.estimated_ready_at || order.due_at) && order.status !== 'complete' && order.status !== 'cancelled' && (
+                            <p className="mt-1 text-[11px] text-neutral-500">
+                              Est. ready {formatDate(order.estimated_ready_at || order.due_at || '')}
+                            </p>
+                          )}
                         </div>
                       </div>
                       <OrderStatusPipeline status={order.status} size="compact" />
@@ -602,34 +624,26 @@ export default function Portal() {
                           </div>
                         )}
                         {order.status === 'awaiting_sample' && orderIsPayable(order.payment_status) && (
-                          <div className="p-5 bg-neutral-50 space-y-3">
-                            <div className="flex items-start gap-3">
-                              <div className="w-9 h-9 rounded-xl bg-brand-50 flex items-center justify-center flex-shrink-0">
-                                <Package size={18} className="text-brand-600" />
-                              </div>
-                              <div>
-                                <p className="font-bold text-black text-sm">Shipping Instructions</p>
-                                <p className="text-xs text-neutral-500 mt-0.5">Include your order number on the outside of the package.</p>
-                              </div>
-                            </div>
-                            <div className="flex items-start gap-3 bg-white border border-atlas-border rounded-xl p-3">
-                              <MapPin size={16} className="text-brand-600 flex-shrink-0 mt-0.5" />
-                              <div>
-                                <p className="font-semibold text-black text-sm">{SHIPPING_ADDRESS.name}</p>
-                                <p className="text-xs text-neutral-600 mt-1">
-                                  {SHIPPING_ADDRESS.line1}<br />
-                                  {SHIPPING_ADDRESS.city}, {SHIPPING_ADDRESS.state} {SHIPPING_ADDRESS.zip}<br />
-                                  {SHIPPING_ADDRESS.country}
-                                </p>
-                                <p className="text-[11px] text-neutral-500 mt-2">Ref: {order.order_number}</p>
-                              </div>
-                            </div>
+                          <div className="p-5 bg-neutral-50">
+                            <OrderShippingChecklist
+                              orderNumber={order.order_number}
+                              shippingPreboarded={order.shipping_preboarded ?? profile?.shipping_preboarded}
+                              shippingLabelId={order.shipping_label_id}
+                              compact
+                            />
                           </div>
                         )}
-                        {order.shipping_label_id && (
-                          <div className="p-5 bg-neutral-50">
-                            <p className="text-xs font-bold uppercase tracking-wider text-neutral-500 mb-3">Prepaid Shipping Label</p>
-                            <PrepaidShippingLabel labelId={order.shipping_label_id} orderNumber={order.order_number} />
+                        {!!order.shipping_label_id && order.status !== 'awaiting_sample' && (
+                          <div className="px-5 py-3 text-xs text-neutral-600 bg-neutral-50">
+                            Prepaid label on file: <span className="font-mono font-semibold">{order.shipping_label_id}</span>
+                          </div>
+                        )}
+                        {(order.estimated_ready_at || order.due_at) && (
+                          <div className="px-5 py-3 flex items-center justify-between gap-3 bg-brand-50/50 text-sm">
+                            <span className="text-neutral-600">Estimated ready date</span>
+                            <span className="font-semibold text-brand-900">
+                              {formatDate(order.estimated_ready_at || order.due_at || '')}
+                            </span>
                           </div>
                         )}
                         {order.payment_method === 'crypto' && orderIsPayable(order.payment_status) && (
@@ -838,6 +852,22 @@ export default function Portal() {
                         <input type="checkbox" checked={notifs[key]} onChange={() => toggleNotif(key)} className="w-4 h-4 accent-brand-500" />
                       </label>
                     ))}
+                    <label className="flex items-center justify-between py-2 cursor-pointer border-t border-atlas-border pt-3">
+                      <div>
+                        <p className="text-sm font-medium">SMS stage updates</p>
+                        <p className="text-xs text-neutral-500">
+                          Text alerts at receiving, testing, review, and COA ready
+                          {profile?.phone ? '' : ' · add a phone number in account settings first'}
+                        </p>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={!!profile?.notify_sms}
+                        onChange={() => void toggleSmsNotify()}
+                        disabled={!profile?.phone?.trim()}
+                        className="w-4 h-4 accent-brand-500"
+                      />
+                    </label>
                   </div>
                 </div>
               </div>

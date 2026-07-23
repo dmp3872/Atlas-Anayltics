@@ -32,7 +32,7 @@ Deno.serve(async (req) => {
       .from('notification_queue')
       .select('id, user_id, subject, body, channel')
       .is('sent_at', null)
-      .eq('channel', 'email')
+      .in('channel', ['email', 'sms'])
       .order('created_at', { ascending: true })
       .limit(25);
 
@@ -41,33 +41,76 @@ Deno.serve(async (req) => {
 
     let sent = 0;
     const failures: string[] = [];
+    const TWILIO_SID = Deno.env.get('TWILIO_ACCOUNT_SID') ?? '';
+    const TWILIO_TOKEN = Deno.env.get('TWILIO_AUTH_TOKEN') ?? '';
+    const TWILIO_FROM = Deno.env.get('TWILIO_FROM_NUMBER') ?? '';
 
     for (const row of rows) {
       const { data: userData } = await supabase.auth.admin.getUserById(row.user_id);
       const email = userData?.user?.email;
-      if (!email) {
-        failures.push(`${row.id}: no email`);
-        continue;
-      }
 
-      const res = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${RESEND_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          from: FROM,
-          to: [email],
-          subject: row.subject,
-          text: row.body,
-        }),
-      });
+      if (row.channel === 'sms') {
+        const { data: profile } = await supabase
+          .from('user_profiles')
+          .select('phone')
+          .eq('id', row.user_id)
+          .maybeSingle();
+        const phone = (profile?.phone || '').trim();
+        if (!phone) {
+          failures.push(`${row.id}: no phone`);
+          continue;
+        }
+        if (!TWILIO_SID || !TWILIO_TOKEN || !TWILIO_FROM) {
+          // Leave unsent so a later deploy with Twilio can drain; mark skipped note in failures.
+          failures.push(`${row.id}: SMS queued but Twilio secrets not configured`);
+          continue;
+        }
+        const auth = btoa(`${TWILIO_SID}:${TWILIO_TOKEN}`);
+        const body = new URLSearchParams({
+          To: phone,
+          From: TWILIO_FROM,
+          Body: row.body,
+        });
+        const res = await fetch(
+          `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_SID}/Messages.json`,
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Basic ${auth}`,
+              'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body,
+          },
+        );
+        if (!res.ok) {
+          failures.push(`${row.id}: ${await res.text()}`);
+          continue;
+        }
+      } else {
+        if (!email) {
+          failures.push(`${row.id}: no email`);
+          continue;
+        }
 
-      if (!res.ok) {
-        const text = await res.text();
-        failures.push(`${row.id}: ${text}`);
-        continue;
+        const res = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${RESEND_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            from: FROM,
+            to: [email],
+            subject: row.subject,
+            text: row.body,
+          }),
+        });
+
+        if (!res.ok) {
+          const text = await res.text();
+          failures.push(`${row.id}: ${text}`);
+          continue;
+        }
       }
 
       await supabase

@@ -99,7 +99,7 @@ export default function OrderStatusPipeline({
           <span className="inline-flex items-center rounded-md bg-brand-100 text-brand-900 font-semibold px-1.5 py-0.5 mr-1.5">
             {currentLabel}
           </span>
-          {currentKey === 'awaiting_sample' && 'Ship your samples — prepaid UPS pickup (you never pay for shipping).'}
+          {currentKey === 'awaiting_sample' && 'Ship your samples using the checklist on this order (RFID pickup or standard drop-off).'}
           {currentKey === 'processing' && 'Your package was received and accessioned at the lab.'}
           {currentKey === 'analyzing' && 'Chemists are running your selected panels.'}
           {currentKey === 'in_review' && 'Results are under lab review before the COA is published.'}

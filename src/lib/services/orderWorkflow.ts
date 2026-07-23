@@ -91,7 +91,7 @@ export async function markOrderPaid(
     });
   }
 
-  await notifyOrderUpdate(order.user_id, order.order_number, opts.waived ? 'Payment waived' : 'Payment confirmed');
+  await notifyOrderUpdate(order.user_id, order.order_number, opts.waived ? 'payment_waived' : 'payment_confirmed');
   return { error: null, order: data as Order };
 }
 
@@ -205,7 +205,7 @@ export async function markSampleReceived(
     });
   }
 
-  await notifyOrderUpdate(order.user_id, order.order_number, 'Sample received');
+  await notifyOrderUpdate(order.user_id, order.order_number, 'sample_received');
   return {
     error: null,
     sample: updatedSample as OrderSample,
@@ -269,7 +269,9 @@ export async function setSampleStatus(
           changedBy: opts.changedBy,
         });
         if (status === 'analyzing') {
-          await notifyOrderUpdate(opts.order.user_id, opts.order.order_number, 'In testing');
+          await notifyOrderUpdate(opts.order.user_id, opts.order.order_number, 'analyzing');
+        } else if (status === 'in_review') {
+          await notifyOrderUpdate(opts.order.user_id, opts.order.order_number, 'in_review');
         }
       }
     }

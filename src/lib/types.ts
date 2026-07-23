@@ -62,12 +62,16 @@ export interface Order {
   first_order_discount: boolean;
   prepaid_shipping: boolean;
   shipping_label_id?: string;
+  /** Snapshot: client was RFID-preboarded when the order was placed. */
+  shipping_preboarded?: boolean;
   payment_method?: 'card' | 'crypto';
   payment_status?: PaymentStatus;
   paid_at?: string | null;
   paid_by?: string | null;
   payment_note?: string;
   due_at?: string | null;
+  /** Staff-set estimated ready date shown in the client portal. */
+  estimated_ready_at?: string | null;
   company_name: string;
   created_at: string;
   updated_at: string;
@@ -248,6 +252,12 @@ export interface UserProfile {
   country: string;
   prepaid_balance: number;
   is_first_order: boolean;
+  /** RFID plaque + UPS pickup enrolled. */
+  shipping_preboarded?: boolean;
+  /** Prefer email stage updates (default true). */
+  notify_email?: boolean;
+  /** Prefer SMS stage updates when phone is on file. */
+  notify_sms?: boolean;
   website?: string;
   company_logo?: string;
   created_at: string;

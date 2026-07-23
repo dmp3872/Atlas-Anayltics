@@ -77,6 +77,27 @@ export default function Admin() {
     setSavingId(null);
   }
 
+  async function togglePreboarded(id: string, shippingPreboarded: boolean) {
+    setSavingId(id);
+    setMsg(null);
+    const { error } = await supabase
+      .from('user_profiles')
+      .update({ shipping_preboarded: shippingPreboarded })
+      .eq('id', id);
+    if (error) {
+      setMsg({ type: 'error', text: error.message });
+    } else {
+      setUsers(prev => prev.map(u => (u.id === id ? { ...u, shipping_preboarded: shippingPreboarded } : u)));
+      setMsg({
+        type: 'success',
+        text: shippingPreboarded
+          ? 'Client marked as RFID preboarded (UPS pickup).'
+          : 'Client set to standard ship-in (no RFID plaque).',
+      });
+    }
+    setSavingId(null);
+  }
+
   async function setOrderPriority(orderId: string, priority: LabPriority) {
     setSavingOrderId(orderId);
     setMsg(null);
@@ -230,6 +251,7 @@ export default function Admin() {
             loading={loading}
             savingId={savingId}
             onChangeRole={changeRole}
+            onTogglePreboarded={togglePreboarded}
           />
         )}
       </div>

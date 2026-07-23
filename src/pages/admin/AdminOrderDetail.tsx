@@ -12,7 +12,7 @@ import {
   Order, OrderSample, OrderStatus, OrderStatusHistoryEntry,
 } from '../../lib/types';
 import {
-  formatCurrency, formatDateTime, ORDER_STATUS_LABELS,
+  formatCurrency, formatDateTime, formatDate, ORDER_STATUS_LABELS,
   PAYMENT_STATUS_LABELS, SAMPLE_STATUS_LABELS, normalizePaymentStatus, orderIsPayable,
 } from '../../lib/utils';
 import {
@@ -22,6 +22,9 @@ import {
 import OrderStatusPipeline from '../../components/order/OrderStatusPipeline';
 import OrderNotesThread from '../../components/order/OrderNotesThread';
 import OrderActionChecklist from '../../components/order/OrderActionChecklist';
+import OrderEtaEditor from '../../components/order/OrderEtaEditor';
+import { notifyOrderUpdate, notifyOrderEtaUpdated } from '../../lib/notifications';
+import { shippingModeLabel, resolveShippingMode } from '../../lib/shippingGuide';
 
 const ACTIVITY_LABELS: Record<string, string> = {
   ...ORDER_STATUS_LABELS,
@@ -43,6 +46,7 @@ export default function AdminOrderDetail() {
   const [statusNote, setStatusNote] = useState('');
   const [receivedByBySample, setReceivedByBySample] = useState<Record<string, string>>({});
   const [receiveNoteBySample, setReceiveNoteBySample] = useState<Record<string, string>>({});
+  const [etaSaving, setEtaSaving] = useState(false);
   const defaultReceivedBy = (profile?.full_name || '').trim();
 
   function receivedByFor(sampleId: string) {
@@ -73,9 +77,9 @@ export default function AdminOrderDetail() {
   const nextStatuses = useMemo(() => (order ? ORDER_ADMIN_NEXT_STATUS[order.status] ?? [] : []), [order]);
   const payment = normalizePaymentStatus(order?.payment_status);
   const paid = orderIsPayable(order?.payment_status);
-  const overdue = !!order?.due_at
+  const overdue = !!(order?.estimated_ready_at || order?.due_at)
     && order.status !== 'complete' && order.status !== 'cancelled'
-    && new Date(order.due_at).getTime() < Date.now();
+    && new Date(order.estimated_ready_at || order.due_at || '').getTime() < Date.now();
 
   async function handleMarkPaid(waived: boolean) {
     if (!order) return;
@@ -108,11 +112,40 @@ export default function AdminOrderDetail() {
         note: statusNote || `Status updated to ${ORDER_STATUS_LABELS[newStatus]}`,
         changedBy: user?.id,
       });
+      await notifyOrderUpdate(order.user_id, order.order_number, newStatus);
       setStatusNote('');
       setMsg({ type: 'success', text: `Order moved to ${ORDER_STATUS_LABELS[newStatus]}.` });
       await reload();
     }
     setActionLoading(false);
+  }
+
+  async function handleSaveEta(iso: string | null) {
+    if (!order) return;
+    setEtaSaving(true);
+    setMsg(null);
+    const { error } = await supabase
+      .from('orders')
+      .update({
+        estimated_ready_at: iso,
+        // Keep due_at aligned when staff sets ETA so existing overdue logic stays useful.
+        due_at: iso ?? order.due_at ?? null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', order.id);
+    if (error) {
+      setMsg({ type: 'error', text: error.message });
+    } else {
+      if (iso) {
+        await notifyOrderEtaUpdated(order.user_id, order.order_number, formatDate(iso));
+      }
+      setMsg({
+        type: 'success',
+        text: iso ? `Estimated ready date set to ${formatDate(iso)}.` : 'Estimated ready date cleared.',
+      });
+      await reload();
+    }
+    setEtaSaving(false);
   }
 
   async function handleReceiveSample(sample: OrderSample) {
@@ -197,16 +230,20 @@ export default function AdminOrderDetail() {
                 </span>
               )}
             </h1>
-            <p className="text-sm text-neutral-500">{order.company_name || '—'}</p>
+            <p className="text-sm text-neutral-500">
+              {order.company_name || '—'}
+              {' · '}
+              {shippingModeLabel(resolveShippingMode(order.shipping_preboarded))}
+            </p>
           </div>
           <div className="flex flex-col items-end gap-1">
             <span className="text-xs font-bold uppercase px-2.5 py-1 rounded-full border bg-neutral-100 text-neutral-700 border-neutral-200">
               {ORDER_STATUS_LABELS[order.status]}
             </span>
-            {order.due_at && (
+            {(order.estimated_ready_at || order.due_at) && (
               <span className={`text-xs flex items-center gap-1 ${overdue ? 'text-red-700 font-semibold' : 'text-neutral-500'}`}>
                 {overdue ? <AlertTriangle size={11} /> : <Clock size={11} />}
-                Due {formatDateTime(order.due_at)}
+                Est. ready {formatDateTime(order.estimated_ready_at || order.due_at || '')}
               </span>
             )}
           </div>
@@ -214,6 +251,15 @@ export default function AdminOrderDetail() {
 
         <div className="card p-5 mb-6 overflow-x-auto">
           <OrderStatusPipeline status={order.status} size="comfortable" />
+        </div>
+
+        <div className="mb-6">
+          <OrderEtaEditor
+            estimatedReadyAt={order.estimated_ready_at}
+            dueAt={order.due_at}
+            saving={etaSaving}
+            onSave={handleSaveEta}
+          />
         </div>
 
         {/* Payment */}

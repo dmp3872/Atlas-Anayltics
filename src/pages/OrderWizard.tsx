@@ -55,6 +55,8 @@ interface SuccessInfo {
   totalVials: number;
   submittedAt: string;
   status: string;
+  shippingLabelId?: string | null;
+  shippingPreboarded?: boolean;
 }
 
 export default function OrderWizard() {
@@ -393,11 +395,22 @@ export default function OrderWizard() {
         prepaid_shipping: true,
         payment_method: method,
         shipping_label_id: shippingLabelId,
+        shipping_preboarded: !!profile?.shipping_preboarded,
       };
 
       let { data: order, error: orderError } = await supabase.from('orders').insert(orderPayload).select().single();
-      if (orderError?.message?.includes('payment_method') || orderError?.message?.includes('shipping_label_id')) {
-        const { payment_method: _pm, shipping_label_id: _sl, prepaid_shipping: _ps, ...fallback } = orderPayload;
+      if (
+        orderError?.message?.includes('payment_method')
+        || orderError?.message?.includes('shipping_label_id')
+        || orderError?.message?.includes('shipping_preboarded')
+      ) {
+        const {
+          payment_method: _pm,
+          shipping_label_id: _sl,
+          prepaid_shipping: _ps,
+          shipping_preboarded: _sp,
+          ...fallback
+        } = orderPayload;
         ({ data: order, error: orderError } = await supabase.from('orders').insert(fallback).select().single());
       }
       if (orderError) throw orderError;
@@ -417,7 +430,7 @@ export default function OrderWizard() {
       const { error: samplesError } = await supabase.from('order_samples').insert(sampleRows);
       if (samplesError) throw samplesError;
 
-      await notifyOrderUpdate(user.id, orderNumber, 'received');
+      await notifyOrderUpdate(user.id, orderNumber, 'submitted');
       clearOrderDraft(user.id);
 
       setSuccess({
@@ -427,6 +440,8 @@ export default function OrderWizard() {
         totalVials,
         submittedAt: order.created_at || new Date().toISOString(),
         status: order.status || 'awaiting_sample',
+        shippingLabelId: shippingLabelId,
+        shippingPreboarded: !!profile?.shipping_preboarded,
       });
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err: unknown) {
@@ -485,6 +500,8 @@ export default function OrderWizard() {
             totalVials={success.totalVials}
             submittedAt={success.submittedAt}
             status={success.status}
+            shippingLabelId={success.shippingLabelId}
+            shippingPreboarded={success.shippingPreboarded}
             onSubmitAnother={resetForAnotherOrder}
           />
         </div>

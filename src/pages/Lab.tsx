@@ -7,7 +7,7 @@ import {
 import { supabase } from '../lib/supabase';
 import { COA, Company, LabPriority, Order, OrderSample, SampleStatus, UserProfile } from '../lib/types';
 import { computeCoaContentHash } from '../lib/coaVerify';
-import { notifyCoaReady, notifyOrderUpdate } from '../lib/notifications';
+import { notifyCoaReady, notifyOrderUpdate, notifyOrderEtaUpdated } from '../lib/notifications';
 import { clientSubmittedLabel, parseSampleMetadata } from '../lib/coaPanels';
 import { fetchUserCompanies } from '../lib/coaProfile';
 import {
@@ -42,6 +42,7 @@ import { useAuth } from '../context/AuthContext';
 import AtlasDigitalCoaCard, { type DigitalCoaAssayResults } from '../components/order/AtlasDigitalCoaCard';
 import OrderActionChecklist from '../components/order/OrderActionChecklist';
 import OrderNotesThread from '../components/order/OrderNotesThread';
+import OrderEtaEditor from '../components/order/OrderEtaEditor';
 import { fetchOrderActionItems, openActionCount } from '../lib/orderActions';
 import { createEmptySample, type TestMode } from '../lib/orderCatalog';
 import { assayResultsFromPanels } from '../lib/coaDisplayPanels';
@@ -549,7 +550,7 @@ export default function Lab() {
       const notifyErr = await notifyCoaReady(coa.user_id, coa.display_name || coa.sample_name, coa.slug);
       if (notifyErr) console.warn('COA ready notify failed:', notifyErr);
       const order = orders.find(o => o.id === coa.order_id);
-      if (order) await notifyOrderUpdate(coa.user_id, order.order_number, 'COA published');
+      if (order) await notifyOrderUpdate(coa.user_id, order.order_number, 'coa_published');
     }
 
     if (targetStage === 'published') {
@@ -1378,6 +1379,43 @@ export default function Lab() {
 
               {form.orderId && (
                 <>
+                  {linkedOrder && (
+                    <OrderEtaEditor
+                      compact
+                      estimatedReadyAt={linkedOrder.estimated_ready_at}
+                      dueAt={linkedOrder.due_at}
+                      onSave={async (iso) => {
+                        const { error } = await supabase
+                          .from('orders')
+                          .update({
+                            estimated_ready_at: iso,
+                            due_at: iso ?? linkedOrder.due_at ?? null,
+                            updated_at: new Date().toISOString(),
+                          })
+                          .eq('id', linkedOrder.id);
+                        if (error) {
+                          setMsg({ type: 'error', text: error.message });
+                          return;
+                        }
+                        setOrders(prev => prev.map(o => (
+                          o.id === linkedOrder.id
+                            ? { ...o, estimated_ready_at: iso, due_at: iso ?? o.due_at }
+                            : o
+                        )));
+                        if (iso) {
+                          await notifyOrderEtaUpdated(
+                            linkedOrder.user_id,
+                            linkedOrder.order_number,
+                            formatDate(iso),
+                          );
+                        }
+                        setMsg({
+                          type: 'success',
+                          text: iso ? `ETA set to ${formatDate(iso)}.` : 'ETA cleared.',
+                        });
+                      }}
+                    />
+                  )}
                   <OrderNotesThread
                     orderId={form.orderId}
                     sampleId={form.sampleId || null}
