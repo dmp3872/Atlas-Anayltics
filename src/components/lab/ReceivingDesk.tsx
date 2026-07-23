@@ -8,6 +8,8 @@ import {
 } from '../../lib/utils';
 import { markOrderPaid, markSampleReceived } from '../../lib/services/orderWorkflow';
 import { useAuth } from '../../context/AuthContext';
+import PrintPackButton from './PrintPackButton';
+import { LAB_PRINT_PACK_ENABLED } from '../../lib/labFeatures';
 
 interface Props {
   orders: Order[];
@@ -26,6 +28,12 @@ export default function ReceivingDesk({ orders, samples, clients, onChanged }: P
   const [receivedByBySample, setReceivedByBySample] = useState<Record<string, string>>({});
   const [noteBySample, setNoteBySample] = useState<Record<string, string>>({});
   const [payNoteByOrder, setPayNoteByOrder] = useState<Record<string, string>>({});
+  const [lastReceived, setLastReceived] = useState<{
+    sample: OrderSample;
+    order: Order;
+    accession?: string | null;
+    receivedBy: string;
+  } | null>(null);
   const defaultReceivedBy = (profile?.full_name || '').trim();
 
   function receivedByFor(sampleId: string) {
@@ -106,6 +114,15 @@ export default function ReceivingDesk({ orders, samples, clients, onChanged }: P
     if (error) setMsg({ type: 'error', text: error.message });
     else {
       const code = updated?.accession_number?.trim();
+      const receivedSample = updated
+        ? { ...sample, ...updated, accession_number: code || sample.accession_number }
+        : sample;
+      setLastReceived({
+        sample: receivedSample,
+        order,
+        accession: code,
+        receivedBy,
+      });
       setMsg({
         type: 'success',
         text: code
@@ -140,7 +157,17 @@ export default function ReceivingDesk({ orders, samples, clients, onChanged }: P
           msg.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-700'
         }`}>
           {msg.type === 'success' ? <CheckCircle size={16} className="flex-shrink-0 mt-0.5" /> : <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />}
-          {msg.text}
+          <div className="flex-1 space-y-2">
+            <p>{msg.text}</p>
+            {LAB_PRINT_PACK_ENABLED && msg.type === 'success' && lastReceived && (
+              <PrintPackButton
+                order={lastReceived.order}
+                sample={lastReceived.sample}
+                accession={lastReceived.accession}
+                receivedBy={lastReceived.receivedBy}
+              />
+            )}
+          </div>
         </div>
       )}
 

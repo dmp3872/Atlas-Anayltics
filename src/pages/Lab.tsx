@@ -28,6 +28,7 @@ import { allocateUniqueSampleCode, isValidSampleCode } from '../lib/sampleCode';
 import { formatDate } from '../lib/utils';
 import LabSampleIntake from '../components/lab/LabSampleIntake';
 import ReceivingDesk from '../components/lab/ReceivingDesk';
+import MyBenchPanel from '../components/lab/MyBenchPanel';
 import StaffHeader from '../components/layout/StaffHeader';
 import LogoDropzone from '../components/account/LogoDropzone';
 import {
@@ -49,7 +50,7 @@ import { assayResultsFromPanels } from '../lib/coaDisplayPanels';
 const MAX_COA_IMAGE_BYTES = 1024 * 1024;
 
 type Message = { type: 'success' | 'error'; text: string; slug?: string } | null;
-type LabTab = 'receive' | 'queue' | 'intake' | 'issue' | 'workflow';
+type LabTab = 'bench' | 'receive' | 'queue' | 'intake' | 'issue' | 'workflow';
 
 const BLANK = {
   clientId: '', sampleId: '', orderId: '',
@@ -66,7 +67,7 @@ const QUEUE_FILTERS_BLANK: QueueFilterValues = {
 export default function Lab() {
   const { user, profile } = useAuth();
   const isAdmin = profile?.role === 'admin';
-  const [tab, setTab] = useState<LabTab>('queue');
+  const [tab, setTab] = useState<LabTab>('bench');
   const [clients, setClients] = useState<UserProfile[]>([]);
   const [allProfiles, setAllProfiles] = useState<UserProfile[]>([]);
   const [chemists, setChemists] = useState<UserProfile[]>([]);
@@ -752,6 +753,7 @@ export default function Lab() {
   }, [samples, orders]);
 
   const tabs: { id: LabTab; label: string; count?: number }[] = [
+    { id: 'bench', label: 'My Bench' },
     { id: 'receive', label: 'Receive', count: receiveCount || undefined },
     { id: 'queue', label: 'Testing Queue', count: pendingQueueCount || undefined },
     { id: 'intake', label: 'Add Sample' },
@@ -784,7 +786,7 @@ export default function Lab() {
             <FlaskConical size={24} className="text-brand-500" /> Lab Console
           </h1>
           <p className="text-sm text-neutral-500 mt-1">
-            Receive samples → Testing queue → Issue COA → Verify → Publish for clients.
+            My Bench → Receive → Testing queue → Issue COA → Verify → Publish for clients.
           </p>
         </div>
 
@@ -847,6 +849,19 @@ export default function Lab() {
               )}
             </span>
           </div>
+        )}
+
+        {tab === 'bench' && user && (
+          <MyBenchPanel
+            userId={user.id}
+            queueItems={pendingQueueItems}
+            coas={coas}
+            orders={normalizedOrders}
+            samples={samples}
+            onOpenQueue={() => setTab('queue')}
+            onOpenWorkflow={() => setTab('workflow')}
+            onIssueCoa={prefillFromSample}
+          />
         )}
 
         {tab === 'receive' && (

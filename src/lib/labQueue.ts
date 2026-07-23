@@ -5,6 +5,7 @@ import {
 } from './orderCatalog';
 import { parseSampleMetadata, orderSampleIncludesFentanyl, matchCoaForSample, hasIssuedCoaForSample } from './coaPanels';
 import { orderIsPayable } from './utils';
+import { resolveEtaAt } from './etaHeat';
 
 export type { LabPriority };
 
@@ -194,7 +195,7 @@ export function buildQueueItems(
     const hasCoa = issued || !!matchCoaForSample(sample, coas);
 
     const ageMs = Date.now() - new Date(sample.created_at).getTime();
-    const dueAt = order.due_at ?? null;
+    const dueAt = resolveEtaAt(order);
     const overdue = !!dueAt && new Date(dueAt).getTime() < Date.now() && !issued && sample.status !== 'complete';
 
     items.push({

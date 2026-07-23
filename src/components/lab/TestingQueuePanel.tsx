@@ -8,6 +8,7 @@ import {
   LAB_PRIORITIES, LAB_PRIORITY_LABELS, LAB_PRIORITY_STYLES,
   QueueSampleItem, normalizeLabPriority,
 } from '../../lib/labQueue';
+import { etaHeat, etaHeatPercent, resolveEtaAt } from '../../lib/etaHeat';
 
 export interface ChemistOption {
   id: string;
@@ -91,18 +92,27 @@ export default function TestingQueuePanel({
 
       <div className="space-y-3">
         {items.map((item, idx) => {
-          const { sample, order, tests, testsLabel, priority, ageHours, assigned_to: assignedTo, overdue, dueAt } = item;
+          const { sample, order, tests, testsLabel, priority, ageHours, assigned_to: assignedTo, overdue, dueAt, hasCoa } = item;
           const meta = parseSampleMetadata(sample.metadata);
           const styles = LAB_PRIORITY_STYLES[priority];
           const isMine = !!currentUserId && assignedTo === currentUserId;
           const assignmentLabel = !assignedTo ? 'Unassigned' : isMine ? 'You' : chemistName(assignedTo);
           const testsMissing = testsLabel.trim() === 'Tests not specified' || testsLabel.trim() === '';
+          const heat = etaHeat(resolveEtaAt(order) || dueAt, { complete: hasCoa || sample.status === 'complete' });
+          const heatPct = etaHeatPercent(heat.level);
 
           return (
             <article
               key={sample.id}
-              className={`card overflow-hidden border-l-4 ${overdue ? 'border-red-500' : styles.border} ${overdue ? 'bg-red-50/40' : styles.bg}`}
+              className={`card overflow-hidden border-l-4 ${heat.level !== 'none' && heat.level !== 'ok' ? heat.border : overdue ? 'border-red-500' : styles.border} ${heat.level === 'overdue' || heat.level === 'today' ? heat.bg : overdue ? 'bg-red-50/40' : styles.bg}`}
             >
+              <div className="h-1.5 w-full bg-neutral-100">
+                <div
+                  className={`h-full transition-[width] ${heat.bar}`}
+                  style={{ width: `${heatPct}%` }}
+                  title={heat.label}
+                />
+              </div>
               <div className="p-4 sm:p-5">
                 <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
                   <div className="flex items-start gap-3 min-w-0 flex-1">
@@ -140,9 +150,10 @@ export default function TestingQueuePanel({
                             <AlertTriangle size={10} /> Tests not specified
                           </span>
                         )}
-                        {overdue && (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-red-100 text-red-800 border border-red-300">
-                            <AlertTriangle size={10} /> Overdue{dueAt ? ` · due ${new Date(dueAt).toLocaleDateString()}` : ''}
+                        {heat.level !== 'none' && (
+                          <span className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${heat.chip}`}>
+                            {(heat.level === 'overdue' || heat.level === 'today') && <AlertTriangle size={10} />}
+                            {heat.label}
                           </span>
                         )}
                         {sample.accession_number && (
