@@ -18,16 +18,20 @@ export const ATLAS_SAFETY_PRO_PANEL: TestPanel = {
 };
 
 export function withAtlasSafetyProPanel(panels: TestPanel[]): TestPanel[] {
-  // DB rows may still carry legacy 10-day TAT — normalize packages to standard 3–5 day messaging.
+  // Keep package TAT + Safety Pro price aligned with app constants even if DB lags.
   const normalized = panels.map((p) => {
+    let next = p;
     if (
       p.category === 'package'
       || /safety\s*pro/i.test(p.name)
       || /full\s*qc/i.test(p.name)
     ) {
-      return { ...p, turnaround_days: 5 };
+      next = { ...next, turnaround_days: 5 };
     }
-    return p;
+    if (/safety\s*pro/i.test(p.name)) {
+      next = { ...next, price_per_sample: ATLAS_SAFETY_PRO_PRICE };
+    }
+    return next;
   });
 
   const hasPackage = normalized.some(

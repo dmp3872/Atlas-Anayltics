@@ -859,10 +859,14 @@ export function mergeCatalogWithDbPanels(
       : typeof hit.price === 'number'
         ? hit.price
         : null;
+    // Safety Pro price is owned by ATLAS_SAFETY_PRO_PRICE — ignore stale DB amounts.
+    const price = service.id === 'atlas_pro'
+      ? service.price
+      : (typeof dbPrice === 'number' && dbPrice > 0 ? dbPrice : service.price);
     return {
       ...service,
       description: (hit.description || service.description).trim() || service.description,
-      price: typeof dbPrice === 'number' && dbPrice > 0 ? dbPrice : service.price,
+      price,
       available: service.available && hit.is_active !== false,
     };
   });
