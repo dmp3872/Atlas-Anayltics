@@ -87,8 +87,8 @@ export const LAB_TEST_SERVICES: LabTestService[] = [
   {
     id: 'full_qc',
     name: 'Full QC Panel',
-    description: 'Purity, content ID, heavy metals, endotoxin, and sterility screen',
-    price: 500,
+    description: 'Identity, purity, quantity, and sterility screen',
+    price: 400,
     turnaroundDays: 5,
     turnaroundLabel: '3–5 business days',
     vialsRequired: 3,
@@ -209,6 +209,13 @@ export const INDIVIDUAL_TESTS: LabTestService[] = LAB_TEST_SERVICES.filter(
 
 export const FENTANYL_TEST_ID = 'fentanyl_detection';
 export const FENTANYL_OPTION_LABEL = 'Fentanyl Detection';
+/** Atlas Pro runs the primary vial plus two included comparison vials. */
+export const ATLAS_PRO_INCLUDED_CONFORMITY_VIALS = 3;
+export const ATLAS_PRO_INCLUDED_EXTRA_CONFORMITY_VIALS = 2;
+/** @deprecated Use ATLAS_PRO_INCLUDED_CONFORMITY_VIALS */
+export const ATLAS_PRO_INCLUDED_VARIANCE_VIALS = ATLAS_PRO_INCLUDED_CONFORMITY_VIALS;
+/** @deprecated Use ATLAS_PRO_INCLUDED_EXTRA_CONFORMITY_VIALS */
+export const ATLAS_PRO_INCLUDED_EXTRA_VARIANCE_VIALS = ATLAS_PRO_INCLUDED_EXTRA_CONFORMITY_VIALS;
 
 export const ATLAS_PRO_BUNDLED_TEST_IDS = [
   'purity_hplc',
@@ -233,24 +240,22 @@ export const ATLAS_PRO_PANEL = {
     'Heavy metals screen',
     '+ Endotoxin (LAL)',
     '+ Sterility (PCR)',
-    '+ Conformity vials',
+    '+ 3-vial conformity testing (2 comparison vials included)',
   ],
   emphasized: true as const,
 };
 
 export const FULL_QC_BUNDLED_TEST_IDS = [
   'purity_hplc',
-  'heavy_metals_icpms',
-  'endotoxin_usp85',
   'sterility_pcr',
 ] as const;
 
 export const FULL_QC_PANEL = {
   id: 'full_qc' as const,
   name: 'Full QC Panel',
-  tagline: 'Identity, purity & quantity toolkit',
-  description: 'Purity, Content ID, Heavy Metals, Endotoxin, Sterility Screen',
-  price: 500,
+  tagline: 'Identity, purity, quantity & sterility',
+  description: 'Identity, Purity, Quantity, Sterility Screen',
+  price: 400,
   vialsRequired: 3,
   bundledTestIds: [...FULL_QC_BUNDLED_TEST_IDS],
   includesConformity: false,
@@ -258,8 +263,6 @@ export const FULL_QC_PANEL = {
     'Identity confirmation',
     'Purity analysis (%)',
     'Quantity verification',
-    'Heavy metals screen',
-    'Endotoxin (LAL)',
     'Sterility (PCR)',
   ],
   emphasized: false as const,
@@ -418,7 +421,6 @@ export function createEmptySample(partial?: Partial<WizardSample>): WizardSample
     label_claim_unit: 'mg',
     vial_size: '',
     sample_matrix: 'Lyophilized',
-    quantity: 1,
     peptide_identification: '',
     sample_type: 'single',
     blend_compounds: 2,
@@ -435,7 +437,22 @@ export function createEmptySample(partial?: Partial<WizardSample>): WizardSample
     special_instructions: '',
     ...categoryDefaults,
     ...partial,
+    // One wizard row is one physical sample. Add another sample instead of
+    // multiplying an ambiguous "identical copies" quantity.
+    quantity: 1,
   };
+}
+
+/**
+ * "10" + "mg" → "10 mg"; "10 mg" + "mg" → "10 mg" (never doubles the unit).
+ */
+export function formatLabelClaim(content: string, unit: string): string {
+  const value = content.trim();
+  if (!value) return '';
+  const u = unit.trim();
+  if (!u) return value;
+  const endsWithUnit = new RegExp(`${u.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'i').test(value);
+  return endsWithUnit ? value : `${value} ${u}`;
 }
 
 export function normalizeWizardSample(sample: Partial<WizardSample> & Pick<WizardSample, 'id'>): WizardSample {
@@ -461,6 +478,7 @@ export function normalizeWizardSample(sample: Partial<WizardSample> & Pick<Wizar
   if (!merged.label_claim_unit) merged.label_claim_unit = 'mg';
   if (typeof merged.client_reference !== 'string') merged.client_reference = '';
   if (typeof merged.special_instructions !== 'string') merged.special_instructions = '';
+  merged.quantity = 1;
   if (!Array.isArray(merged.blend_components)) merged.blend_components = [];
   if (merged.sample_type === 'blend' && merged.blend_components.length === 0) {
     merged.blend_components = defaultBlendComponents(merged.blend_compounds || MIN_BLEND_COMPONENTS);
@@ -528,7 +546,7 @@ export function sampleLineTotal(
   primaryBrand = '',
   catalog: LabTestService[] = LAB_TEST_SERVICES,
 ): number {
-  return (sampleTestPrice(sample, catalog) + sampleAddOnPrice(sample, primaryBrand)) * Math.max(1, sample.quantity);
+  return sampleTestPrice(sample, catalog) + sampleAddOnPrice(sample, primaryBrand);
 }
 
 export function orderTotals(
@@ -538,11 +556,11 @@ export function orderTotals(
 ) {
   const subtotal = samples.reduce((s, sample) => s + sampleLineTotal(sample, primaryBrand, catalog), 0);
   const testSubtotal = samples.reduce(
-    (s, sample) => s + sampleTestPrice(sample, catalog) * Math.max(1, sample.quantity),
+    (s, sample) => s + sampleTestPrice(sample, catalog),
     0,
   );
   const addOnSubtotal = samples.reduce(
-    (s, sample) => s + sampleAddOnPrice(sample, primaryBrand) * Math.max(1, sample.quantity),
+    (s, sample) => s + sampleAddOnPrice(sample, primaryBrand),
     0,
   );
   const sampleCount = samples.length;
@@ -666,6 +684,47 @@ export function sampleMetadataPayload(
   primaryBrand = '',
   catalog: LabTestService[] = LAB_TEST_SERVICES,
 ) {
+  const assayIds = isPackageMode(sample.test_mode)
+    ? bundledTestsForMode(sample.test_mode)
+    : selectedServiceIds(sample);
+  const alloc = (() => {
+    try {
+      // Lazy import avoided — build allocation inline for package modes.
+      const extras = Math.max(0, sample.conformity_extra);
+      if (sample.test_mode === 'atlas_pro') {
+        return {
+          included_conformity_vials: ATLAS_PRO_INCLUDED_CONFORMITY_VIALS,
+          included_comparison_vials: ATLAS_PRO_INCLUDED_EXTRA_CONFORMITY_VIALS,
+          additional_conformity_vials: extras,
+          conformity_vials: ATLAS_PRO_INCLUDED_CONFORMITY_VIALS + extras,
+          // Legacy aliases for older trackers / embeds.
+          included_variance_vials: ATLAS_PRO_INCLUDED_CONFORMITY_VIALS,
+          additional_variance_vials: extras,
+          variance_vials: ATLAS_PRO_INCLUDED_CONFORMITY_VIALS + extras,
+        };
+      }
+      return {
+        included_conformity_vials: 0,
+        included_comparison_vials: 0,
+        additional_conformity_vials: extras,
+        conformity_vials: extras,
+        included_variance_vials: 0,
+        additional_variance_vials: extras,
+        variance_vials: extras,
+      };
+    } catch {
+      return {
+        included_conformity_vials: 0,
+        included_comparison_vials: 0,
+        additional_conformity_vials: sample.conformity_extra,
+        conformity_vials: sample.conformity_extra,
+        included_variance_vials: 0,
+        additional_variance_vials: sample.conformity_extra,
+        variance_vials: sample.conformity_extra,
+      };
+    }
+  })();
+
   return {
     batch_number: sample.batch_number,
     labeled_content: sample.labeled_content,
@@ -681,8 +740,9 @@ export function sampleMetadataPayload(
     blend_label: sample.sample_type === 'blend' ? formatBlendLabel(sample.blend_components) : undefined,
     primary_test_id: sample.primary_test_id,
     test_mode: sample.test_mode,
-    individual_tests: selectedServiceIds(sample),
+    individual_tests: assayIds,
     conformity_extra: sample.conformity_extra,
+    ...alloc,
     brand_names: sample.brand_names.filter(Boolean),
     rush: sample.rush,
     include_fentanyl: sampleIncludesFentanyl(sample),
@@ -714,6 +774,11 @@ export function describePricing(
 
 export function packageIncludesConformity(mode: TestMode): boolean {
   return mode === 'atlas_pro';
+}
+
+/** True when Atlas Pro is selected or extra conformity vials were added. */
+export function sampleIncludesConformity(sample: Pick<WizardSample, 'test_mode' | 'conformity_extra'>): boolean {
+  return sample.test_mode === 'atlas_pro' || sample.conformity_extra > 0;
 }
 
 export function applyPrimaryTest(sample: WizardSample, primaryId: string): WizardSample {

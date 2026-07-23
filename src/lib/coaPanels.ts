@@ -12,6 +12,7 @@ export interface OrderSampleMetadata {
   blend_label?: string;
   tests_label?: string;
   test_mode?: string;
+  individual_tests?: string[];
   conformity_extra?: number;
   include_fentanyl?: boolean;
 }
@@ -79,8 +80,26 @@ export const QC_PANELS = [
   CONFORMITY_PANEL_NAME,
 ];
 
+/** Full QC after Jul 2026: identity / purity / quantity / sterility only. */
+export const FULL_QC_PANELS = [
+  'Purity & Quantitation (HPLC)',
+  'Identity Confirmation (MS)',
+  'Net Content (Weight)',
+  'Sterility (PCR)',
+];
+
+export const ATLAS_PRO_PANELS = [
+  'Purity & Quantitation (HPLC)',
+  'Identity Confirmation (MS)',
+  'Net Content (Weight)',
+  'Endotoxin (USP <85>)',
+  'Heavy Metals (ICP-MS)',
+  'Sterility (PCR)',
+  CONFORMITY_PANEL_NAME,
+];
+
 // Resolve the list of test section names ordered for a sample. Prefers explicit
-// panel_ids (mapped through test_panels), falling back to the canonical QC set.
+// panel_ids (mapped through test_panels), falling back to package-aware defaults.
 export function expectedPanelNames(sample: OrderSample, panels: TestPanel[]): string[] {
   const ids = sample.panel_ids ?? [];
   if (ids.length) {
@@ -89,6 +108,13 @@ export function expectedPanelNames(sample: OrderSample, panels: TestPanel[]): st
       .filter((n): n is string => !!n);
     if (names.length) return names;
   }
+  const meta = parseSampleMetadata(sample.metadata);
+  if (meta.test_mode === 'atlas_pro') {
+    const names = [...ATLAS_PRO_PANELS];
+    if (orderSampleIncludesFentanyl(sample.metadata)) names.push('Fentanyl Detection');
+    return names;
+  }
+  if (meta.test_mode === 'full_qc') return [...FULL_QC_PANELS];
   return QC_PANELS;
 }
 

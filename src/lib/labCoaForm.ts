@@ -40,7 +40,12 @@ export interface LabCoaResults {
   sterilityPass: boolean;
   endotoxinEuMl: string;
   endotoxinPass: boolean;
+  /** When false, Endotoxin is omitted from the COA (e.g. revised Full QC). */
+  includeEndotoxin: boolean;
   heavyMetals: Record<HeavyMetalName, string>;
+  /** When false, Heavy Metals rows are omitted from the COA. */
+  includeHeavyMetals: boolean;
+  includeSterility: boolean;
   conformityPeptides: ConformityPeptideRow[];
   includeFentanyl: boolean;
   fentanylPass: boolean;
@@ -56,6 +61,7 @@ export const EMPTY_LAB_RESULTS: LabCoaResults = {
   sterilityPass: true,
   endotoxinEuMl: '',
   endotoxinPass: true,
+  includeEndotoxin: true,
   heavyMetals: {
     'Lead (Pb)': '',
     'Arsenic (As)': '',
@@ -63,6 +69,8 @@ export const EMPTY_LAB_RESULTS: LabCoaResults = {
     'Mercury (Hg)': '',
     'Chromium (Cr)': '',
   },
+  includeHeavyMetals: true,
+  includeSterility: true,
   conformityPeptides: [],
   includeFentanyl: false,
   fentanylPass: true,
@@ -131,11 +139,28 @@ export function buildLabResultsFromSample(metadata: OrderSample['metadata'], sam
   const meta = parseSampleMetadata(metadata);
   const identification = meta.peptide_identification?.trim() || sampleName.trim();
   const includeFentanyl = orderSampleIncludesFentanyl(metadata);
+  const assayIds = Array.isArray(meta.individual_tests) ? meta.individual_tests.map(String) : [];
+  const mode = typeof meta.test_mode === 'string' ? meta.test_mode : '';
+  // Atlas Pro always includes biosafety metals/endotoxin; revised Full QC does not.
+  const includeHeavyMetals =
+    mode === 'atlas_pro' || assayIds.includes('heavy_metals_icpms');
+  const includeEndotoxin =
+    mode === 'atlas_pro' || assayIds.includes('endotoxin_usp85');
+  const includeSterility =
+    mode === 'atlas_pro' ||
+    mode === 'full_qc' ||
+    assayIds.includes('sterility_pcr') ||
+    assayIds.includes('sterility_culture') ||
+    // Legacy Full QC rows that still list endotoxin/metals in metadata still had sterility.
+    assayIds.length === 0;
   return {
     ...EMPTY_LAB_RESULTS,
     identification,
     netContent: meta.labeled_content?.trim() ?? '',
     includeFentanyl,
+    includeHeavyMetals,
+    includeEndotoxin,
+    includeSterility,
     conformityPeptides: identification
       ? [{ name: identification, netContent: meta.labeled_content?.trim() ?? '', netPurity: '' }]
       : [],
@@ -162,32 +187,37 @@ export function labResultsToPanelResults(results: LabCoaResults): PanelResult[] 
     });
   }
 
-  rows.push(
-    {
+  if (results.includeSterility !== false) {
+    rows.push({
       panel_name: 'Sterility',
       specification: 'Not Detected',
       result: results.sterilityPass
         ? `Not Detected (${STERILITY_METHOD_LABELS[results.sterilityMethod]})`
         : `Detected (${STERILITY_METHOD_LABELS[results.sterilityMethod]})`,
       pass: results.sterilityPass,
-    },
-    {
+    });
+  }
+
+  if (results.includeEndotoxin !== false) {
+    rows.push({
       panel_name: 'Endotoxin',
       specification: ENDOTOXIN_SPEC_EU_ML,
       result: results.endotoxinEuMl.trim()
         ? `${results.endotoxinEuMl.trim()} EU/mL (LAL)`
         : '',
       pass: results.endotoxinPass,
-    },
-  );
-
-  for (const metal of HEAVY_METAL_NAMES) {
-    rows.push({
-      panel_name: metal,
-      specification: 'ppm',
-      result: results.heavyMetals[metal] ?? '',
-      pass: true,
     });
+  }
+
+  if (results.includeHeavyMetals !== false) {
+    for (const metal of HEAVY_METAL_NAMES) {
+      rows.push({
+        panel_name: metal,
+        specification: 'ppm',
+        result: results.heavyMetals[metal] ?? '',
+        pass: true,
+      });
+    }
   }
 
   if (results.includeFentanyl) {

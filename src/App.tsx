@@ -11,6 +11,7 @@ import Order from './pages/Order';
 import Portal from './pages/Portal';
 import OrderWizard from './pages/OrderWizard';
 import COADetail from './pages/COADetail';
+import EmbeddedCOA from './pages/EmbeddedCOA';
 import SampleCOA from './pages/SampleCOA';
 import APIKeys from './pages/APIKeys';
 import Support from './pages/Support';
@@ -63,6 +64,7 @@ export default function App() {
           <Route path="/verify" element={<PublicVerify />} />
           <Route path="/coa-library" element={<PublicLibrary />} />
           <Route path="/coa/:slug" element={<COADetail />} />
+          <Route path="/embed/coa/:slug" element={<EmbeddedCOA />} />
           <Route path="/sample/:sampleId/coa" element={<SampleCOA />} />
           <Route path="/trust" element={<Trust />} />
           <Route path="/roadmap" element={<Roadmap />} />

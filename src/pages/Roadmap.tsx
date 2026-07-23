@@ -26,7 +26,7 @@ const roadmapItems = [
     { name: 'NMR analysis', desc: 'Nuclear magnetic resonance spectroscopy' },
     { name: 'LC-MS identity', desc: 'Liquid chromatography–mass spectrometry identity confirmation' },
     { name: 'Sterility testing (plate, 14-day)', desc: 'Full USP sterility testing' },
-    { name: 'Variance/multi-sample testing', desc: 'Statistical analysis across multiple vials from same batch' },
+    { name: 'Conformity/multi-sample testing', desc: 'Statistical analysis across multiple vials from same batch' },
     { name: 'Physical tamper-evident seal', desc: 'QR-linked seal connecting vial to digital record (premium tier)' },
     { name: 'ISO 17025 accreditation', desc: 'Formal accreditation from recognized accreditation body' },
   ]}

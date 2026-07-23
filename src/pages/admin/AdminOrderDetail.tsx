@@ -20,6 +20,7 @@ import {
   sampleReceivedBy,
 } from '../../lib/services/orderWorkflow';
 import OrderStatusPipeline from '../../components/order/OrderStatusPipeline';
+import OrderNotesThread from '../../components/order/OrderNotesThread';
 
 const ACTIVITY_LABELS: Record<string, string> = {
   ...ORDER_STATUS_LABELS,
@@ -369,6 +370,10 @@ export default function AdminOrderDetail() {
               );
             })
           )}
+        </div>
+
+        <div className="mb-6">
+          <OrderNotesThread orderId={order.id} />
         </div>
 
         <div className="card p-6">

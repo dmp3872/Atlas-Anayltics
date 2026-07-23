@@ -38,6 +38,7 @@ import {
 import CoaPdfPrepModal from '../components/lab/CoaPdfPrepModal';
 import { COA_LIST_COLUMNS } from '../lib/coaSelect';
 import { useAuth } from '../context/AuthContext';
+import OrderNotesThread from '../components/order/OrderNotesThread';
 
 const MAX_COA_IMAGE_BYTES = 1024 * 1024;
 
@@ -1095,29 +1096,33 @@ export default function Lab() {
                         <option value="fail">Detected — FAIL</option>
                       </select>
                     </div>
-                    <div>
-                      <label className="label">Endotoxin (EU/mL)</label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={labResults.endotoxinEuMl}
-                        onChange={e => updateResults({ endotoxinEuMl: e.target.value })}
-                        className="input-field"
-                        placeholder="e.g. 0.25"
-                      />
-                      <p className="text-xs text-neutral-500 mt-1">Spec: {ENDOTOXIN_SPEC_EU_ML}</p>
-                    </div>
-                    <div>
-                      <label className="label">Endotoxin conformity</label>
-                      <select
-                        value={labResults.endotoxinPass ? 'pass' : 'fail'}
-                        onChange={e => updateResults({ endotoxinPass: e.target.value === 'pass' })}
-                        className="input-field"
-                      >
-                        <option value="pass">PASS</option>
-                        <option value="fail">FAIL</option>
-                      </select>
-                    </div>
+                    {labResults.includeEndotoxin !== false && (
+                      <>
+                        <div>
+                          <label className="label">Endotoxin (EU/mL)</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={labResults.endotoxinEuMl}
+                            onChange={e => updateResults({ endotoxinEuMl: e.target.value })}
+                            className="input-field"
+                            placeholder="e.g. 0.25"
+                          />
+                          <p className="text-xs text-neutral-500 mt-1">Spec: {ENDOTOXIN_SPEC_EU_ML}</p>
+                        </div>
+                        <div>
+                          <label className="label">Endotoxin conformity</label>
+                          <select
+                            value={labResults.endotoxinPass ? 'pass' : 'fail'}
+                            onChange={e => updateResults({ endotoxinPass: e.target.value === 'pass' })}
+                            className="input-field"
+                          >
+                            <option value="pass">PASS</option>
+                            <option value="fail">FAIL</option>
+                          </select>
+                        </div>
+                      </>
+                    )}
                     {labResults.includeFentanyl && (
                       <div>
                         <label className="label">Fentanyl Detection</label>
@@ -1128,6 +1133,7 @@ export default function Lab() {
                       </div>
                     )}
                   </div>
+                  {labResults.includeHeavyMetals !== false && (
                   <div>
                     <label className="label mb-2">Heavy Metals (ppm)</label>
                     <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -1146,6 +1152,7 @@ export default function Lab() {
                       ))}
                     </div>
                   </div>
+                  )}
                   <div>
                     <div className="flex items-center justify-between mb-2">
                       <label className="label mb-0">Conformity (multiple peptides)</label>
@@ -1214,28 +1221,31 @@ export default function Lab() {
                 <CheckCircle size={16} /> {saving ? 'Issuing…' : 'Issue COA (Private)'}
               </button>
             </form>
-            <div className="card overflow-hidden h-fit">
-              <div className="px-5 py-3 border-b border-atlas-border flex items-center gap-2">
-                <ClipboardList size={15} className="text-brand-500" />
-                <h3 className="font-bold text-sm">Quick load — pending samples</h3>
+            <div className="space-y-4">
+              <div className="card overflow-hidden h-fit">
+                <div className="px-5 py-3 border-b border-atlas-border flex items-center gap-2">
+                  <ClipboardList size={15} className="text-brand-500" />
+                  <h3 className="font-bold text-sm">Quick load — pending samples</h3>
+                </div>
+                <div className="divide-y divide-atlas-border max-h-[520px] overflow-y-auto">
+                  {pendingSamples.length === 0 ? (
+                    <p className="p-5 text-sm text-neutral-500">All samples have COAs.</p>
+                  ) : pendingSamples.slice(0, 20).map(s => {
+                    const order = orders.find(o => o.id === s.order_id);
+                    const brand = parseSampleMetadata(s.metadata).brand_names?.[0] || order?.company_name;
+                    return (
+                    <button key={s.id} type="button" onClick={() => prefillFromSample(s)} className="w-full text-left px-5 py-3 hover:bg-neutral-50">
+                      <p className="font-medium text-sm">{s.display_name || s.sample_name}</p>
+                      <p className="text-xs text-neutral-500">
+                        {brand || clientLabel(s.user_id)}
+                        {order?.order_number ? ` · ${order.order_number}` : ''}
+                      </p>
+                    </button>
+                    );
+                  })}
+                </div>
               </div>
-              <div className="divide-y divide-atlas-border max-h-[520px] overflow-y-auto">
-                {pendingSamples.length === 0 ? (
-                  <p className="p-5 text-sm text-neutral-500">All samples have COAs.</p>
-                ) : pendingSamples.slice(0, 20).map(s => {
-                  const order = orders.find(o => o.id === s.order_id);
-                  const brand = parseSampleMetadata(s.metadata).brand_names?.[0] || order?.company_name;
-                  return (
-                  <button key={s.id} type="button" onClick={() => prefillFromSample(s)} className="w-full text-left px-5 py-3 hover:bg-neutral-50">
-                    <p className="font-medium text-sm">{s.display_name || s.sample_name}</p>
-                    <p className="text-xs text-neutral-500">
-                      {brand || clientLabel(s.user_id)}
-                      {order?.order_number ? ` · ${order.order_number}` : ''}
-                    </p>
-                  </button>
-                  );
-                })}
-              </div>
+              {form.orderId && <OrderNotesThread orderId={form.orderId} compact />}
             </div>
           </div>
         )}

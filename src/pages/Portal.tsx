@@ -31,10 +31,16 @@ import GettingStarted from '../components/portal/GettingStarted';
 import PeptideRequests from '../components/portal/PeptideRequests';
 import PortalHome from '../components/portal/PortalHome';
 import PrepaidShippingLabel from '../components/order/PrepaidShippingLabel';
+import AtlasDigitalCoaCard from '../components/order/AtlasDigitalCoaCard';
+import OrderNotesThread from '../components/order/OrderNotesThread';
+import { assayResultsFromPanels } from '../lib/coaDisplayPanels';
+import { createEmptySample, TestMode } from '../lib/orderCatalog';
+import { trackingStageFromStatuses } from '../lib/orderProjection';
 import { queueNotification } from '../lib/notifications';
 import { hydrateCoaImages } from '../lib/coaImages';
 import { COA_LIST_COLUMNS } from '../lib/coaSelect';
-import { useUserRole } from '../hooks/useUserRole';
+import CoaReadyCelebration from '../components/coa/CoaReadyCelebration';
+import { fetchSeenCoaCelebrations, markCoaCelebrationSeen } from '../lib/orderMessages';
 
 type PortalTab = 'home' | 'getting-started' | 'peptide-requests' | 'coas' | 'samples' | 'orders' | 'invoices' | 'payments' | 'account' | 'widget' | 'team';
 
@@ -63,7 +69,6 @@ function portalTestsForSample(sample: OrderSample, panels: TestPanel[]): string[
 
 export default function Portal() {
   const { user, profile } = useAuth();
-  const { role } = useUserRole();
   const location = useLocation();
   const [params, setParams] = useSearchParams();
   const pathTab = location.pathname.includes('/orders') ? 'orders' : location.pathname.includes('/coas') ? 'coas' : null;
@@ -76,12 +81,14 @@ export default function Portal() {
   const [loading, setLoading] = useState(true);
   const [shippingOpen, setShippingOpen] = useState(true);
   const [copiedAddr, setCopiedAddr] = useState(false);
+  const [copiedEmbedSlug, setCopiedEmbedSlug] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [sampleProduct, setSampleProduct] = useState('all');
   const [coaPeptide, setCoaPeptide] = useState('all');
   const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
   const [discardingOrderId, setDiscardingOrderId] = useState<string | null>(null);
+  const [celebrationCoa, setCelebrationCoa] = useState<COA | null>(null);
 
   const [promoCode, setPromoCode] = useState('');
   const [promoMsg, setPromoMsg] = useState('');
@@ -105,11 +112,31 @@ export default function Portal() {
         supabase.from('orders').select('*').eq('user_id', user!.id).order('created_at', { ascending: false }),
         supabase.from('order_samples').select('*').eq('user_id', user!.id).order('created_at', { ascending: false }),
         supabase.from('test_panels').select('*').eq('is_active', true).order('sort_order'),
-      ]).then(([coasRes, ordersRes, samplesRes, panelsRes]) => {
-        if (coasRes.data) setCoas((coasRes.data as COA[]).map(hydrateCoaImages));
+      ]).then(async ([coasRes, ordersRes, samplesRes, panelsRes]) => {
+        const nextCoas = coasRes.data
+          ? (coasRes.data as unknown as COA[]).map(hydrateCoaImages)
+          : [];
+        if (coasRes.data) setCoas(nextCoas);
         if (ordersRes.data) setOrders(ordersRes.data);
         if (samplesRes.data) setSamples(samplesRes.data);
         if (panelsRes.data) setPanels(panelsRes.data);
+        try {
+          const seen = await fetchSeenCoaCelebrations(user!.id);
+          const ready = nextCoas.find(
+            coa =>
+              coa.is_public &&
+              (coa.coa_workflow_stage === 'published' || !!coa.published_at) &&
+              !seen.has(coa.id),
+          );
+          if (ready) {
+            // Mark before opening so realtime refreshes cannot reopen the same celebration.
+            await markCoaCelebrationSeen(user!.id, ready.id);
+            setCelebrationCoa(current => current ?? ready);
+          }
+        } catch (celebrationError) {
+          // The portal remains fully usable before this optional migration is applied.
+          console.warn('COA celebration check unavailable:', celebrationError);
+        }
         setLoading(false);
       });
     }
@@ -127,9 +154,14 @@ export default function Portal() {
   }, [user]);
 
   useEffect(() => {
+    if (orders.length === 0) return;
     const label = params.get('label');
-    if (!label || orders.length === 0) return;
-    const match = orders.find(o => o.shipping_label_id === label);
+    const orderParam = params.get('order');
+    const match = orderParam
+      ? orders.find(o => o.id === orderParam || o.order_number === orderParam)
+      : label
+        ? orders.find(o => o.shipping_label_id === label)
+        : undefined;
     if (match) setExpandedOrders(prev => new Set(prev).add(match.id));
   }, [orders, params]);
 
@@ -148,6 +180,14 @@ export default function Portal() {
     await navigator.clipboard.writeText(text);
     setCopiedAddr(true);
     setTimeout(() => setCopiedAddr(false), 2000);
+  }
+
+  async function copyCoaEmbed(slug: string) {
+    const embedUrl = `${window.location.origin}/embed/coa/${encodeURIComponent(slug)}`;
+    const code = `<iframe src="${embedUrl}" title="Atlas Analytics Verified COA" width="390" height="780" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" style="border:0;width:100%;max-width:390px;"></iframe>`;
+    await navigator.clipboard.writeText(code);
+    setCopiedEmbedSlug(slug);
+    window.setTimeout(() => setCopiedEmbedSlug(current => (current === slug ? null : current)), 2200);
   }
 
   function toggleNotif(key: keyof NotificationPrefs) {
@@ -241,6 +281,13 @@ export default function Portal() {
 
   return (
     <ClientPortalLayout>
+      {celebrationCoa && (
+        <CoaReadyCelebration
+          coa={celebrationCoa}
+          sample={samples.find(sample => sample.id === celebrationCoa.sample_id)}
+          onClose={() => setCelebrationCoa(null)}
+        />
+      )}
       <div className="space-y-6">
         {orderDraft && tab === 'home' && (
           <div className="card p-4 flex flex-wrap items-center justify-between gap-3 border-brand-300 bg-brand-50">
@@ -388,6 +435,27 @@ export default function Portal() {
                                 <Link to={`/coa/${coa.slug}`} className="btn-primary text-xs py-1.5 gap-1 inline-flex">
                                   <ExternalLink size={12} /> Open & download PNG
                                 </Link>
+                                {coa.is_public && (
+                                  <>
+                                    <a
+                                      href={`/embed/coa/${encodeURIComponent(coa.slug)}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="btn-outline text-xs py-1.5 gap-1 inline-flex"
+                                    >
+                                      <ExternalLink size={12} /> Preview embed
+                                    </a>
+                                    <button
+                                      type="button"
+                                      onClick={() => void copyCoaEmbed(coa.slug)}
+                                      className="btn-outline text-xs py-1.5 gap-1 inline-flex"
+                                      title="Copy an iframe to paste into your website"
+                                    >
+                                      {copiedEmbedSlug === coa.slug ? <Check size={12} /> : <Copy size={12} />}
+                                      {copiedEmbedSlug === coa.slug ? 'Copied' : 'Copy embed code'}
+                                    </button>
+                                  </>
+                                )}
                               </div>
                             </td>
                           </tr>
@@ -573,11 +641,38 @@ export default function Portal() {
                           <p className="px-5 py-4 text-sm text-neutral-500">No samples recorded for this order.</p>
                         ) : orderSamples.map(s => {
                           const coa = matchCoaForSample(s, coas);
-                          const meta = s.metadata as { tests_label?: string; batch_number?: string } | null;
+                          const meta = s.metadata as {
+                            tests_label?: string;
+                            batch_number?: string;
+                            test_mode?: TestMode;
+                            labeled_content?: string;
+                            label_claim_unit?: string;
+                            include_fentanyl?: boolean;
+                            conformity_extra?: number;
+                            primary_test_id?: string;
+                          } | null;
                           const tests = portalTestsForSample(s, panels);
+                          const mode = (meta?.test_mode as TestMode | undefined) ?? 'individual';
+                          const trackerSample = createEmptySample({
+                            sample_name: s.sample_name,
+                            display_name: s.display_name || s.sample_name,
+                            batch_number: meta?.batch_number || '',
+                            labeled_content: meta?.labeled_content || '',
+                            label_claim_unit: meta?.label_claim_unit || 'mg',
+                            primary_test_id: meta?.primary_test_id || (mode === 'individual' ? '' : mode),
+                            test_mode: mode,
+                            include_fentanyl: !!meta?.include_fentanyl,
+                            conformity_extra: Number(meta?.conformity_extra) || 0,
+                            sample_type: s.sample_type,
+                          });
+                          const trackStage = trackingStageFromStatuses({
+                            orderStatus: order.status,
+                            sampleStatus: s.status,
+                            hasIssuedCoa: !!coa,
+                          });
                           return (
-                            <div key={s.id} className="px-5 py-4 flex flex-col sm:flex-row sm:items-start justify-between gap-3">
-                              <div className="min-w-0">
+                            <div key={s.id} className="px-5 py-4 flex flex-col lg:flex-row lg:items-start justify-between gap-4">
+                              <div className="min-w-0 flex-1">
                                 <div className="flex items-center gap-2 flex-wrap">
                                   <p className="font-semibold text-black">{s.display_name || s.sample_name}</p>
                                   <span className="text-xs text-neutral-400 capitalize">{s.sample_type}</span>
@@ -590,6 +685,28 @@ export default function Portal() {
                                   {tests.map(t => (
                                     <span key={t} className="inline-block text-xs bg-neutral-100 text-neutral-700 rounded px-2 py-0.5">{t}</span>
                                   ))}
+                                </div>
+                                <div className="mt-4 max-w-[280px]">
+                                  <AtlasDigitalCoaCard
+                                    samples={[trackerSample]}
+                                    companyName={order.company_name || profile?.company_name || ''}
+                                    stage="tracking"
+                                    trackingStage={trackStage}
+                                    accession={s.accession_number || null}
+                                    readinessPercent={100}
+                                    overallResult={
+                                      coa?.overall_result === 'pass' || coa?.overall_result === 'fail'
+                                        ? coa.overall_result
+                                        : undefined
+                                    }
+                                    assayResults={
+                                      coa
+                                        ? assayResultsFromPanels(coa.panel_results, {
+                                            quantityUnit: meta?.label_claim_unit || 'mg',
+                                          })
+                                        : null
+                                    }
+                                  />
                                 </div>
                               </div>
                               <div className="flex-shrink-0">
@@ -627,6 +744,9 @@ export default function Portal() {
                             </p>
                           </div>
                         )}
+                        <div className="border-t border-atlas-border bg-neutral-50 p-4 sm:p-5">
+                          <OrderNotesThread orderId={order.id} compact />
+                        </div>
                       </div>
                     )}
                   </div>

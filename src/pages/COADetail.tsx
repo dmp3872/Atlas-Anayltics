@@ -493,6 +493,7 @@ export default function COADetail() {
             </table>
           </div>
 
+          {metalPanels.length > 0 && (
           <div className="mb-4 overflow-hidden border border-atlas-border">
             <table className="w-full text-sm coa-print-table table-fixed">
               <colgroup>
@@ -533,6 +534,7 @@ export default function COADetail() {
               </tbody>
             </table>
           </div>
+          )}
 
           {coa.content_hash && (
             <div className="flex flex-wrap items-center gap-2 text-[10px] text-neutral-600 font-mono bg-neutral-50 px-3 py-2 border border-atlas-border mb-3 no-print">

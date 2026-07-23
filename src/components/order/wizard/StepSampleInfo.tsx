@@ -12,7 +12,6 @@ import {
   applyCategoryDefaults,
   formatSampleTests,
   LabTestService,
-  sampleVialCount,
 } from '../../../lib/orderCatalog';
 import { sampleHeaderMeta } from '../../../lib/orderReadiness';
 import { Company } from '../../../lib/types';
@@ -264,21 +263,6 @@ export default function StepSampleInfo({
                         ))}
                       </select>
                     </div>
-                  </div>
-
-                  <div>
-                    <label className="label" htmlFor={`qty-${sample.id}`}>Identical sample copies</label>
-                    <input
-                      id={`qty-${sample.id}`}
-                      type="number"
-                      min={1}
-                      className="input-field"
-                      value={sample.quantity}
-                      onChange={e => updateSample(sample.id, { quantity: Math.max(1, Number(e.target.value) || 1) })}
-                    />
-                    <p className="text-xs text-neutral-500 mt-1">
-                      Laboratory requires {sampleVialCount(sample, catalog)} vial{sampleVialCount(sample, catalog) === 1 ? '' : 's'} per sample (same for blends).
-                    </p>
                   </div>
 
                   <div>

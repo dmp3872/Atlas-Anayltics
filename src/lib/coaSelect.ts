@@ -32,6 +32,7 @@ export const COA_LIST_COLUMNS = [
   'signature',
   'verified_by',
   'review_assigned_to',
+  'accession_number',
   'panel_results',
   'chromatogram_data',
 ].join(', ');

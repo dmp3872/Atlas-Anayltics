@@ -94,7 +94,7 @@ export default function SampleCOA() {
     { label: 'Order', value: order?.order_number || '—' },
     { label: 'Received', value: order ? formatDateTime(order.created_at) : formatDateTime(sample.created_at) },
     { label: 'Status', value: SAMPLE_STATUS_LABELS[sample.status] },
-    { label: 'Test Package', value: meta?.tests_label || 'Full QC Panel' },
+    { label: 'Test Package', value: meta?.tests_label || 'Testing package pending' },
   ];
 
   return (
