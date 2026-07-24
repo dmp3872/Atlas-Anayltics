@@ -3,6 +3,11 @@
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
+-- Expand role check before seeding chemist/verifier (older constraint was client/admin/reviewer only).
+ALTER TABLE user_profiles DROP CONSTRAINT IF EXISTS user_profiles_role_check;
+ALTER TABLE user_profiles ADD CONSTRAINT user_profiles_role_check
+  CHECK (role IN ('client', 'admin', 'reviewer', 'chemist', 'verifier'));
+
 CREATE OR REPLACE FUNCTION public.seed_test_user(
   p_email text, p_password text, p_full_name text, p_role text
 ) RETURNS void
