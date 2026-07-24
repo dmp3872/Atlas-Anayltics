@@ -9,9 +9,10 @@ interface Props {
   loading?: boolean;
   savingId?: string | null;
   onChangeRole: (id: string, role: UserRole) => void;
+  onTogglePreboarded?: (id: string, shippingPreboarded: boolean) => void;
 }
 
-export default function AdminUsersPanel({ users, loading, savingId, onChangeRole }: Props) {
+export default function AdminUsersPanel({ users, loading, savingId, onChangeRole, onTogglePreboarded }: Props) {
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState<UserRole | 'all'>('all');
 
@@ -70,6 +71,7 @@ export default function AdminUsersPanel({ users, loading, savingId, onChangeRole
                   <th className="text-left px-5 py-3">Name</th>
                   <th className="text-left px-5 py-3">Company</th>
                   <th className="text-left px-5 py-3">Role</th>
+                  <th className="text-left px-5 py-3">RFID preboard</th>
                   <th className="text-left px-5 py-3">User ID</th>
                 </tr>
               </thead>
@@ -87,6 +89,22 @@ export default function AdminUsersPanel({ users, loading, savingId, onChangeRole
                       >
                         {ROLES.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
                       </select>
+                    </td>
+                    <td className="px-5 py-3">
+                      {(u.role ?? 'client') === 'client' ? (
+                        <label className="inline-flex items-center gap-2 text-xs text-neutral-700">
+                          <input
+                            type="checkbox"
+                            checked={!!u.shipping_preboarded}
+                            disabled={savingId === u.id || !onTogglePreboarded}
+                            onChange={e => onTogglePreboarded?.(u.id, e.target.checked)}
+                            className="accent-brand-500"
+                          />
+                          UPS + plaque
+                        </label>
+                      ) : (
+                        <span className="text-xs text-neutral-400">—</span>
+                      )}
                     </td>
                     <td className="px-5 py-3 text-xs font-mono text-neutral-400">{u.id.slice(0, 13)}…</td>
                   </tr>

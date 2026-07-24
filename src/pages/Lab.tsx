@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   FlaskConical, Plus, Trash2, CheckCircle, AlertCircle, ClipboardList,
@@ -7,9 +7,8 @@ import {
 import { supabase } from '../lib/supabase';
 import { COA, Company, LabPriority, Order, OrderSample, SampleStatus, UserProfile } from '../lib/types';
 import { computeCoaContentHash } from '../lib/coaVerify';
-import { notifyCoaReady, notifyOrderUpdate } from '../lib/notifications';
+import { notifyCoaReady, notifyOrderUpdate, notifyOrderEtaUpdated } from '../lib/notifications';
 import { clientSubmittedLabel, matrixTypeFromSampleMetadata, parseSampleMetadata } from '../lib/coaPanels';
-import { allocateUniqueSampleCode, isValidSampleCode } from '../lib/sampleCode';
 import { fetchUserCompanies } from '../lib/coaProfile';
 import {
   EMPTY_LAB_RESULTS, LabCoaResults, VIAL_SIZE_OPTIONS, VialSizeOption,
@@ -23,10 +22,13 @@ import CoaWorkflowBoard from '../components/lab/CoaWorkflowBoard';
 import CompanyFilterSearch from '../components/lab/CompanyFilterSearch';
 import TestingQueuePanel from '../components/lab/TestingQueuePanel';
 import QueueFilters, { QueueFilterValues } from '../components/lab/QueueFilters';
+import ClaimVsResultStrip from '../components/lab/ClaimVsResultStrip';
 import { buildQueueItems, filterQueueItems, normalizeLabPriority } from '../lib/labQueue';
 import { sampleIntakeAt, sampleReceivedBy, setSampleStatus } from '../lib/services/orderWorkflow';
+import { allocateUniqueSampleCode, isValidSampleCode } from '../lib/sampleCode';
 import { formatDate } from '../lib/utils';
 import ReceivingDesk from '../components/lab/ReceivingDesk';
+import MyBenchPanel from '../components/lab/MyBenchPanel';
 import StaffHeader from '../components/layout/StaffHeader';
 import LogoDropzone from '../components/account/LogoDropzone';
 import {
@@ -39,11 +41,17 @@ import {
 import CoaPdfPrepModal from '../components/lab/CoaPdfPrepModal';
 import { COA_LIST_COLUMNS } from '../lib/coaSelect';
 import { useAuth } from '../context/AuthContext';
-
+import AtlasDigitalCoaCard, { type DigitalCoaAssayResults } from '../components/order/AtlasDigitalCoaCard';
+import OrderActionChecklist from '../components/order/OrderActionChecklist';
+import OrderNotesThread from '../components/order/OrderNotesThread';
+import OrderEtaEditor from '../components/order/OrderEtaEditor';
+import { fetchOrderActionItems, openActionCount } from '../lib/orderActions';
+import { createEmptySample, type TestMode, type WizardSample } from '../lib/orderCatalog';
+import { assayResultsFromPanels } from '../lib/coaDisplayPanels';
 const MAX_COA_IMAGE_BYTES = 1024 * 1024;
 
 type Message = { type: 'success' | 'error'; text: string; slug?: string } | null;
-type LabTab = 'receive' | 'queue' | 'issue' | 'workflow';
+type LabTab = 'bench' | 'receive' | 'queue' | 'issue' | 'workflow';
 
 const BLANK = {
   clientId: '', sampleId: '', orderId: '',
@@ -60,7 +68,7 @@ const QUEUE_FILTERS_BLANK: QueueFilterValues = {
 export default function Lab() {
   const { user, profile } = useAuth();
   const isAdmin = profile?.role === 'admin';
-  const [tab, setTab] = useState<LabTab>('queue');
+  const [tab, setTab] = useState<LabTab>('bench');
   const [clients, setClients] = useState<UserProfile[]>([]);
   const [allProfiles, setAllProfiles] = useState<UserProfile[]>([]);
   const [chemists, setChemists] = useState<UserProfile[]>([]);
@@ -88,8 +96,12 @@ export default function Lab() {
   const [showCasSuggestions, setShowCasSuggestions] = useState(false);
   const [prepCoa, setPrepCoa] = useState<COA | null>(null);
   const [intakeSampleLive, setIntakeSampleLive] = useState<OrderSample | null>(null);
+  const [issueOpenActions, setIssueOpenActions] = useState(0);
 
   const selectedCompany = clientCompanies.find(c => c.id === selectedCompanyId) ?? null;
+  const onIssueOpenActionsChange = useCallback((count: number) => {
+    setIssueOpenActions(count);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -358,6 +370,64 @@ export default function Lab() {
   const linkedOrder = form.orderId ? orders.find(o => o.id === form.orderId) : null;
   const linkedClient = form.clientId ? clients.find(c => c.id === form.clientId) : undefined;
 
+  const issuePreviewSample = useMemo(() => {
+    const modeValue = linkedMeta?.test_mode;
+    const mode: TestMode =
+      modeValue === 'atlas_pro' || modeValue === 'full_qc' ? modeValue : 'individual';
+    const individualTests = Array.isArray(linkedMeta?.individual_tests)
+      ? linkedMeta!.individual_tests!.filter((value): value is string => typeof value === 'string')
+      : [];
+    if (mode === 'individual' && individualTests.length === 0) {
+      individualTests.push('identity_purity_quantity');
+    }
+    return createEmptySample({
+      sample_name: form.sampleName || linkedSample?.sample_name || '',
+      display_name: form.displayName || linkedSample?.display_name || form.sampleName,
+      batch_number: form.batchNumber || linkedMeta?.batch_number || '',
+      labeled_content: linkedMeta?.labeled_content || '',
+      label_claim_unit: linkedMeta?.label_claim_unit || 'mg',
+      primary_test_id:
+        linkedMeta?.primary_test_id ||
+        (mode === 'individual' ? 'identity_purity_quantity' : mode),
+      test_mode: mode,
+      individual_tests: individualTests,
+      conformity_extra: Number(linkedMeta?.conformity_extra) || 0,
+      include_fentanyl: !!labResults.includeFentanyl,
+      category: (linkedMeta?.category as WizardSample['category'] | undefined) || undefined,
+      sample_matrix: (linkedMeta?.sample_matrix as WizardSample['sample_matrix'] | undefined) || undefined,
+    });
+  }, [form.sampleName, form.displayName, form.batchNumber, linkedMeta, linkedSample, labResults.includeFentanyl]);
+
+  const issueAssayResults = useMemo((): DigitalCoaAssayResults | null => {
+    const panels = labResultsToPanelResults(labResults);
+    const fromPanels = assayResultsFromPanels(panels, {
+      quantityUnit: linkedMeta?.label_claim_unit || 'mg',
+    });
+    const purity = parsePurityPercent(labResults.netPurity);
+    const quantityMatch = labResults.netContent.replace(/,/g, '').match(/-?\d+(?:\.\d+)?/);
+    const quantity = quantityMatch ? Number(quantityMatch[0]) : null;
+    const identity = labResults.identification.trim()
+      ? [form.overallResult !== 'fail']
+      : undefined;
+
+    if (!fromPanels && purity == null && quantity == null && !identity) return null;
+    return {
+      purity: fromPanels?.purity ?? (purity != null ? [purity] : undefined),
+      quantity: fromPanels?.quantity ?? (quantity != null ? [quantity] : undefined),
+      identity: fromPanels?.identity ?? identity,
+      quantityUnit: linkedMeta?.label_claim_unit || 'mg',
+    };
+  }, [labResults, linkedMeta?.label_claim_unit, form.overallResult]);
+
+  const issueTrackingStage =
+    form.overallResult === 'pass' || form.overallResult === 'fail'
+      ? 'in_review'
+      : linkedSample?.status === 'analyzing'
+        ? 'analyzing'
+        : linkedSample?.status === 'received'
+          ? 'received'
+          : 'awaiting_sample';
+
 
   async function insertCoa(payload: Record<string, unknown>) {
     const selectCols = 'slug, display_name, sample_name, user_id';
@@ -455,9 +525,45 @@ export default function Lab() {
   async function moveCoaToStage(
     coa: COA,
     targetStage: CoaWorkflowStage,
-    opts?: { reviewAssignedTo?: string | null },
+    opts?: { reviewAssignedTo?: string | null; force?: boolean },
   ) {
-    if (coaWorkflowStage(coa) === targetStage && targetStage !== 'pending_review') return;
+    const currentStage = coaWorkflowStage(coa);
+    if (currentStage === targetStage && targetStage !== 'pending_review') return;
+
+    // Chemists may override stopping points (open checklist, incomplete review) and publish.
+    if (targetStage === 'published' && !opts?.force) {
+      const warnings: string[] = [];
+      if (currentStage !== 'verified' && currentStage !== 'published') {
+        warnings.push(
+          `This COA is still in “${COA_WORKFLOW_LABELS[currentStage]}” (review / sign-off not complete).`,
+        );
+      }
+      if (coa.order_id) {
+        try {
+          const open = openActionCount(await fetchOrderActionItems(coa.order_id));
+          if (open > 0) {
+            warnings.push(
+              `${open} open publish checklist action${open === 1 ? '' : 's'} still pending.`,
+            );
+          }
+        } catch (err) {
+          // Checklist table may not be migrated yet — allow publish to continue.
+          console.warn('Publish checklist check unavailable:', err);
+        }
+      }
+      if (warnings.length > 0) {
+        const ok = window.confirm(
+          [
+            'Publish override?',
+            '',
+            ...warnings,
+            '',
+            'Publish this COA anyway?',
+          ].join('\n'),
+        );
+        if (!ok) return;
+      }
+    }
 
     setMovingCoaId(coa.id);
     setMsg(null);
@@ -483,7 +589,7 @@ export default function Lab() {
       const notifyErr = await notifyCoaReady(coa.user_id, coa.display_name || coa.sample_name, coa.slug);
       if (notifyErr) console.warn('COA ready notify failed:', notifyErr);
       const order = orders.find(o => o.id === coa.order_id);
-      if (order) await notifyOrderUpdate(coa.user_id, order.order_number, 'COA published');
+      if (order) await notifyOrderUpdate(coa.user_id, order.order_number, 'coa_published');
     }
 
     if (targetStage === 'published') {
@@ -605,6 +711,7 @@ export default function Lab() {
       const sampleCode = isValidSampleCode(existingAccession)
         ? existingAccession
         : await allocateUniqueSampleCode(sampleCreatedAt);
+      const resolvedSampleMatrix = matrixType || linkedMeta?.sample_matrix || '';
 
       const payload = {
         user_id: form.clientId,
@@ -622,7 +729,7 @@ export default function Lab() {
         panel_results: cleanPanels,
         chromatogram_data: {
           vial_size: form.vialSize,
-          ...(matrixType ? { sample_matrix: matrixType } : {}),
+          ...(resolvedSampleMatrix ? { sample_matrix: resolvedSampleMatrix } : {}),
         },
         vial_image: vialForSave || '',
         chromatogram_image: watermarkImage,
@@ -649,7 +756,11 @@ export default function Lab() {
           // Auto-filled from lab intake / accession (Receiving Desk).
           received_at: intakeAt || '',
           received_date: receivedDate,
-          ...(matrixType ? { matrix_type: matrixType, sample_matrix: matrixType } : {}),
+          ...(resolvedSampleMatrix ? { matrix_type: resolvedSampleMatrix, sample_matrix: resolvedSampleMatrix } : {}),
+          category: linkedMeta?.category || '',
+          test_mode: linkedMeta?.test_mode || '',
+          labeled_content: linkedMeta?.labeled_content || '',
+          label_claim_unit: linkedMeta?.label_claim_unit || '',
         },
         overall_result: form.overallResult,
         is_public: false,
@@ -706,6 +817,7 @@ export default function Lab() {
   }, [samples, orders]);
 
   const tabs: { id: LabTab; label: string; count?: number }[] = [
+    { id: 'bench', label: 'My Bench' },
     { id: 'receive', label: 'Receive', count: receiveCount || undefined },
     { id: 'queue', label: 'Testing Queue', count: pendingQueueCount || undefined },
     { id: 'issue', label: 'Issue COA' },
@@ -731,7 +843,7 @@ export default function Lab() {
             <FlaskConical size={24} className="text-brand-500" /> Lab Console
           </h1>
           <p className="text-sm text-neutral-500 mt-1">
-            Receive samples → Testing queue → Issue COA → Workflow (verify &amp; publish).
+            My Bench → Receive → Testing queue → Issue COA → Workflow (verify &amp; publish).
           </p>
         </div>
 
@@ -794,6 +906,19 @@ export default function Lab() {
               )}
             </span>
           </div>
+        )}
+
+        {tab === 'bench' && user && (
+          <MyBenchPanel
+            userId={user.id}
+            queueItems={pendingQueueItems}
+            coas={coas}
+            orders={normalizedOrders}
+            samples={samples}
+            onOpenQueue={() => setTab('queue')}
+            onOpenWorkflow={() => setTab('workflow')}
+            onIssueCoa={prefillFromSample}
+          />
         )}
 
         {tab === 'receive' && (
@@ -880,6 +1005,12 @@ export default function Lab() {
                 </div>
               )}
 
+              <ClaimVsResultStrip
+                labelClaim={linkedMeta?.labeled_content || ''}
+                labelClaimUnit={linkedMeta?.label_claim_unit || 'mg'}
+                results={labResults}
+                overallResult={form.overallResult}
+              />
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="label">Client <span className="text-red-500">*</span></label>
@@ -1159,34 +1290,38 @@ export default function Lab() {
                         <option value="fail">Detected — FAIL</option>
                       </select>
                     </div>
-                    <div>
-                      <label className="label">Endotoxin (EU/mL)</label>
-                      <input
-                        type="text"
-                        value={labResults.endotoxinEuMl}
-                        onChange={e => updateResults({ endotoxinEuMl: e.target.value })}
-                        className="input-field"
-                        placeholder={ENDOTOXIN_PASS_RESULT}
-                      />
-                      <p className="text-xs text-neutral-500 mt-1">Spec: {ENDOTOXIN_SPEC_EU_ML}</p>
-                    </div>
-                    <div>
-                      <label className="label">Endotoxin conformity</label>
-                      <select
-                        value={labResults.endotoxinPass ? 'pass' : 'fail'}
-                        onChange={e => {
-                          const pass = e.target.value === 'pass';
-                          updateResults({
-                            endotoxinPass: pass,
-                            ...(pass ? { endotoxinEuMl: ENDOTOXIN_PASS_RESULT } : {}),
-                          });
-                        }}
-                        className="input-field"
-                      >
-                        <option value="pass">PASS</option>
-                        <option value="fail">FAIL</option>
-                      </select>
-                    </div>
+                    {labResults.includeEndotoxin !== false && (
+                      <>
+                        <div>
+                          <label className="label">Endotoxin (EU/mL)</label>
+                          <input
+                            type="text"
+                            value={labResults.endotoxinEuMl}
+                            onChange={e => updateResults({ endotoxinEuMl: e.target.value })}
+                            className="input-field"
+                            placeholder={ENDOTOXIN_PASS_RESULT}
+                          />
+                          <p className="text-xs text-neutral-500 mt-1">Spec: {ENDOTOXIN_SPEC_EU_ML}</p>
+                        </div>
+                        <div>
+                          <label className="label">Endotoxin conformity</label>
+                          <select
+                            value={labResults.endotoxinPass ? 'pass' : 'fail'}
+                            onChange={e => {
+                              const pass = e.target.value === 'pass';
+                              updateResults({
+                                endotoxinPass: pass,
+                                ...(pass ? { endotoxinEuMl: ENDOTOXIN_PASS_RESULT } : {}),
+                              });
+                            }}
+                            className="input-field"
+                          >
+                            <option value="pass">PASS</option>
+                            <option value="fail">FAIL</option>
+                          </select>
+                        </div>
+                      </>
+                    )}
                     {labResults.includeFentanyl && (
                       <div>
                         <label className="label">Fentanyl Detection</label>
@@ -1197,6 +1332,7 @@ export default function Lab() {
                       </div>
                     )}
                   </div>
+                  {labResults.includeHeavyMetals !== false && (
                   <div>
                     <div className="grid sm:grid-cols-2 gap-3 mb-3">
                       <div>
@@ -1236,6 +1372,7 @@ export default function Lab() {
                       ))}
                     </div>
                   </div>
+                  )}
                   <div>
                     <div className="flex items-center justify-between mb-2">
                       <label className="label mb-0">Conformity (multiple peptides)</label>
@@ -1304,28 +1441,112 @@ export default function Lab() {
                 <CheckCircle size={16} /> {saving ? 'Issuing…' : 'Issue COA (Private)'}
               </button>
             </form>
-            <div className="card overflow-hidden h-fit">
-              <div className="px-5 py-3 border-b border-atlas-border flex items-center gap-2">
-                <ClipboardList size={15} className="text-brand-500" />
-                <h3 className="font-bold text-sm">Quick load — pending samples</h3>
+            <div className="space-y-4">
+              <div className="card p-4">
+                <p className="mb-3 text-sm font-bold text-black">Live digital COA</p>
+                <p className="mb-3 text-xs text-neutral-500">
+                  Same card the client will see — updates as you enter results.
+                </p>
+                <div className="mx-auto max-w-[300px]">
+                  <AtlasDigitalCoaCard
+                    samples={[issuePreviewSample]}
+                    companyName={form.companyName || linkedOrder?.company_name || ''}
+                    stage="tracking"
+                    trackingStage={issueTrackingStage}
+                    accession={linkedSample?.accession_number || null}
+                    readinessPercent={
+                      labResults.netPurity.trim() && labResults.netContent.trim() && labResults.identification.trim()
+                        ? 100
+                        : 55
+                    }
+                    overallResult={form.overallResult}
+                    assayResults={issueAssayResults}
+                  />
+                </div>
               </div>
-              <div className="divide-y divide-atlas-border max-h-[520px] overflow-y-auto">
-                {pendingSamples.length === 0 ? (
-                  <p className="p-5 text-sm text-neutral-500">All samples have COAs.</p>
-                ) : pendingSamples.slice(0, 20).map(s => {
-                  const order = orders.find(o => o.id === s.order_id);
-                  const brand = parseSampleMetadata(s.metadata).brand_names?.[0] || order?.company_name;
-                  return (
-                  <button key={s.id} type="button" onClick={() => prefillFromSample(s)} className="w-full text-left px-5 py-3 hover:bg-neutral-50">
-                    <p className="font-medium text-sm">{s.display_name || s.sample_name}</p>
-                    <p className="text-xs text-neutral-500">
-                      {brand || clientLabel(s.user_id)}
-                      {order?.order_number ? ` · ${order.order_number}` : ''}
+
+              <div className="card overflow-hidden h-fit">
+                <div className="px-5 py-3 border-b border-atlas-border flex items-center gap-2">
+                  <ClipboardList size={15} className="text-brand-500" />
+                  <h3 className="font-bold text-sm">Quick load — pending samples</h3>
+                </div>
+                <div className="divide-y divide-atlas-border max-h-[320px] overflow-y-auto">
+                  {pendingSamples.length === 0 ? (
+                    <p className="p-5 text-sm text-neutral-500">All samples have COAs.</p>
+                  ) : pendingSamples.slice(0, 20).map(s => {
+                    const order = orders.find(o => o.id === s.order_id);
+                    const brand = parseSampleMetadata(s.metadata).brand_names?.[0] || order?.company_name;
+                    return (
+                    <button key={s.id} type="button" onClick={() => prefillFromSample(s)} className="w-full text-left px-5 py-3 hover:bg-neutral-50">
+                      <p className="font-medium text-sm">{s.display_name || s.sample_name}</p>
+                      <p className="text-xs text-neutral-500">
+                        {brand || clientLabel(s.user_id)}
+                        {order?.order_number ? ` · ${order.order_number}` : ''}
+                      </p>
+                    </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {form.orderId && (
+                <>
+                  {linkedOrder && (
+                    <OrderEtaEditor
+                      compact
+                      estimatedReadyAt={linkedOrder.estimated_ready_at}
+                      dueAt={linkedOrder.due_at}
+                      onSave={async (iso) => {
+                        const { error } = await supabase
+                          .from('orders')
+                          .update({
+                            estimated_ready_at: iso,
+                            due_at: iso ?? linkedOrder.due_at ?? null,
+                            updated_at: new Date().toISOString(),
+                          })
+                          .eq('id', linkedOrder.id);
+                        if (error) {
+                          setMsg({ type: 'error', text: error.message });
+                          return;
+                        }
+                        setOrders(prev => prev.map(o => (
+                          o.id === linkedOrder.id
+                            ? { ...o, estimated_ready_at: iso, due_at: iso ?? o.due_at }
+                            : o
+                        )));
+                        if (iso) {
+                          await notifyOrderEtaUpdated(
+                            linkedOrder.user_id,
+                            linkedOrder.order_number,
+                            formatDate(iso),
+                          );
+                        }
+                        setMsg({
+                          type: 'success',
+                          text: iso ? `ETA set to ${formatDate(iso)}.` : 'ETA cleared.',
+                        });
+                      }}
+                    />
+                  )}
+                  <OrderNotesThread
+                    orderId={form.orderId}
+                    sampleId={form.sampleId || null}
+                    compact
+                    allowActions
+                  />
+                  <OrderActionChecklist
+                    orderId={form.orderId}
+                    compact
+                    onOpenCountChange={onIssueOpenActionsChange}
+                  />
+                  {issueOpenActions > 0 && (
+                    <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                      {issueOpenActions} open checklist action{issueOpenActions === 1 ? '' : 's'}.
+                      Clear them when you can — or confirm override when publishing.
                     </p>
-                  </button>
-                  );
-                })}
-              </div>
+                  )}
+                </>
+              )}
             </div>
           </div>
         )}
@@ -1334,7 +1555,7 @@ export default function Lab() {
           <div className="space-y-4">
             <p className="text-sm text-neutral-600">
               Testing → Issued → Pending Review (assign lab director/chemist, signatures 1/2) → Verified (2/2) → Published.
-              Cards marked Assigned to you are yours to work or sign off.
+              Cards marked Assigned to you are yours to work or sign off. Use Publish now to override checklist or incomplete review when needed.
             </p>
             <CompanyFilterSearch
               value={workflowCompanyFilter}

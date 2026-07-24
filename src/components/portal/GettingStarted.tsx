@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { ArrowRight, Package, FileText, Shield, Truck, Beaker } from 'lucide-react';
+import { ArrowRight, Package, FileText, Shield, Truck, Beaker, Radio } from 'lucide-react';
 
 const STEPS = [
   {
@@ -11,7 +11,7 @@ const STEPS = [
   {
     icon: Truck,
     title: 'Ship to our lab',
-    body: 'You’re preboarded — UPS comes to you, scans your plaque and prepaid label, and your package is RFID tracked end to end. You never pay for shipping. Thank you for preboarding!',
+    body: 'After checkout you get a shipping checklist matched to your account — RFID preboarded pickup or standard carrier drop-off.',
     cta: { label: 'View your orders', href: '/dashboard?tab=orders' },
   },
   {
@@ -23,7 +23,7 @@ const STEPS = [
   {
     icon: Shield,
     title: 'Share verified results',
-    body: 'Every COA includes a QR code and cryptographic hash. Customers can scan or enter the ID at atlasanalytics.io/verify.',
+    body: 'Every COA includes a QR code and cryptographic hash. Customers can scan or enter the ID at atlasanalyticlab.com/verify.',
     cta: { label: 'Verification tool', href: '/verify' },
   },
 ];
@@ -39,8 +39,31 @@ export default function GettingStarted() {
       <div className="card p-5 bg-brand-50/50 border-brand-200">
         <p className="text-sm text-neutral-800">
           <strong className="text-black">First order?</strong> Your account receives an automatic 50% discount on the first sample.
-          Typical turnaround is 48–72 business hours from sample receipt.
+          Typical turnaround is 3–5 business days from sample receipt.
         </p>
+      </div>
+
+      <div className="grid sm:grid-cols-2 gap-4">
+        <div className="card p-5 border-sky-200 bg-sky-50/40">
+          <div className="flex items-center gap-2 mb-2">
+            <Radio size={16} className="text-sky-700" />
+            <h2 className="font-semibold text-black">Preboarded (RFID plaque)</h2>
+          </div>
+          <p className="text-sm text-neutral-600 leading-relaxed">
+            UPS comes to you, scans your RFID plaque and prepaid label, and tracks the package end to end.
+            Shipping is free. Use this path only if Atlas enrolled your site with a plaque.
+          </p>
+        </div>
+        <div className="card p-5 border-amber-200 bg-amber-50/40">
+          <div className="flex items-center gap-2 mb-2">
+            <Truck size={16} className="text-amber-800" />
+            <h2 className="font-semibold text-black">Standard ship-in</h2>
+          </div>
+          <p className="text-sm text-neutral-600 leading-relaxed">
+            No RFID plaque. Print the prepaid label, write your order number on the box, and drop off at FedEx/UPS
+            (or schedule your own pickup). Keep tracking until we mark the order received.
+          </p>
+        </div>
       </div>
 
       <div className="space-y-4">

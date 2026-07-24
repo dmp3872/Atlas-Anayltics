@@ -5,8 +5,8 @@ import {
   ArrowLeft, Copy, Check, Droplets, Boxes, AlertTriangle, Download,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { COA, PanelResult } from '../lib/types';
-import { formatDate, formatDateTime } from '../lib/utils';
+import { COA } from '../lib/types';
+import { formatDate } from '../lib/utils';
 import { verifyCoaIntegrity } from '../lib/coaVerify';
 import { hydrateCoaImages, prepareVialImage, readCoaPdfStats, resolveCoaHeaderLogo, resolveCoaWatermark } from '../lib/coaImages';
 import { matrixTypeFromSampleMetadata } from '../lib/coaPanels';
@@ -330,6 +330,10 @@ export default function COADetail() {
     || (typeof summary.sample_matrix === 'string' && summary.sample_matrix.trim())
     || (typeof chrom.sample_matrix === 'string' && chrom.sample_matrix.trim())
     || '—';
+  const matrixLabel =
+    (typeof summary.category === 'string' && summary.category === 'other' && matrix !== '—')
+      ? 'Material Type'
+      : 'Matrix Type';
   const received =
     (typeof summary.received_date === 'string' && summary.received_date.trim())
     || (typeof summary.received_at === 'string' && formatDate(summary.received_at))
@@ -372,7 +376,7 @@ export default function COADetail() {
       { label: 'Sample Name', value: coa.display_name || coa.sample_name || '—' },
     ],
     [
-      { label: 'Matrix Type', value: matrix },
+      { label: matrixLabel, value: matrix },
       { label: 'Lot Code', value: coa.batch_number || '—' },
     ],
     [
@@ -574,6 +578,7 @@ export default function COADetail() {
             </table>
           </div>
 
+          {metalPanels.length > 0 && (
           <div className="mb-4 overflow-hidden border border-atlas-border coa-table-wrap">
             <table className="w-full text-sm coa-print-table table-fixed">
               <colgroup>
@@ -614,6 +619,7 @@ export default function COADetail() {
               </tbody>
             </table>
           </div>
+          )}
 
           {coa.content_hash && (
             <div className="flex flex-wrap items-center gap-2 text-[10px] text-neutral-600 font-mono bg-neutral-50 px-3 py-2 border border-atlas-border mb-3 no-print">
@@ -691,7 +697,7 @@ export default function COADetail() {
 
               <div className="coa-footer-verify min-w-0 flex items-center gap-3 shrink-0">
                 <div className="text-[11px] leading-snug text-right">
-                  <p className="font-bold uppercase tracking-wide">atlasanalytics.io</p>
+                  <p className="font-bold uppercase tracking-wide">atlasanalyticlab.com</p>
                   <p className="font-mono text-white/80 mt-0.5">
                     {(coa.signature || `AM-${coa.slug.slice(0, 8).toUpperCase()}`).slice(0, 12)}
                   </p>

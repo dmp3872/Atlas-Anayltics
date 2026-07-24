@@ -10,7 +10,7 @@ export const ATLAS_SAFETY_PRO_PANEL: TestPanel = {
   description:
     'Complete safety bundle per sample: HPLC Purity, Net Content, Identity (ID), Heavy Metals, Endotoxin (LAL), Sterility (PCR), and Conformity Vials included. Fentanyl Detection available as an optional add-on.',
   price_per_sample: ATLAS_SAFETY_PRO_PRICE,
-  turnaround_days: 10,
+  turnaround_days: 5,
   category: 'package',
   is_active: true,
   sort_order: -1,
@@ -18,9 +18,25 @@ export const ATLAS_SAFETY_PRO_PANEL: TestPanel = {
 };
 
 export function withAtlasSafetyProPanel(panels: TestPanel[]): TestPanel[] {
-  const hasPackage = panels.some(
+  // Keep package TAT + Safety Pro price aligned with app constants even if DB lags.
+  const normalized = panels.map((p) => {
+    let next = p;
+    if (
+      p.category === 'package'
+      || /safety\s*pro/i.test(p.name)
+      || /full\s*qc/i.test(p.name)
+    ) {
+      next = { ...next, turnaround_days: 5 };
+    }
+    if (/safety\s*pro/i.test(p.name)) {
+      next = { ...next, price_per_sample: ATLAS_SAFETY_PRO_PRICE };
+    }
+    return next;
+  });
+
+  const hasPackage = normalized.some(
     (p) => p.category === 'package' && p.name.includes('Safety Pro'),
   );
-  if (hasPackage) return panels;
-  return [ATLAS_SAFETY_PRO_PANEL, ...panels];
+  if (hasPackage) return normalized;
+  return [ATLAS_SAFETY_PRO_PANEL, ...normalized];
 }

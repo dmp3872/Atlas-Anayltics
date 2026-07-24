@@ -1,12 +1,12 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronUp, ClipboardList } from 'lucide-react';
+import { Check, ChevronDown, ChevronUp, ClipboardList } from 'lucide-react';
 import {
   LabTestService,
   WizardSample,
   formatOrderTurnaround,
   orderTotals,
 } from '../../lib/orderCatalog';
-import { computeOrderReadiness } from '../../lib/orderReadiness';
+import { ReadinessReport, computeOrderReadiness } from '../../lib/orderReadiness';
 import { formatCurrency } from '../../lib/utils';
 
 interface Props {
@@ -14,6 +14,8 @@ interface Props {
   catalog: LabTestService[];
   discount?: number;
   className?: string;
+  readiness?: ReadinessReport;
+  includeCheckout?: boolean;
 }
 
 export default function AtlasOrderSnapshot({
@@ -21,22 +23,28 @@ export default function AtlasOrderSnapshot({
   catalog,
   discount = 0,
   className = '',
+  readiness: readinessProp,
+  includeCheckout = false,
 }: Props) {
   const [mobileOpen, setMobileOpen] = useState(false);
-  const readiness = computeOrderReadiness(samples);
+  const readiness = readinessProp ?? computeOrderReadiness({ samples, includeCheckout });
   const { sampleCount, testCount, totalVials, subtotal, testSubtotal, addOnSubtotal } =
     orderTotals(samples, '', catalog);
   const estimatedTotal = Math.max(0, subtotal - discount);
   const turnaroundLabel = formatOrderTurnaround(samples, catalog);
+  const ready =
+    readiness.state === 'ready_to_review' || readiness.state === 'ready_to_submit';
 
   const body = (
     <>
       <div className="mb-4">
         <div className="flex items-center justify-between gap-2 mb-1.5">
-          <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Order Readiness</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+            {includeCheckout ? 'Ready to ship' : 'Order readiness'}
+          </p>
           <span
             className={`text-xs font-semibold px-2 py-0.5 rounded-md ${
-              readiness.state === 'ready_to_review'
+              ready
                 ? 'bg-emerald-50 text-emerald-800'
                 : readiness.state === 'information_missing'
                   ? 'bg-amber-50 text-amber-900'
@@ -55,20 +63,38 @@ export default function AtlasOrderSnapshot({
           aria-label="Order readiness"
         >
           <div
-            className={`h-full transition-all duration-300 ${
-              readiness.state === 'ready_to_review' ? 'bg-emerald-500' : 'bg-brand-500'
-            }`}
+            className={`h-full transition-all duration-300 ${ready ? 'bg-emerald-500' : 'bg-brand-500'}`}
             style={{ width: `${readiness.percent}%` }}
           />
         </div>
         <p className="text-sm font-semibold text-black mt-1.5">{readiness.percent}% complete</p>
-        <ul className="mt-2 space-y-1">
-          {readiness.messages.map(msg => (
-            <li key={msg} className="text-xs text-neutral-600 leading-snug">
-              {msg}
-            </li>
-          ))}
-        </ul>
+
+        {readiness.checklist.length > 0 && (
+          <ul className="mt-3 space-y-1.5">
+            {readiness.checklist.map(item => (
+              <li key={item.id} className="flex items-start gap-2 text-xs">
+                <span
+                  className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full ${
+                    item.done ? 'bg-emerald-100 text-emerald-700' : 'bg-neutral-100 text-neutral-400'
+                  }`}
+                >
+                  <Check size={10} strokeWidth={3} />
+                </span>
+                <span className={item.done ? 'text-neutral-700' : 'text-neutral-500'}>{item.label}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {readiness.blocking.length > 0 && (
+          <ul className="mt-2 space-y-1">
+            {readiness.messages.map(msg => (
+              <li key={msg} className="text-xs text-amber-800 leading-snug">
+                {msg}
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       <dl className="space-y-2.5 text-sm border-t border-atlas-border pt-4">
@@ -118,7 +144,6 @@ export default function AtlasOrderSnapshot({
 
   return (
     <>
-      {/* Mobile collapsible bar */}
       <div className={`lg:hidden ${className}`}>
         <button
           type="button"
@@ -140,7 +165,6 @@ export default function AtlasOrderSnapshot({
         {mobileOpen && <div className="card border-brand-200 p-4 mt-2 shadow-sm">{body}</div>}
       </div>
 
-      {/* Desktop sticky panel */}
       <aside
         className={`hidden lg:block card border-brand-200 p-5 sticky top-24 shadow-sm ${className}`}
         aria-label="Atlas Order Snapshot"

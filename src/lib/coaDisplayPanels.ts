@@ -134,7 +134,12 @@ export function partitionCoaPanels(panels: PanelResult[]): {
     else main.push(formatEndotoxinPanel(p));
   }
 
-  // Ensure all five USP metals appear even if blank on the COA.
+  // Only synthesize the full USP metal set when the COA already includes metal panels.
+  // Revised Full QC (no heavy metals ordered) must not invent blank metal rows.
+  if (metals.length === 0) {
+    return { main, metals: [] };
+  }
+
   const orderedMetals = HEAVY_METAL_USP_LIMITS.map(({ match, name, limit }) => {
     const found = metals.find(m => match.test(m.panel_name));
     return {
@@ -155,4 +160,91 @@ function formatEndotoxinPanel(panel: PanelResult): PanelResult {
   const raw = (panel.result || '').trim();
   if (!raw || /\(\s*lal\s*\)/i.test(raw)) return panel;
   return { ...panel, result: `${raw} (LAL)` };
+}
+
+function splitResultList(raw: string): string[] {
+  return (raw || '')
+    .split(/\s*,\s*/)
+    .map(part => part.trim())
+    .filter(Boolean);
+}
+
+function parseNumericToken(raw: string): number | null {
+  const m = raw.replace(/,/g, '').match(/-?\d+(?:\.\d+)?/);
+  if (!m) return null;
+  const n = Number(m[0]);
+  return Number.isFinite(n) ? n : null;
+}
+
+function isIdentityPanel(name: string): boolean {
+  const n = name.toLowerCase();
+  return n.includes('identity') || n.includes('identification');
+}
+
+/**
+ * Extract per-vial purity / quantity / identity readings for the digital COA card.
+ * Supports comma-separated Net Purity / Net Content cells produced by multi-vial testing.
+ */
+export function assayResultsFromPanels(
+  panels: PanelResult[] | null | undefined,
+  opts?: { vialCount?: number; quantityUnit?: string },
+): {
+  purity?: number[];
+  quantity?: number[];
+  identity?: boolean[];
+  quantityUnit?: string;
+} | null {
+  if (!Array.isArray(panels) || panels.length === 0) return null;
+  const collapsed = collapseConformityPanels(panels);
+  const purityPanel = collapsed.find(p => isNetPurityPanel(p.panel_name));
+  const quantityPanel = collapsed.find(p => isNetContentPanel(p.panel_name));
+  const identityPanel = collapsed.find(p => isIdentityPanel(p.panel_name));
+
+  const purity = splitResultList(purityPanel?.result || '')
+    .map(parseNumericToken)
+    .filter((n): n is number => n != null);
+  const quantity = splitResultList(quantityPanel?.result || '')
+    .map(parseNumericToken)
+    .filter((n): n is number => n != null);
+
+  let identity: boolean[] | undefined;
+  if (identityPanel) {
+    const tokens = splitResultList(identityPanel.result || '');
+    if (tokens.length > 0) {
+      identity = tokens.map(token => {
+        const t = token.toLowerCase();
+        if (/fail|negative|not\s*detected|absent/.test(t) && !/pass/.test(t)) return false;
+        if (/pass|confirm|match|positive|detected|present/.test(t)) return true;
+        return identityPanel.pass;
+      });
+    } else {
+      identity = [identityPanel.pass];
+    }
+  }
+
+  if (!purity.length && !quantity.length && !identity?.length) return null;
+
+  const vialCount = Math.max(
+    opts?.vialCount || 0,
+    purity.length,
+    quantity.length,
+    identity?.length || 0,
+    1,
+  );
+
+  const padBool = (values: boolean[] | undefined): boolean[] | undefined => {
+    if (!values?.length) return undefined;
+    return Array.from({ length: vialCount }, (_, i) => values[i] ?? values[values.length - 1]!);
+  };
+  const padNum = (values: number[]): number[] | undefined => {
+    if (!values.length) return undefined;
+    return Array.from({ length: vialCount }, (_, i) => values[i] ?? values[values.length - 1]!);
+  };
+
+  return {
+    purity: padNum(purity),
+    quantity: padNum(quantity),
+    identity: padBool(identity),
+    quantityUnit: opts?.quantityUnit || 'mg',
+  };
 }

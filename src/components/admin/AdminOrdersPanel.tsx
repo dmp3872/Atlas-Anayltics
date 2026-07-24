@@ -9,6 +9,7 @@ import {
   LAB_PRIORITIES, LAB_PRIORITY_LABELS, LAB_PRIORITY_STYLES, normalizeLabPriority,
 } from '../../lib/labQueue';
 import { hasIssuedCoaForSample } from '../../lib/coaPanels';
+import { etaHeat, etaHeatPercent, resolveEtaAt } from '../../lib/etaHeat';
 
 type OrdersFilter = 'active' | 'unpaid' | 'awaiting_sample' | 'overdue' | 'urgent' | 'rush' | 'all';
 
@@ -29,9 +30,10 @@ interface OrderQueueStats {
 }
 
 function isOverdue(order: Order): boolean {
-  if (!order.due_at) return false;
+  const eta = resolveEtaAt(order);
+  if (!eta) return false;
   if (order.status === 'complete' || order.status === 'cancelled') return false;
-  return new Date(order.due_at).getTime() < Date.now();
+  return new Date(eta).getTime() < Date.now();
 }
 
 export default function AdminOrdersPanel({
@@ -182,7 +184,7 @@ export default function AdminOrdersPanel({
                 <th className="text-left px-5 py-3">Company</th>
                 <th className="text-left px-5 py-3">Status</th>
                 <th className="text-left px-5 py-3">Payment</th>
-                <th className="text-left px-5 py-3">Due</th>
+                <th className="text-left px-5 py-3">ETA</th>
                 <th className="text-left px-5 py-3">Rush</th>
                 <th className="text-left px-5 py-3">Samples</th>
                 <th className="text-left px-5 py-3">Pending</th>
@@ -200,9 +202,12 @@ export default function AdminOrdersPanel({
                 const stats = statsByOrder.get(order.id);
                 const payment = normalizePaymentStatus(order.payment_status);
                 const paid = payment === 'paid' || payment === 'waived';
-                const overdue = isOverdue(order);
+                const heat = etaHeat(resolveEtaAt(order), {
+                  complete: order.status === 'complete' || order.status === 'cancelled',
+                });
+                const heatPct = etaHeatPercent(heat.level);
                 return (
-                  <tr key={order.id} className={`hover:bg-neutral-50 ${styles.bg}`}>
+                  <tr key={order.id} className={`hover:bg-neutral-50 ${heat.level === 'overdue' || heat.level === 'today' ? heat.bg : styles.bg}`}>
                     <td className="px-5 py-3 font-semibold text-black">
                       <Link to={`/admin/orders/${order.id}`} className="hover:text-brand-600 hover:underline">
                         {order.order_number}
@@ -232,13 +237,19 @@ export default function AdminOrdersPanel({
                         )}
                       </div>
                     </td>
-                    <td className="px-5 py-3 whitespace-nowrap">
-                      {order.due_at ? (
-                        <span className={`text-xs flex items-center gap-1 ${overdue ? 'text-red-700 font-semibold' : 'text-neutral-500'}`}>
-                          {overdue && <AlertTriangle size={11} />}
-                          {!overdue && <Clock size={11} className="text-neutral-400" />}
-                          {formatDateTime(order.due_at)}
-                        </span>
+                    <td className="px-5 py-3 whitespace-nowrap min-w-[140px]">
+                      {heat.at ? (
+                        <div className="space-y-1.5">
+                          <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full border inline-flex items-center gap-1 ${heat.chip}`}>
+                            {(heat.level === 'overdue' || heat.level === 'today') && <AlertTriangle size={10} />}
+                            {heat.level === 'ok' && <Clock size={10} />}
+                            {heat.label}
+                          </span>
+                          <div className="h-1 w-28 rounded-full bg-neutral-200 overflow-hidden">
+                            <div className={`h-full ${heat.bar}`} style={{ width: `${heatPct}%` }} />
+                          </div>
+                          <p className="text-[10px] text-neutral-400 tabular-nums">{formatDateTime(heat.at)}</p>
+                        </div>
                       ) : (
                         <span className="text-neutral-400">—</span>
                       )}

@@ -5,6 +5,7 @@ import {
 } from './orderCatalog';
 import { parseSampleMetadata, orderSampleIncludesFentanyl, matchCoaForSample, hasIssuedCoaForSample } from './coaPanels';
 import { orderIsPayable } from './utils';
+import { resolveEtaAt } from './etaHeat';
 
 export type { LabPriority };
 
@@ -110,12 +111,9 @@ function testsFromMode(mode: TestMode, meta: Record<string, unknown>): string[] 
     return names;
   }
   if (mode === 'full_qc') {
-    return [
-      ...FULL_QC_PANEL.bundledTestIds.map(id =>
-        INDIVIDUAL_TESTS.find(t => t.id === id)?.name ?? id,
-      ),
-      'Conformity Testing',
-    ];
+    return FULL_QC_PANEL.bundledTestIds.map(id =>
+      INDIVIDUAL_TESTS.find(t => t.id === id)?.name ?? id,
+    );
   }
   const ids = Array.isArray(meta.individual_tests) ? meta.individual_tests as string[] : [];
   return ids.map(id => INDIVIDUAL_TESTS.find(t => t.id === id)?.name ?? id);
@@ -197,7 +195,7 @@ export function buildQueueItems(
     const hasCoa = issued || !!matchCoaForSample(sample, coas);
 
     const ageMs = Date.now() - new Date(sample.created_at).getTime();
-    const dueAt = order.due_at ?? null;
+    const dueAt = resolveEtaAt(order);
     const overdue = !!dueAt && new Date(dueAt).getTime() < Date.now() && !issued && sample.status !== 'complete';
 
     items.push({

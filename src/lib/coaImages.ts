@@ -564,10 +564,11 @@ export async function saveCoaPdfPrep(
     sterility_specification: 'Not Detected',
   };
   // Never embed base64 images in result_summary — that freezes COA pages (multi‑MB JSON).
-  delete baseSummary.vial_image;
-  delete baseSummary.chromatogram_image;
-  delete baseSummary.hplc_image;
-  delete baseSummary.company_logo;
+  const summaryRecord = baseSummary as Record<string, unknown>;
+  delete summaryRecord.vial_image;
+  delete summaryRecord.chromatogram_image;
+  delete summaryRecord.hplc_image;
+  delete summaryRecord.company_logo;
 
   const next: COA = {
     ...hydrated,

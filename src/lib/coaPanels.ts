@@ -3,17 +3,22 @@ import { COA, OrderSample, PanelResult, SampleStatus, TestPanel } from './types'
 export interface OrderSampleMetadata {
   batch_number?: string;
   labeled_content?: string;
+  label_claim_unit?: string;
   peptide_identification?: string;
   vial_size?: string;
   sample_matrix?: string;
+  category?: string;
   sample_type?: string;
   blend_compounds?: number;
   blend_components?: { name: string; amount_mg: string }[];
   blend_label?: string;
   tests_label?: string;
   test_mode?: string;
+  primary_test_id?: string;
+  individual_tests?: string[];
   conformity_extra?: number;
   include_fentanyl?: boolean;
+  brand_names?: string[];
 }
 
 export function parseSampleMetadata(metadata: OrderSample['metadata']): OrderSampleMetadata {
@@ -103,8 +108,26 @@ export const QC_PANELS = [
   CONFORMITY_PANEL_NAME,
 ];
 
+/** Full QC after Jul 2026: identity / purity / quantity / sterility only. */
+export const FULL_QC_PANELS = [
+  'Purity & Quantitation (HPLC)',
+  'Identity Confirmation (MS)',
+  'Net Content (Weight)',
+  'Sterility (PCR)',
+];
+
+export const ATLAS_PRO_PANELS = [
+  'Purity & Quantitation (HPLC)',
+  'Identity Confirmation (MS)',
+  'Net Content (Weight)',
+  'Endotoxin (USP <85>)',
+  'Heavy Metals (ICP-MS)',
+  'Sterility (PCR)',
+  CONFORMITY_PANEL_NAME,
+];
+
 // Resolve the list of test section names ordered for a sample. Prefers explicit
-// panel_ids (mapped through test_panels), falling back to the canonical QC set.
+// panel_ids (mapped through test_panels), falling back to package-aware defaults.
 export function expectedPanelNames(sample: OrderSample, panels: TestPanel[]): string[] {
   const ids = sample.panel_ids ?? [];
   if (ids.length) {
@@ -113,6 +136,13 @@ export function expectedPanelNames(sample: OrderSample, panels: TestPanel[]): st
       .filter((n): n is string => !!n);
     if (names.length) return names;
   }
+  const meta = parseSampleMetadata(sample.metadata);
+  if (meta.test_mode === 'atlas_pro') {
+    const names = [...ATLAS_PRO_PANELS];
+    if (orderSampleIncludesFentanyl(sample.metadata)) names.push('Fentanyl Detection');
+    return names;
+  }
+  if (meta.test_mode === 'full_qc') return [...FULL_QC_PANELS];
   return QC_PANELS;
 }
 

@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, Navigate } from 'react-router-dom';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
 import {
   AlertCircle, ArrowLeft, ArrowRight, Beaker, Check, ClipboardList, FlaskConical,
 } from 'lucide-react';
 import AtlasLogo from '../components/brand/AtlasLogo';
 import AtlasOrderSnapshot from '../components/order/AtlasOrderSnapshot';
+import AtlasDigitalCoaCard from '../components/order/AtlasDigitalCoaCard';
 import StepSelectTesting from '../components/order/wizard/StepSelectTesting';
 import StepSampleInfo from '../components/order/wizard/StepSampleInfo';
 import StepReviewSubmit from '../components/order/wizard/StepReviewSubmit';
 import OrderSuccess from '../components/order/wizard/OrderSuccess';
 import type { SimulatedPaymentMethod } from '../components/order/wizard/OrderPaymentPlaceholder';
 import { useAuth } from '../context/AuthContext';
+import { resolveUserRole, roleHome } from '../lib/roles';
 import { supabase } from '../lib/supabase';
 import {
   LAB_TEST_SERVICES,
@@ -21,6 +23,7 @@ import {
   applyCategoryDefaults,
   applyPrimaryTest,
   createEmptySample,
+  formatLabelClaim,
   mergeCatalogWithDbPanels,
   normalizeWizardSample,
   orderTotals,
@@ -37,6 +40,7 @@ import { notifyOrderUpdate } from '../lib/notifications';
 import { defaultCompany, fetchUserCompanies } from '../lib/coaProfile';
 import { Company } from '../lib/types';
 import { computeOrderReadiness } from '../lib/orderReadiness';
+import { wizardStageFromStep } from '../lib/orderProjection';
 
 const STEPS = [
   { id: 1, label: 'Select Testing', sub: 'Category & assays', icon: FlaskConical },
@@ -45,15 +49,21 @@ const STEPS = [
 ];
 
 interface SuccessInfo {
+  orderId: string;
   orderNumber: string;
   sampleCount: number;
   totalVials: number;
   submittedAt: string;
   status: string;
+  shippingLabelId?: string | null;
+  shippingPreboarded?: boolean;
 }
 
 export default function OrderWizard() {
   const { user, profile, refreshProfile } = useAuth();
+  const navigate = useNavigate();
+  const role = resolveUserRole(profile, user?.email);
+  const homePath = role === 'client' ? '/dashboard' : roleHome(role);
 
   const [step, setStep] = useState(1);
   const [samples, setSamples] = useState<WizardSample[]>([createEmptySample()]);
@@ -79,11 +89,28 @@ export default function OrderWizard() {
   const [error, setError] = useState('');
   const [validationError, setValidationError] = useState('');
   const [success, setSuccess] = useState<SuccessInfo | null>(null);
+  const [previewPackageId, setPreviewPackageId] = useState<'full_qc' | 'atlas_pro' | null>(null);
 
   const { subtotal, totalVials, sampleCount } = orderTotals(samples, companyName, catalog);
   const promoDiscount = promoApplied ? subtotal * 0.1 : 0;
   const total = Math.max(0, subtotal - promoDiscount);
-  const readiness = computeOrderReadiness(samples);
+  // Checkout readiness for UI includes payment; submit gating keeps payment separate
+  // so "Pay & submit" can authorize in the same click.
+  const readiness = computeOrderReadiness({
+    samples,
+    includeCheckout: step === 3,
+    hasCoaProfile: !!selectedCompanyId,
+    confirmations,
+    paymentPaid,
+  });
+  const readinessExceptPayment = computeOrderReadiness({
+    samples,
+    includeCheckout: step === 3,
+    hasCoaProfile: !!selectedCompanyId,
+    confirmations,
+    paymentPaid: true,
+  });
+  const wizardStage = wizardStageFromStep(step);
 
   const displayName = profile?.full_name || user?.email?.split('@')[0] || 'Account';
   const userInitial = displayName.charAt(0).toUpperCase();
@@ -178,8 +205,9 @@ export default function OrderWizard() {
     if (!confirmations.accurate || !confirmations.labelsMatch || !confirmations.agreeTerms) return false;
     if (validateTestingSelection(samples) || validateSampleInformation(samples)) return false;
     if (!selectedCompanyId) return false;
-    return readiness.blocking.length === 0;
-  }, [confirmations, samples, selectedCompanyId, readiness.blocking.length]);
+    return readinessExceptPayment.sampleBlocking.length === 0
+      && readinessExceptPayment.blocking.every(b => !/payment/i.test(b));
+  }, [confirmations, samples, selectedCompanyId, readinessExceptPayment.sampleBlocking.length, readinessExceptPayment.blocking]);
 
   const canSubmit = useMemo(() => {
     if (loading) return false;
@@ -213,7 +241,10 @@ export default function OrderWizard() {
   }
 
   function handleSelectPrimary(testId: string) {
-    updateAllSamples(s => applyPrimaryTest(s, testId));
+    updateAllSamples(s => ({
+      ...applyPrimaryTest(s, testId),
+      conformity_extra: testId === 'atlas_pro' ? s.conformity_extra : 0,
+    }));
   }
 
   function handleToggleAlaCarte(testId: string) {
@@ -222,6 +253,10 @@ export default function OrderWizard() {
 
   function handleToggleFentanyl(include: boolean) {
     updateAllSamples(s => ({ ...s, include_fentanyl: include }));
+  }
+
+  function handleConformityExtraChange(count: number) {
+    updateAllSamples(s => ({ ...s, conformity_extra: Math.max(0, Math.round(count)) }));
   }
 
   function addSample() {
@@ -360,11 +395,22 @@ export default function OrderWizard() {
         prepaid_shipping: true,
         payment_method: method,
         shipping_label_id: shippingLabelId,
+        shipping_preboarded: !!profile?.shipping_preboarded,
       };
 
       let { data: order, error: orderError } = await supabase.from('orders').insert(orderPayload).select().single();
-      if (orderError?.message?.includes('payment_method') || orderError?.message?.includes('shipping_label_id')) {
-        const { payment_method: _pm, shipping_label_id: _sl, prepaid_shipping: _ps, ...fallback } = orderPayload;
+      if (
+        orderError?.message?.includes('payment_method')
+        || orderError?.message?.includes('shipping_label_id')
+        || orderError?.message?.includes('shipping_preboarded')
+      ) {
+        const {
+          payment_method: _pm,
+          shipping_label_id: _sl,
+          prepaid_shipping: _ps,
+          shipping_preboarded: _sp,
+          ...fallback
+        } = orderPayload;
         ({ data: order, error: orderError } = await supabase.from('orders').insert(fallback).select().single());
       }
       if (orderError) throw orderError;
@@ -373,7 +419,7 @@ export default function OrderWizard() {
         order_id: order.id,
         user_id: user.id,
         sample_name: s.sample_name,
-        display_name: s.display_name || `${s.sample_name} ${s.labeled_content}${s.label_claim_unit}`.trim(),
+        display_name: s.display_name || `${s.sample_name} ${formatLabelClaim(s.labeled_content, s.label_claim_unit)}`.trim(),
         sample_type: s.sample_type,
         vial_count: sampleVialCount(s, catalog),
         panel_ids: [],
@@ -384,15 +430,18 @@ export default function OrderWizard() {
       const { error: samplesError } = await supabase.from('order_samples').insert(sampleRows);
       if (samplesError) throw samplesError;
 
-      await notifyOrderUpdate(user.id, orderNumber, 'received');
+      await notifyOrderUpdate(user.id, orderNumber, 'submitted');
       clearOrderDraft(user.id);
 
       setSuccess({
+        orderId: order.id,
         orderNumber,
         sampleCount,
         totalVials,
         submittedAt: order.created_at || new Date().toISOString(),
         status: order.status || 'awaiting_sample',
+        shippingLabelId: shippingLabelId,
+        shippingPreboarded: !!profile?.shipping_preboarded,
       });
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err: unknown) {
@@ -408,6 +457,7 @@ export default function OrderWizard() {
   }
 
   function resetForAnotherOrder() {
+    if (user) clearOrderDraft(user.id);
     setSuccess(null);
     setStep(1);
     setSamples([createEmptySample()]);
@@ -418,8 +468,10 @@ export default function OrderWizard() {
     setConfirmations({ accurate: false, labelsMatch: false, agreeTerms: false });
     setPaymentPaid(false);
     setPaymentMethod('card');
+    setPreviewPackageId(null);
     setError('');
     setValidationError('');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   if (success) {
@@ -427,18 +479,29 @@ export default function OrderWizard() {
       <div className="min-h-screen bg-neutral-100 flex flex-col">
         <header className="coa-header-bar sticky top-0 z-30 border-b border-neutral-800">
           <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
-            <Link to="/dashboard"><AtlasLogo variant="light" size="sm" /></Link>
+            <button type="button" onClick={() => navigate(homePath)} className="text-left">
+              <AtlasLogo variant="light" size="sm" />
+            </button>
             <p className="font-bold text-white hidden sm:block">Order Confirmation</p>
-            <Link to="/dashboard" className="text-sm text-neutral-400 hover:text-white">Dashboard</Link>
+            <button
+              type="button"
+              onClick={() => navigate(homePath)}
+              className="text-sm text-neutral-400 hover:text-white"
+            >
+              {role === 'client' ? 'Dashboard' : 'Home'}
+            </button>
           </div>
         </header>
         <div className="flex-1 max-w-6xl mx-auto w-full px-4 py-10">
           <OrderSuccess
+            orderId={success.orderId}
             orderNumber={success.orderNumber}
             sampleCount={success.sampleCount}
             totalVials={success.totalVials}
             submittedAt={success.submittedAt}
             status={success.status}
+            shippingLabelId={success.shippingLabelId}
+            shippingPreboarded={success.shippingPreboarded}
             onSubmitAnother={resetForAnotherOrder}
           />
         </div>
@@ -508,8 +571,24 @@ export default function OrderWizard() {
           </div>
         )}
 
-        <div className="lg:hidden mb-4">
-          <AtlasOrderSnapshot samples={samples} catalog={catalog} discount={promoDiscount} />
+        <div className="lg:hidden mb-4 space-y-4">
+          <div className="max-w-xs mx-auto">
+            <AtlasDigitalCoaCard
+              samples={samples}
+              catalog={catalog}
+              companyName={selectedCompany?.name ?? companyName}
+              stage={wizardStage}
+              previewPackageId={previewPackageId}
+              readinessPercent={readiness.percent}
+            />
+          </div>
+          <AtlasOrderSnapshot
+            samples={samples}
+            catalog={catalog}
+            discount={promoDiscount}
+            readiness={readiness}
+            includeCheckout={step === 3}
+          />
         </div>
 
         <div className="grid lg:grid-cols-3 gap-6">
@@ -524,6 +603,8 @@ export default function OrderWizard() {
                 onSelectPrimary={handleSelectPrimary}
                 onToggleAlaCarte={handleToggleAlaCarte}
                 onToggleFentanyl={handleToggleFentanyl}
+                onConformityExtraChange={handleConformityExtraChange}
+                onPreviewPackageChange={setPreviewPackageId}
                 catalogLoading={catalogLoading}
                 catalogError={catalogError}
               />
@@ -573,12 +654,27 @@ export default function OrderWizard() {
                   setPaymentPaid(false);
                 }}
                 onCardPayAndSubmit={handleCardPayAndSubmit}
+                readiness={readiness}
               />
             )}
           </div>
 
-          <div className="hidden lg:block">
-            <AtlasOrderSnapshot samples={samples} catalog={catalog} discount={promoDiscount} />
+          <div className="hidden lg:block space-y-5 sticky top-24">
+            <AtlasDigitalCoaCard
+              samples={samples}
+              catalog={catalog}
+              companyName={selectedCompany?.name ?? companyName}
+              stage={wizardStage}
+              previewPackageId={previewPackageId}
+              readinessPercent={readiness.percent}
+            />
+            <AtlasOrderSnapshot
+              samples={samples}
+              catalog={catalog}
+              discount={promoDiscount}
+              readiness={readiness}
+              includeCheckout={step === 3}
+            />
           </div>
         </div>
       </div>

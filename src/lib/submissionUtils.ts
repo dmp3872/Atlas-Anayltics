@@ -83,4 +83,4 @@ export const ATLAS_SAFETY_PRO_INCLUDES = [
   'Conformity Vials',
 ] as const;
 
-export const ATLAS_SAFETY_PRO_PRICE = 700;
+export const ATLAS_SAFETY_PRO_PRICE = 850;

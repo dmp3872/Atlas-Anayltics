@@ -46,7 +46,7 @@ INSERT INTO test_panels (name, description, price_per_sample, turnaround_days, c
 SELECT
   'Atlas Safety Pro Package',
   'Complete safety bundle per sample: HPLC Purity, Net Content, Identity (ID), Heavy Metals, Endotoxin (LAL), Sterility (PCR), Fentanyl Detection, and 3 Conformity Vials included.',
-  700.00,
+  850.00,
   10,
   'package',
   true,

@@ -5,6 +5,7 @@ import {
   WizardSample,
   categoryLabel,
   formatBlendLabel,
+  formatLabelClaim,
   formatSampleTests,
   formatOrderTurnaround,
   orderTotals,
@@ -14,7 +15,9 @@ import {
 } from '../../../lib/orderCatalog';
 import { formatCurrency } from '../../../lib/utils';
 import { Company } from '../../../lib/types';
+import { ReadinessReport } from '../../../lib/orderReadiness';
 import OrderPaymentPlaceholder, { SimulatedPaymentMethod } from './OrderPaymentPlaceholder';
+import VialAllocationMap from '../VialAllocationMap';
 
 interface Confirmations {
   accurate: boolean;
@@ -42,6 +45,7 @@ interface Props {
   paymentMethod: SimulatedPaymentMethod;
   onPaymentMethodChange: (method: SimulatedPaymentMethod) => void;
   onCardPayAndSubmit?: () => Promise<void>;
+  readiness?: ReadinessReport;
 }
 
 export default function StepReviewSubmit({
@@ -64,6 +68,7 @@ export default function StepReviewSubmit({
   paymentMethod,
   onPaymentMethodChange,
   onCardPayAndSubmit,
+  readiness,
 }: Props) {
   const totals = orderTotals(samples, companyName, catalog);
   const estimatedTotal = Math.max(0, totals.subtotal - discount);
@@ -87,9 +92,33 @@ export default function StepReviewSubmit({
         </p>
       </div>
 
+      {readiness && (
+        <div className="rounded-xl border border-brand-200 bg-brand-50/40 p-4">
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <p className="text-sm font-bold text-black">Ready to ship checklist</p>
+            <span className="text-xs font-semibold text-brand-800">{readiness.percent}%</span>
+          </div>
+          <ul className="space-y-1.5">
+            {readiness.checklist.map(item => (
+              <li key={item.id} className="flex items-start gap-2 text-sm">
+                <span
+                  className={`mt-0.5 h-2 w-2 shrink-0 rounded-full ${
+                    item.done ? 'bg-emerald-500' : 'bg-amber-400'
+                  }`}
+                />
+                <span className={item.done ? 'text-neutral-700' : 'text-amber-900'}>
+                  {item.label}
+                  {!item.done && item.blocking ? ` — ${item.blocking}` : ''}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <div className="space-y-2">
         {samples.map((sample, idx) => {
-          const claim = [sample.labeled_content, sample.label_claim_unit].filter(Boolean).join(' ');
+          const claim = formatLabelClaim(sample.labeled_content, sample.label_claim_unit);
           const composition =
             sample.sample_type === 'blend'
               ? formatBlendLabel(sample.blend_components) || activeBlendComponents(sample.blend_components).map(c => c.name).join(', ')
@@ -170,6 +199,9 @@ export default function StepReviewSubmit({
                   <div className="sm:col-span-2">
                     <dt className="text-neutral-500 text-xs">COA profile</dt>
                     <dd className="font-medium text-black">{selectedCompany?.name || companyName || 'Not selected'}</dd>
+                  </div>
+                  <div className="sm:col-span-2 pt-2">
+                    <VialAllocationMap sample={sample} catalog={catalog} compact />
                   </div>
                 </dl>
               )}

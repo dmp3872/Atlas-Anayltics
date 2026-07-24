@@ -17,9 +17,9 @@ export default function OrderSummarySidebar({ samples, step, total, primaryBrand
   const displayTotal = total ?? subtotal;
   const hasTests = samples.some(s => s.sample_name && (isPackageMode(s.test_mode) || s.individual_tests.length > 0));
   const totalVials = samples.reduce((n, s) => n + (s.sample_name ? sampleVialCount(s) : 0), 0);
-  const panelFees = samples.reduce((s, sample) => s + sampleTestPrice(sample) * Math.max(1, sample.quantity), 0);
-  const addOnFees = samples.reduce((s, sample) => s + sampleAddOnPrice(sample, primaryBrand) * Math.max(1, sample.quantity), 0);
-  const conformityVials = samples.reduce((n, s) => n + s.conformity_extra * Math.max(1, s.quantity), 0);
+  const panelFees = samples.reduce((s, sample) => s + sampleTestPrice(sample), 0);
+  const addOnFees = samples.reduce((s, sample) => s + sampleAddOnPrice(sample, primaryBrand), 0);
+  const conformityVials = samples.reduce((n, s) => n + s.conformity_extra, 0);
 
   return (
     <div className="card p-5 sticky top-24 border-brand-200 shadow-sm">

@@ -44,8 +44,8 @@ const PANEL = {
   name: 'Atlas Safety Pro Package',
   description:
     'Complete safety bundle per sample: HPLC Purity, Net Content, Identity (ID), Heavy Metals, Endotoxin (LAL), Sterility (PCR), Fentanyl Detection, and 3 Conformity Vials included.',
-  price_per_sample: 700,
-  turnaround_days: 10,
+  price_per_sample: 850,
+  turnaround_days: 5,
   category: 'package',
   is_active: true,
   sort_order: -1,
