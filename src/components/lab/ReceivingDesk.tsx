@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import {
-  AlertCircle, CheckCircle, Package, PackageCheck, DollarSign, Fingerprint,
+  AlertCircle, CheckCircle, ChevronDown, ChevronRight, Package, PackageCheck, DollarSign, Fingerprint,
 } from 'lucide-react';
 import { Order, OrderSample, UserProfile } from '../../lib/types';
 import {
@@ -20,6 +20,21 @@ interface Props {
 
 type DeskFilter = 'needs_payment' | 'awaiting_shipment' | 'ready_to_receive' | 'all';
 
+type DeskRow = {
+  sample: OrderSample;
+  order: Order;
+  needsPayment: boolean;
+  awaitingShipment: boolean;
+  readyToReceive: boolean;
+};
+
+type OrderGroup = {
+  order: Order;
+  rows: DeskRow[];
+  needsPayment: boolean;
+  readyCount: number;
+};
+
 export default function ReceivingDesk({ orders, samples, clients, onChanged }: Props) {
   const { user, profile } = useAuth();
   const [filter, setFilter] = useState<DeskFilter>('ready_to_receive');
@@ -28,6 +43,8 @@ export default function ReceivingDesk({ orders, samples, clients, onChanged }: P
   const [receivedByBySample, setReceivedByBySample] = useState<Record<string, string>>({});
   const [noteBySample, setNoteBySample] = useState<Record<string, string>>({});
   const [payNoteByOrder, setPayNoteByOrder] = useState<Record<string, string>>({});
+  /** Explicit expand/collapse overrides. Missing key = auto (open if 1 sample). */
+  const [expandedByOrder, setExpandedByOrder] = useState<Record<string, boolean>>({});
   const [lastReceived, setLastReceived] = useState<{
     sample: OrderSample;
     order: Order;
@@ -68,6 +85,26 @@ export default function ReceivingDesk({ orders, samples, clients, onChanged }: P
       .sort((a, b) => new Date(b.order.created_at).getTime() - new Date(a.order.created_at).getTime());
   }, [orders, samples, filter]);
 
+  const groups = useMemo((): OrderGroup[] => {
+    const byOrder = new Map<string, OrderGroup>();
+    for (const row of rows) {
+      let group = byOrder.get(row.order.id);
+      if (!group) {
+        group = {
+          order: row.order,
+          rows: [],
+          needsPayment: row.needsPayment,
+          readyCount: 0,
+        };
+        byOrder.set(row.order.id, group);
+      }
+      group.rows.push(row);
+      if (row.needsPayment) group.needsPayment = true;
+      if (row.readyToReceive) group.readyCount += 1;
+    }
+    return Array.from(byOrder.values());
+  }, [rows]);
+
   const counts = useMemo(() => {
     let needs_payment = 0;
     let awaiting_shipment = 0;
@@ -80,6 +117,18 @@ export default function ReceivingDesk({ orders, samples, clients, onChanged }: P
     }
     return { needs_payment, awaiting_shipment, ready_to_receive: awaiting_shipment };
   }, [orders, samples]);
+
+  function isExpanded(orderId: string, sampleCount: number) {
+    if (orderId in expandedByOrder) return expandedByOrder[orderId];
+    return sampleCount <= 1;
+  }
+
+  function toggleOrder(orderId: string, sampleCount: number) {
+    setExpandedByOrder(prev => {
+      const currentlyOpen = orderId in prev ? prev[orderId] : sampleCount <= 1;
+      return { ...prev, [orderId]: !currentlyOpen };
+    });
+  }
 
   async function handleMarkPaid(order: Order, waived = false) {
     setBusyId(order.id);
@@ -149,6 +198,7 @@ export default function ReceivingDesk({ orders, samples, clients, onChanged }: P
         </h2>
         <p className="text-sm text-neutral-500 mt-1">
           Confirm payment, then receive samples when the package arrives. Accession # is assigned automatically.
+          Multi-sample orders start collapsed — expand to receive each sample.
         </p>
       </div>
 
@@ -189,7 +239,7 @@ export default function ReceivingDesk({ orders, samples, clients, onChanged }: P
         ))}
       </div>
 
-      {rows.length === 0 ? (
+      {groups.length === 0 ? (
         <div className="card p-10 text-center text-neutral-500">
           <PackageCheck size={32} className="mx-auto text-neutral-300 mb-3" />
           <p className="font-medium text-black">Nothing in this view</p>
@@ -197,21 +247,44 @@ export default function ReceivingDesk({ orders, samples, clients, onChanged }: P
         </div>
       ) : (
         <div className="space-y-3">
-          {rows.map(({ sample, order, needsPayment, readyToReceive }) => {
+          {groups.map(({ order, rows: orderRows, needsPayment, readyCount }) => {
             const payment = normalizePaymentStatus(order.payment_status);
+            const open = isExpanded(order.id, orderRows.length);
+            const sampleCount = orderRows.length;
+            const company = (order.company_name || '').trim() || '—';
+
             return (
-              <article key={sample.id} className="card p-4 sm:p-5 space-y-3">
-                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="font-bold text-black">{sample.display_name || sample.sample_name}</p>
-                    <p className="text-sm text-neutral-600 mt-0.5">
-                      {order.company_name || '—'} · {order.order_number} · {clientName(order.user_id)}
-                    </p>
+              <article key={order.id} className="card overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => toggleOrder(order.id, sampleCount)}
+                  className="w-full text-left px-4 py-3 sm:px-5 sm:py-3.5 flex items-start gap-3 hover:bg-neutral-50/80 transition-colors"
+                  aria-expanded={open}
+                >
+                  <span className="mt-0.5 text-neutral-400 flex-shrink-0" aria-hidden>
+                    {open ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-1 sm:gap-3">
+                      <p className="font-bold text-black truncate text-[15px]">
+                        {company}
+                      </p>
+                      <p className="font-mono text-sm font-semibold text-neutral-800 flex-shrink-0">
+                        {order.order_number}
+                      </p>
+                    </div>
                     <p className="text-xs text-neutral-500 mt-1">
-                      Ordered {formatDateTime(order.created_at)} · {ORDER_STATUS_LABELS[order.status]} · {sample.vial_count} vial{sample.vial_count === 1 ? '' : 's'}
+                      {clientName(order.user_id)}
+                      {' · '}
+                      {sampleCount} sample{sampleCount === 1 ? '' : 's'}
+                      {readyCount > 0 ? ` · ${readyCount} ready` : ''}
+                      {' · '}
+                      Ordered {formatDateTime(order.created_at)}
+                      {' · '}
+                      {ORDER_STATUS_LABELS[order.status]}
                     </p>
                   </div>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-wrap gap-1.5 justify-end flex-shrink-0 pt-0.5">
                     <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border ${
                       payment === 'paid' || payment === 'waived'
                         ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
@@ -219,79 +292,105 @@ export default function ReceivingDesk({ orders, samples, clients, onChanged }: P
                     }`}>
                       {PAYMENT_STATUS_LABELS[payment]}
                     </span>
-                    <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border bg-neutral-50 text-neutral-600 border-atlas-border">
-                      {sample.status.replace(/_/g, ' ')}
-                    </span>
                   </div>
-                </div>
+                </button>
 
-                {needsPayment && (
-                  <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-3 space-y-2">
-                    <p className="text-xs font-semibold text-amber-900 flex items-center gap-1">
-                      <DollarSign size={12} /> Confirm payment before receiving
-                    </p>
-                    <input
-                      value={payNoteByOrder[order.id] ?? ''}
-                      onChange={e => setPayNoteByOrder(prev => ({ ...prev, [order.id]: e.target.value }))}
-                      placeholder="Wire ref / crypto tx / invoice # (optional)"
-                      className="input-field text-sm"
-                    />
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        disabled={busyId === order.id}
-                        onClick={() => handleMarkPaid(order, false)}
-                        className="btn-primary text-xs py-1.5"
-                      >
-                        Mark paid
-                      </button>
-                      <button
-                        type="button"
-                        disabled={busyId === order.id}
-                        onClick={() => handleMarkPaid(order, true)}
-                        className="btn-outline text-xs py-1.5"
-                      >
-                        Waive payment
-                      </button>
-                    </div>
-                  </div>
-                )}
+                {open && (
+                  <div className="border-t border-atlas-border px-4 py-3 sm:px-5 sm:py-4 space-y-3">
+                    {needsPayment && (
+                      <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-3 space-y-2">
+                        <p className="text-xs font-semibold text-amber-900 flex items-center gap-1">
+                          <DollarSign size={12} /> Confirm payment before receiving
+                        </p>
+                        <input
+                          value={payNoteByOrder[order.id] ?? ''}
+                          onChange={e => setPayNoteByOrder(prev => ({ ...prev, [order.id]: e.target.value }))}
+                          placeholder="Wire ref / crypto tx / invoice # (optional)"
+                          className="input-field text-sm"
+                          onClick={e => e.stopPropagation()}
+                        />
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            disabled={busyId === order.id}
+                            onClick={() => handleMarkPaid(order, false)}
+                            className="btn-primary text-xs py-1.5"
+                          >
+                            Mark paid
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busyId === order.id}
+                            onClick={() => handleMarkPaid(order, true)}
+                            className="btn-outline text-xs py-1.5"
+                          >
+                            Waive payment
+                          </button>
+                        </div>
+                      </div>
+                    )}
 
-                {readyToReceive && (
-                  <div className="rounded-lg border border-brand-200 bg-brand-50/40 p-3 space-y-2">
-                    <p className="text-xs font-semibold text-brand-900 flex items-center gap-1">
-                      <Fingerprint size={12} /> Receive into lab
-                    </p>
-                    <p className="text-[11px] text-brand-900/80">
-                      Accession # will be auto-generated (e.g. 26-K7M4Q9) and used as the COA sample code.
-                    </p>
-                    <div>
-                      <label className="text-[11px] font-semibold text-brand-900">
-                        Received by <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        value={receivedByBySample[sample.id] ?? defaultReceivedBy}
-                        onChange={e => setReceivedByBySample(prev => ({ ...prev, [sample.id]: e.target.value }))}
-                        placeholder="Full name of person receiving"
-                        className="input-field text-sm mt-1"
-                        autoComplete="name"
-                        required
-                      />
-                    </div>
-                    <input
-                      value={noteBySample[sample.id] ?? ''}
-                      onChange={e => setNoteBySample(prev => ({ ...prev, [sample.id]: e.target.value }))}
-                      placeholder="Receiving note (optional)"
-                      className="input-field text-sm"
-                    />
-                    <button
-                      type="button"
-                      disabled={busyId === sample.id || !receivedByFor(sample.id)}
-                      onClick={() => handleReceive(sample, order)}
-                      className="btn-primary text-xs py-1.5 gap-1"
-                    >
-                      <PackageCheck size={12} /> Receive into lab
-                    </button>
+                    <ul className="space-y-3">
+                      {orderRows.map(({ sample, readyToReceive }) => (
+                        <li
+                          key={sample.id}
+                          className="rounded-lg border border-atlas-border bg-white p-3 space-y-2"
+                        >
+                          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <p className="font-semibold text-black text-sm">
+                                {sample.display_name || sample.sample_name}
+                              </p>
+                              <p className="text-xs text-neutral-500 mt-0.5">
+                                {sample.vial_count} vial{sample.vial_count === 1 ? '' : 's'}
+                                {sample.accession_number ? ` · ${sample.accession_number}` : ''}
+                              </p>
+                            </div>
+                            <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border bg-neutral-50 text-neutral-600 border-atlas-border self-start">
+                              {sample.status.replace(/_/g, ' ')}
+                            </span>
+                          </div>
+
+                          {readyToReceive && (
+                            <div className="rounded-lg border border-brand-200 bg-brand-50/40 p-3 space-y-2">
+                              <p className="text-xs font-semibold text-brand-900 flex items-center gap-1">
+                                <Fingerprint size={12} /> Receive into lab
+                              </p>
+                              <p className="text-[11px] text-brand-900/80">
+                                Accession # will be auto-generated (e.g. 26-K7M4Q9) and used as the COA sample code.
+                              </p>
+                              <div>
+                                <label className="text-[11px] font-semibold text-brand-900">
+                                  Received by <span className="text-red-500">*</span>
+                                </label>
+                                <input
+                                  value={receivedByBySample[sample.id] ?? defaultReceivedBy}
+                                  onChange={e => setReceivedByBySample(prev => ({ ...prev, [sample.id]: e.target.value }))}
+                                  placeholder="Full name of person receiving"
+                                  className="input-field text-sm mt-1"
+                                  autoComplete="name"
+                                  required
+                                />
+                              </div>
+                              <input
+                                value={noteBySample[sample.id] ?? ''}
+                                onChange={e => setNoteBySample(prev => ({ ...prev, [sample.id]: e.target.value }))}
+                                placeholder="Receiving note (optional)"
+                                className="input-field text-sm"
+                              />
+                              <button
+                                type="button"
+                                disabled={busyId === sample.id || !receivedByFor(sample.id)}
+                                onClick={() => handleReceive(sample, order)}
+                                className="btn-primary text-xs py-1.5 gap-1"
+                              >
+                                <PackageCheck size={12} /> Receive into lab
+                              </button>
+                            </div>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
                   </div>
                 )}
               </article>
