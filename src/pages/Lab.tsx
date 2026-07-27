@@ -1179,8 +1179,8 @@ export default function Lab() {
                       <input value={labResults.identification} onChange={e => updateResults({ identification: e.target.value })} className="input-field" placeholder="Peptide identification" />
                     </div>
                     <div>
-                      <label className="label">Net Content</label>
-                      <input value={labResults.netContent} onChange={e => updateResults({ netContent: e.target.value })} className="input-field" placeholder="e.g. 5 mg" />
+                      <label className="label">Net Content (tested)</label>
+                      <input value={labResults.netContent} onChange={e => updateResults({ netContent: e.target.value })} className="input-field" placeholder="Measured mg — not label claim" />
                     </div>
                     <div>
                       <label className="label">Net Purity (%)</label>
@@ -1289,13 +1289,15 @@ export default function Lab() {
                   )}
                   <div>
                     <div className="flex items-center justify-between mb-2">
-                      <label className="label mb-0">Conformity (multiple peptides)</label>
+                      <label className="label mb-0">Conformity (additional measured vials)</label>
                       <button type="button" onClick={addConformityPeptide} className="text-xs text-brand-700 font-medium inline-flex items-center gap-1">
                         <Plus size={13} /> Add peptide
                       </button>
                     </div>
                     {labResults.conformityPeptides.length === 0 ? (
-                      <p className="text-xs text-neutral-500">Add rows for sample-to-sample conformity results.</p>
+                      <p className="text-xs text-neutral-500">
+                        Optional. Add a row only for each extra vial or peptide measured. Average net content uses tested values only — never the label claim.
+                      </p>
                     ) : (
                       <div className="space-y-2">
                         {labResults.conformityPeptides.map((row, i) => (
