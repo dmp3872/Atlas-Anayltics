@@ -30,6 +30,27 @@ function fallbackProfile(authUser: User): UserProfile {
   };
 }
 
+function temporaryProfile(userId: string, email?: string | null): UserProfile {
+  const now = new Date().toISOString();
+  return {
+    id: userId,
+    full_name: email?.split('@')[0] || 'User',
+    role: 'client',
+    company_name: '',
+    phone: '',
+    address_line1: '',
+    address_line2: '',
+    city: '',
+    state: '',
+    zip: '',
+    country: 'US',
+    prepaid_balance: 0,
+    is_first_order: true,
+    created_at: now,
+    updated_at: now,
+  };
+}
+
 interface AuthContextValue {
   user: User | null;
   session: Session | null;
@@ -73,7 +94,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       const { data: { user: authUser } } = await supabase.auth.getUser();
-      if (!authUser) return;
+      if (!authUser) {
+        // Session exists but user lookup failed — keep a minimal local profile
+        // so sign-in can proceed instead of spinning forever.
+        setProfile(temporaryProfile(userId));
+        setProfileError('Could not verify account details. Some features may be limited.');
+        return;
+      }
 
       const fullName = (authUser.user_metadata?.full_name as string) || '';
       const { error: upsertError } = await supabase
@@ -103,6 +130,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { data: { user: authUser } } = await supabase.auth.getUser();
       if (authUser) {
         setProfile(fallbackProfile(authUser));
+        setProfileError(err instanceof Error ? err.message : 'Could not load profile');
+      } else {
+        setProfile(temporaryProfile(userId));
         setProfileError(err instanceof Error ? err.message : 'Could not load profile');
       }
     }
@@ -166,31 +196,65 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        await loadProfile(session.user.id);
-      } else {
-        setProfile(null);
+    let cancelled = false;
+    // Never leave the app on the spinner if auth/profile network calls hang.
+    const watchdog = window.setTimeout(() => {
+      if (!cancelled) {
+        console.warn('Auth bootstrap timed out — clearing loading state.');
+        setLoading(false);
       }
-      setLoading(false);
-    });
+    }, 8000);
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    void supabase.auth.getSession()
+      .then(async ({ data: { session } }) => {
+        if (cancelled) return;
+        setSession(session);
+        setUser(session?.user ?? null);
+        if (session?.user) {
+          await loadProfile(session.user.id);
+        } else {
+          setProfile(null);
+        }
+      })
+      .catch(err => {
+        console.warn('Auth getSession failed:', err);
+        if (!cancelled) {
+          setSession(null);
+          setUser(null);
+          setProfile(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+        window.clearTimeout(watchdog);
+      });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (cancelled) return;
+      // INITIAL_SESSION duplicates getSession — skip to avoid a second loading lock.
+      if (event === 'INITIAL_SESSION') return;
+
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
         // Keep loading true until role/profile is known so Auth doesn't send admins to /dashboard.
         setLoading(true);
-        void loadProfile(session.user.id).finally(() => setLoading(false));
+        void loadProfile(session.user.id)
+          .catch(err => console.warn('Profile load failed:', err))
+          .finally(() => {
+            if (!cancelled) setLoading(false);
+          });
       } else {
         setProfile(null);
         setLoading(false);
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(watchdog);
+      subscription.unsubscribe();
+    };
   }, []);
 
   async function signIn(email: string, password: string) {
