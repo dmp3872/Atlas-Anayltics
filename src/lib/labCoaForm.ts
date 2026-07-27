@@ -156,14 +156,13 @@ export function buildLabResultsFromSample(metadata: OrderSample['metadata'], sam
   return {
     ...EMPTY_LAB_RESULTS,
     identification,
-    netContent: meta.labeled_content?.trim() ?? '',
+    // Leave measured fields empty — label claim must not seed Net Content or averages.
+    netContent: '',
     includeFentanyl,
     includeHeavyMetals,
     includeEndotoxin,
     includeSterility,
-    conformityPeptides: identification
-      ? [{ name: identification, netContent: meta.labeled_content?.trim() ?? '', netPurity: '' }]
-      : [],
+    conformityPeptides: [],
   };
 }
 
