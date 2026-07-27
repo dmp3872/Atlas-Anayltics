@@ -34,8 +34,10 @@ export default function Auth() {
   const [info, setInfo] = useState('');
   const [resetSent, setResetSent] = useState(false);
 
-  // Wait for profile when signed in so staff land on /admin or /lab, not the client portal.
-  if (loading || (user && !profile)) {
+  // Only wait on the auth bootstrap spinner. Never block forever on a missing
+  // profile — resolveUserRole can use email fallbacks, and loadProfile sets a
+  // temporary profile when the DB row is slow/unavailable.
+  if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-neutral-50">
         <div className="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
