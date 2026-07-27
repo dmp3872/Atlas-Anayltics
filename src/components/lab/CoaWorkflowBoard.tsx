@@ -1,17 +1,18 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  ArrowLeft, ArrowRight, Building2, CheckCircle, Clock, ExternalLink, Fingerprint,
-  FlaskConical, Globe, GripVertical, Hash, MessageCircle, Phone, Shield, UserCircle2,
-  XCircle,
+  ArrowLeft, ArrowRight, Building2, CheckCircle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp,
+  Clock, Download, ExternalLink, Fingerprint, FlaskConical, Globe, GripVertical, Hash, MessageCircle, Phone,
+  Shield, UserCircle2, XCircle,
 } from 'lucide-react';
 import { COA, Order, OrderSample, UserProfile } from '../../lib/types';
 import { formatDate } from '../../lib/utils';
 import {
   COA_WORKFLOW_BOARD_COLUMNS, COA_WORKFLOW_LABELS, COA_WORKFLOW_STEPS,
-  CoaWorkflowStage, canPrepareCoa, coaSignatureProgress, coaWorkflowStage,
+  CoaWorkflowStage, canPrepareCoa, canReturnCoaToTesting, coaSignatureProgress, coaWorkflowStage,
 } from '../../lib/coaWorkflow';
 import { LAB_PRIORITY_LABELS, LAB_PRIORITY_STYLES, QueueSampleItem, testsLabelForSample } from '../../lib/labQueue';
+import { downloadCoaPdf } from '../../lib/coaPdf';
 import CoaPdfPrepModal from './CoaPdfPrepModal';
 
 interface Props {
@@ -26,7 +27,9 @@ interface Props {
   /** Samples still awaiting a COA — shown in Testing in Progress. */
   pendingSamples?: QueueSampleItem[];
   onIssueCoa?: (sample: OrderSample) => void;
-  chemists?: { id: string; name: string }[];
+  /** Open Issue COA with this certificate's values for a restart / re-issue. */
+  onRestartCoa?: (coa: COA) => void;
+  chemists?: { id: string; name: string; role?: string }[];
   /** Reviewers eligible for second signature (chemists, admins, lab director). */
   reviewers?: { id: string; name: string; role?: string }[];
   clients?: UserProfile[];
@@ -109,14 +112,92 @@ function AssignedToYouBadge() {
 }
 
 export default function CoaWorkflowBoard({
-  coas, onMoveCoa, movingId, onCoaImagesSaved, pendingSamples = [], onIssueCoa, chemists = [],
-  reviewers = [], clients = [], orders = [], samples = [], currentUserId = null,
+  coas, onMoveCoa, movingId, onCoaImagesSaved, pendingSamples = [], onIssueCoa, onRestartCoa,
+  chemists = [], reviewers = [], clients = [], orders = [], samples = [], currentUserId = null,
 }: Props) {
+  const boardScrollRef = useRef<HTMLDivElement>(null);
+  const columnScrollRefs = useRef<Partial<Record<CoaWorkflowStage, HTMLDivElement | null>>>({});
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [overStage, setOverStage] = useState<CoaWorkflowStage | null>(null);
   const [prepCoa, setPrepCoa] = useState<COA | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
   const [reviewPickFor, setReviewPickFor] = useState<string | null>(null);
   const [reviewAssignee, setReviewAssignee] = useState('');
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  function updateBoardScrollHints() {
+    const el = boardScrollRef.current;
+    if (!el) {
+      setCanScrollLeft(false);
+      setCanScrollRight(false);
+      return;
+    }
+    const max = el.scrollWidth - el.clientWidth;
+    setCanScrollLeft(el.scrollLeft > 4);
+    setCanScrollRight(max > 4 && el.scrollLeft < max - 4);
+  }
+
+  function scrollBoard(direction: -1 | 1) {
+    const el = boardScrollRef.current;
+    if (!el) return;
+    const step = Math.min(340, Math.max(260, el.clientWidth * 0.75));
+    el.scrollBy({ left: direction * step, behavior: 'smooth' });
+    window.setTimeout(updateBoardScrollHints, 280);
+  }
+
+  function scrollColumn(stage: CoaWorkflowStage, direction: -1 | 1) {
+    const el = columnScrollRefs.current[stage];
+    if (!el) return;
+    el.scrollBy({ top: direction * Math.min(280, el.clientHeight * 0.75), behavior: 'smooth' });
+  }
+
+  useEffect(() => {
+    const el = boardScrollRef.current;
+    if (!el) return;
+    updateBoardScrollHints();
+    const onScroll = () => updateBoardScrollHints();
+    el.addEventListener('scroll', onScroll, { passive: true });
+    const ro = new ResizeObserver(() => updateBoardScrollHints());
+    ro.observe(el);
+    return () => {
+      el.removeEventListener('scroll', onScroll);
+      ro.disconnect();
+    };
+  }, [coas, pendingSamples]);
+
+  // Trackpad / mouse wheel: vertical wheel scrolls stages horizontally when
+  // the pointer is not actively scrolling a tall column list.
+  useEffect(() => {
+    const el = boardScrollRef.current;
+    if (!el) return;
+
+    const onWheel = (e: WheelEvent) => {
+      if (el.scrollWidth <= el.clientWidth + 1) return;
+
+      const target = e.target instanceof Element ? e.target : null;
+      const colBody = target?.closest('[data-coa-column-scroll]') as HTMLElement | null;
+      if (colBody && colBody.scrollHeight > colBody.clientHeight + 1) {
+        const goingUp = e.deltaY < 0;
+        const goingDown = e.deltaY > 0;
+        const roomUp = colBody.scrollTop > 0;
+        const roomDown = colBody.scrollTop + colBody.clientHeight < colBody.scrollHeight - 1;
+        if ((goingUp && roomUp) || (goingDown && roomDown)) return;
+      }
+
+      // Native horizontal trackpad gesture — leave alone.
+      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+      if (e.deltaY === 0) return;
+
+      e.preventDefault();
+      el.scrollLeft += e.deltaY;
+      updateBoardScrollHints();
+    };
+
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [coas, pendingSamples]);
 
   const reviewerOptions = reviewers.length > 0 ? reviewers : chemists;
 
@@ -203,8 +284,6 @@ export default function CoaWorkflowBoard({
   }
 
   function handleDragOver(e: React.DragEvent, stage: CoaWorkflowStage) {
-    // Testing column is for pre-issue samples — not a COA drop target.
-    if (stage === 'testing_in_progress') return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
     setOverStage(stage);
@@ -212,10 +291,6 @@ export default function CoaWorkflowBoard({
 
   function handleDrop(e: React.DragEvent, stage: CoaWorkflowStage) {
     e.preventDefault();
-    if (stage === 'testing_in_progress') {
-      handleDragEnd();
-      return;
-    }
     const coaId = e.dataTransfer.getData('text/coa-id')
       || e.dataTransfer.getData('text/plain')
       || draggingId;
@@ -224,6 +299,18 @@ export default function CoaWorkflowBoard({
       void onMoveCoa(coa, stage);
     }
     handleDragEnd();
+  }
+
+  async function handleDownloadPdf(coa: COA) {
+    setDownloadError(null);
+    setDownloadingId(coa.id);
+    try {
+      await downloadCoaPdf(coa);
+    } catch (err) {
+      setDownloadError(err instanceof Error ? err.message : 'Could not download PDF.');
+    } finally {
+      setDownloadingId(null);
+    }
   }
 
   return (
@@ -243,7 +330,8 @@ export default function CoaWorkflowBoard({
       <p className="text-xs text-neutral-500">
         After issue, send the certificate to <strong className="text-violet-800">Pending Review</strong> and assign a
         lab director or chemist for the second signature (shows <strong>1/2</strong>). After they sign off it becomes
-        Verified (2/2), then Published. Cards marked <strong className="text-sky-800">Assigned to you</strong> are yours.
+        Verified (2/2), then Published. Drag or use <strong>Back to testing</strong> to rework an issued COA, then
+        <strong> Restart COA</strong> to edit results and re-issue. Cards marked <strong className="text-sky-800">Assigned to you</strong> are yours.
         Chemists can <strong>Publish now</strong> from any stage to override stopping points when needed.
       </p>
 
@@ -258,35 +346,123 @@ export default function CoaWorkflowBoard({
         />
       )}
 
-      <div className="flex gap-4 overflow-x-auto pb-2 min-h-[520px]">
+      <div className="sticky top-0 z-20 -mx-1 px-1 py-2 bg-neutral-100/95 backdrop-blur-sm border-b border-atlas-border/80 flex items-center justify-between gap-3">
+        <p className="text-xs text-neutral-600 min-w-0">
+          Drag the board or use the arrows · scroll each column up/down for every card.
+        </p>
+        <div className="flex items-center gap-1 shrink-0">
+          <button
+            type="button"
+            onClick={() => scrollBoard(-1)}
+            disabled={!canScrollLeft}
+            className="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-atlas-border bg-white text-neutral-700 hover:bg-neutral-50 hover:border-brand-400 shadow-sm disabled:opacity-35 disabled:pointer-events-none"
+            aria-label="Scroll workflow left"
+            title="Previous stages"
+          >
+            <ChevronLeft size={18} />
+          </button>
+          <button
+            type="button"
+            onClick={() => scrollBoard(1)}
+            disabled={!canScrollRight}
+            className="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-atlas-border bg-white text-neutral-700 hover:bg-neutral-50 hover:border-brand-400 shadow-sm disabled:opacity-35 disabled:pointer-events-none"
+            aria-label="Scroll workflow right"
+            title="Next stages"
+          >
+            <ChevronRight size={18} />
+          </button>
+        </div>
+      </div>
+
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => scrollBoard(-1)}
+          disabled={!canScrollLeft}
+          className="hidden sm:inline-flex absolute left-0 top-1/2 -translate-y-1/2 z-10 items-center justify-center w-10 h-10 rounded-full border border-atlas-border bg-white/95 text-neutral-800 shadow-md hover:border-brand-500 disabled:opacity-0 disabled:pointer-events-none"
+          aria-label="Scroll workflow left"
+          title="Scroll left"
+        >
+          <ChevronLeft size={20} />
+        </button>
+        <button
+          type="button"
+          onClick={() => scrollBoard(1)}
+          disabled={!canScrollRight}
+          className="hidden sm:inline-flex absolute right-0 top-1/2 -translate-y-1/2 z-10 items-center justify-center w-10 h-10 rounded-full border border-atlas-border bg-white/95 text-neutral-800 shadow-md hover:border-brand-500 disabled:opacity-0 disabled:pointer-events-none"
+          aria-label="Scroll workflow right"
+          title="Scroll right"
+        >
+          <ChevronRight size={20} />
+        </button>
+
+        {downloadError && (
+          <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+            {downloadError}
+          </div>
+        )}
+
+        <div
+          ref={boardScrollRef}
+          className="coa-workflow-board-scroll flex gap-4 overflow-x-scroll pb-3 scroll-smooth snap-x snap-proximity overscroll-x-contain px-1 sm:px-8"
+          style={{ WebkitOverflowScrolling: 'touch' }}
+        >
         {COA_WORKFLOW_BOARD_COLUMNS.map(stage => {
           const styles = COLUMN_STYLES[stage];
           const isTestingCol = stage === 'testing_in_progress';
-          const isOver = !isTestingCol && overStage === stage && draggingId !== null;
+          const isOver = overStage === stage && draggingId !== null;
           const cards = grouped[stage];
           const columnCount = isTestingCol ? sortedPending.length + cards.length : cards.length;
 
           return (
             <div
               key={stage}
-              className={`flex-shrink-0 w-[280px] sm:w-[300px] flex flex-col rounded-xl border border-atlas-border overflow-hidden transition-shadow ${
+              className={`flex-shrink-0 w-[280px] sm:w-[300px] snap-start flex flex-col rounded-xl border border-atlas-border overflow-hidden transition-shadow h-[min(70vh,720px)] ${
                 isOver ? `ring-2 ${styles.ring} shadow-md` : ''
               }`}
               onDragOver={e => handleDragOver(e, stage)}
               onDragLeave={() => setOverStage(prev => (prev === stage ? null : prev))}
               onDrop={e => handleDrop(e, stage)}
             >
-              <div className={`px-4 py-3 border-b flex items-center justify-between ${styles.header}`}>
-                <h3 className="font-bold text-sm flex items-center gap-2">
+              <div className={`px-3 py-2.5 border-b flex items-center justify-between gap-2 shrink-0 sticky top-0 z-10 ${styles.header}`}>
+                <h3 className="font-bold text-sm flex items-center gap-2 min-w-0 truncate">
                   {stageIcon(stage)}
-                  {COA_WORKFLOW_LABELS[stage]}
+                  <span className="truncate">{COA_WORKFLOW_LABELS[stage]}</span>
                 </h3>
-                <span className="text-xs font-semibold text-neutral-500 bg-white/70 px-2 py-0.5 rounded-full">
-                  {columnCount}
-                </span>
+                <div className="flex items-center gap-1 shrink-0">
+                  <span className="text-xs font-semibold text-neutral-500 bg-white/70 px-2 py-0.5 rounded-full">
+                    {columnCount}
+                  </span>
+                  <div className="flex flex-col -space-y-0.5">
+                    <button
+                      type="button"
+                      onClick={() => scrollColumn(stage, -1)}
+                      className="p-0.5 rounded text-neutral-500 hover:text-black hover:bg-white/80"
+                      aria-label={`Scroll ${COA_WORKFLOW_LABELS[stage]} up`}
+                      title="Scroll up"
+                    >
+                      <ChevronUp size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => scrollColumn(stage, 1)}
+                      className="p-0.5 rounded text-neutral-500 hover:text-black hover:bg-white/80"
+                      aria-label={`Scroll ${COA_WORKFLOW_LABELS[stage]} down`}
+                      title="Scroll down"
+                    >
+                      <ChevronDown size={14} />
+                    </button>
+                  </div>
+                </div>
               </div>
 
-              <div className={`flex-1 p-2 space-y-2 overflow-y-auto max-h-[560px] ${styles.body}`}>
+              <div
+                ref={el => {
+                  columnScrollRefs.current[stage] = el;
+                }}
+                data-coa-column-scroll
+                className={`flex-1 min-h-0 p-2 space-y-2 overflow-y-auto overscroll-contain scroll-smooth ${styles.body}`}
+              >
                 {isTestingCol && (
                   <>
                     {sortedPending.length === 0 && cards.length === 0 ? (
@@ -337,12 +513,14 @@ export default function CoaWorkflowBoard({
                   </>
                 )}
 
-                {!isTestingCol && cards.length === 0 ? (
+                {cards.length === 0 && !(isTestingCol && sortedPending.length > 0) ? (
+                  isTestingCol ? null : (
                   <div className={`rounded-lg border-2 border-dashed p-6 text-center text-xs text-neutral-400 ${
                     isOver ? 'border-current bg-white/60' : 'border-neutral-200'
                   }`}>
                     {isOver ? 'Drop here' : 'No cards'}
                   </div>
+                  )
                 ) : (
                   cards.map(coa => {
                     const currentStage = coaWorkflowStage(coa);
@@ -487,8 +665,20 @@ export default function CoaWorkflowBoard({
                             onClick={e => e.stopPropagation()}
                             onDragStart={e => e.preventDefault()}
                           >
-                            <ExternalLink size={11} /> Open & download PNG
+                            <ExternalLink size={11} /> Open
                           </Link>
+                          <button
+                            type="button"
+                            disabled={downloadingId === coa.id}
+                            className="btn-outline text-xs py-1 px-2 gap-1"
+                            onClick={e => {
+                              e.stopPropagation();
+                              void handleDownloadPdf(coa);
+                            }}
+                          >
+                            <Download size={11} />
+                            {downloadingId === coa.id ? 'Saving…' : 'Download PDF'}
+                          </button>
 
                           {currentStage === 'issued' && (
                             reviewPickFor === coa.id ? (
@@ -541,6 +731,45 @@ export default function CoaWorkflowBoard({
                                 <Shield size={11} /> Send for review
                               </button>
                             )
+                          )}
+
+                          {currentStage === 'testing_in_progress' && (
+                            <>
+                              {onRestartCoa && (
+                                <button
+                                  type="button"
+                                  onClick={e => {
+                                    e.stopPropagation();
+                                    onRestartCoa(coa);
+                                  }}
+                                  disabled={!!movingId}
+                                  className="btn-primary text-xs py-1 px-2 gap-1"
+                                  title="Open Issue COA with this certificate's values and re-issue"
+                                >
+                                  <FlaskConical size={11} /> Restart COA
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => void onMoveCoa(coa, 'issued')}
+                                disabled={!!movingId}
+                                className="btn-secondary text-xs py-1 px-2 gap-1"
+                              >
+                                <ArrowRight size={11} /> Return to Issued
+                              </button>
+                            </>
+                          )}
+
+                          {canReturnCoaToTesting(currentStage) && (
+                            <button
+                              type="button"
+                              onClick={() => void onMoveCoa(coa, 'testing_in_progress')}
+                              disabled={!!movingId}
+                              className="btn-outline text-xs py-1 px-2 gap-1"
+                              title="Move back to Testing in Progress to rework or restart this COA"
+                            >
+                              <ArrowLeft size={11} /> Back to testing
+                            </button>
                           )}
 
                           {isAwaitingInfo && (
@@ -608,6 +837,7 @@ export default function CoaWorkflowBoard({
             </div>
           );
         })}
+        </div>
       </div>
     </div>
   );

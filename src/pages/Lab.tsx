@@ -8,13 +8,14 @@ import { supabase } from '../lib/supabase';
 import { COA, Company, LabPriority, Order, OrderSample, SampleStatus, UserProfile } from '../lib/types';
 import { computeCoaContentHash } from '../lib/coaVerify';
 import { notifyCoaReady, notifyOrderUpdate, notifyOrderEtaUpdated } from '../lib/notifications';
-import { clientSubmittedLabel, parseSampleMetadata } from '../lib/coaPanels';
+import { clientSubmittedLabel, matrixTypeFromSampleMetadata, parseSampleMetadata } from '../lib/coaPanels';
 import { fetchUserCompanies } from '../lib/coaProfile';
 import {
   EMPTY_LAB_RESULTS, LabCoaResults, VIAL_SIZE_OPTIONS, VialSizeOption,
-  HEAVY_METAL_NAMES, buildLabResultsFromSample, labResultsToPanelResults,
+  HEAVY_METAL_NAMES, buildLabResultsFromSample, buildLabResultsFromCoa, labResultsToPanelResults,
   parsePurityPercent, parseMolecularWeight, lookupCas, casForSampleName,
-  ENDOTOXIN_SPEC_EU_ML, STERILITY_METHOD_LABELS,
+  ENDOTOXIN_SPEC_EU_ML, ENDOTOXIN_PASS_RESULT, STERILITY_METHOD_LABELS,
+  HEAVY_METAL_PASS_RESULT, heavyMetalsPassDefaults, computeLabAssayAverages,
 } from '../lib/labCoaForm';
 import { COA_WORKFLOW_LABELS, canPrepareCoa, coaWorkflowStage, buildWorkflowStagePatch, CoaWorkflowStage } from '../lib/coaWorkflow';
 import CoaWorkflowBoard from '../components/lab/CoaWorkflowBoard';
@@ -26,7 +27,6 @@ import { buildQueueItems, filterQueueItems, normalizeLabPriority } from '../lib/
 import { sampleIntakeAt, sampleReceivedBy, setSampleStatus } from '../lib/services/orderWorkflow';
 import { allocateUniqueSampleCode, isValidSampleCode } from '../lib/sampleCode';
 import { formatDate } from '../lib/utils';
-import LabSampleIntake from '../components/lab/LabSampleIntake';
 import ReceivingDesk from '../components/lab/ReceivingDesk';
 import MyBenchPanel from '../components/lab/MyBenchPanel';
 import StaffHeader from '../components/layout/StaffHeader';
@@ -35,6 +35,7 @@ import {
   hydrateCoaImages,
   isMissingCoaImageColumnError,
   payloadWithoutImageColumns,
+  prepareVialImage,
   resolveImageAsDataUrl,
 } from '../lib/coaImages';
 import CoaPdfPrepModal from '../components/lab/CoaPdfPrepModal';
@@ -45,19 +46,49 @@ import OrderActionChecklist from '../components/order/OrderActionChecklist';
 import OrderNotesThread from '../components/order/OrderNotesThread';
 import OrderEtaEditor from '../components/order/OrderEtaEditor';
 import { fetchOrderActionItems, openActionCount } from '../lib/orderActions';
-import { createEmptySample, type TestMode, type WizardSample } from '../lib/orderCatalog';
+import { createEmptySample, LABEL_CLAIM_UNITS, SAMPLE_MATRICES, type TestMode, type WizardSample } from '../lib/orderCatalog';
 import { assayResultsFromPanels } from '../lib/coaDisplayPanels';
 const MAX_COA_IMAGE_BYTES = 1024 * 1024;
 
 type Message = { type: 'success' | 'error'; text: string; slug?: string } | null;
-type LabTab = 'bench' | 'receive' | 'queue' | 'intake' | 'issue' | 'workflow';
+type LabTab = 'bench' | 'receive' | 'queue' | 'issue' | 'workflow';
 
 const BLANK = {
   clientId: '', sampleId: '', orderId: '',
   sampleName: '', displayName: '', companyName: '',
   batchNumber: '', casNumber: '', vialSize: '3ml' as VialSizeOption,
   overallResult: 'pass' as COA['overall_result'],
+  accessionNumber: '',
+  receivedBy: '',
+  receivedDate: '',
+  matrixType: '',
+  labeledContent: '',
+  labelClaimUnit: 'mg',
 };
+
+function localDateInputValue(d = new Date()): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function isoToLocalDateInput(iso: string | null | undefined): string {
+  if (!iso) return localDateInputValue();
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return localDateInputValue();
+  return localDateInputValue(d);
+}
+
+/** Store noon local so the calendar day stays stable across timezones. */
+function localDateInputToIso(dateInput: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec((dateInput || '').trim());
+  if (!match) return new Date().toISOString();
+  const y = Number(match[1]);
+  const m = Number(match[2]);
+  const d = Number(match[3]);
+  return new Date(y, m - 1, d, 12, 0, 0).toISOString();
+}
 
 
 const QUEUE_FILTERS_BLANK: QueueFilterValues = {
@@ -83,6 +114,7 @@ export default function Lab() {
   const [movingCoaId, setMovingCoaId] = useState<string | null>(null);
   const [workflowCompanyFilter, setWorkflowCompanyFilter] = useState('');
   const [form, setForm] = useState({ ...BLANK });
+  const [editingCoaId, setEditingCoaId] = useState<string | null>(null);
   const [labResults, setLabResults] = useState<LabCoaResults>({ ...EMPTY_LAB_RESULTS });
   const [vialImage, setVialImage] = useState('');
   const [chromatographImage, setChromatographImage] = useState('');
@@ -94,6 +126,7 @@ export default function Lab() {
   const [casSuggestions, setCasSuggestions] = useState<{ name: string; cas: string }[]>([]);
   const [showCasSuggestions, setShowCasSuggestions] = useState(false);
   const [prepCoa, setPrepCoa] = useState<COA | null>(null);
+  const [intakeSampleLive, setIntakeSampleLive] = useState<OrderSample | null>(null);
   const [issueOpenActions, setIssueOpenActions] = useState(0);
 
   const selectedCompany = clientCompanies.find(c => c.id === selectedCompanyId) ?? null;
@@ -141,6 +174,25 @@ export default function Lab() {
     return () => { cancelled = true; };
   }, [form.clientId, preferredBrandName]);
 
+  // When opening Issue COA blank, default received-by to the chemist and date to today.
+  useEffect(() => {
+    if (tab !== 'issue') return;
+    setForm(prev => {
+      const chemistName = (profile?.full_name || '').trim();
+      const next = { ...prev };
+      let changed = false;
+      if (!next.receivedBy.trim() && chemistName) {
+        next.receivedBy = chemistName;
+        changed = true;
+      }
+      if (!next.receivedDate.trim()) {
+        next.receivedDate = localDateInputValue();
+        changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [tab, profile?.full_name]);
+
   async function loadAll() {
     setLoading(true);
     const [p, s, o, c] = await Promise.all([
@@ -161,6 +213,38 @@ export default function Lab() {
   }
 
   useEffect(() => { loadAll(); }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadIntakeSample() {
+      if (!form.sampleId) {
+        setIntakeSampleLive(null);
+        return;
+      }
+      const fromQueue = samples.find(s => s.id === form.sampleId) || null;
+      if (fromQueue) setIntakeSampleLive(fromQueue);
+      const fresh = await supabase
+        .from('order_samples')
+        .select('id, metadata, received_at, status, created_at, accession_number')
+        .eq('id', form.sampleId)
+        .maybeSingle();
+      let row = fresh.data as OrderSample | null;
+      if (fresh.error && /received_at/i.test(fresh.error.message || '')) {
+        const retry = await supabase
+          .from('order_samples')
+          .select('id, metadata, status, created_at, accession_number')
+          .eq('id', form.sampleId)
+          .maybeSingle();
+        row = retry.data as OrderSample | null;
+      }
+      if (!cancelled && row) {
+        setIntakeSampleLive({ ...(fromQueue || ({} as OrderSample)), ...row });
+      }
+    }
+    void loadIntakeSample();
+    return () => { cancelled = true; };
+  }, [form.sampleId, samples]);
+
 
   useEffect(() => {
     const channel = supabase
@@ -272,6 +356,8 @@ export default function Lab() {
     const order = orders.find(o => o.id === s.order_id);
     const cas = casForSampleName(s.sample_name) || meta.peptide_identification?.trim() || '';
     const brandHint = meta.brand_names?.[0] || order?.company_name || client?.company_name || '';
+    const chemistName = (profile?.full_name || '').trim();
+    setEditingCoaId(null);
     setForm({
       ...BLANK,
       clientId: s.user_id,
@@ -283,12 +369,96 @@ export default function Lab() {
       batchNumber: meta.batch_number ?? '',
       casNumber: cas,
       vialSize: (VIAL_SIZE_OPTIONS.includes(meta.vial_size as VialSizeOption) ? meta.vial_size : '3ml') as VialSizeOption,
+      accessionNumber: (s.accession_number || '').trim().toUpperCase(),
+      receivedBy: sampleReceivedBy(s) || chemistName,
+      receivedDate: isoToLocalDateInput(sampleIntakeAt(s)) || localDateInputValue(),
+      matrixType: matrixTypeFromSampleMetadata(s.metadata) || meta.sample_matrix || '',
+      labeledContent: meta.labeled_content || '',
+      labelClaimUnit: meta.label_claim_unit || 'mg',
     });
     setPreferredBrandName(brandHint);
     setLabResults(buildLabResultsFromSample(s.metadata, s.sample_name));
     setCasSuggestions(cas ? lookupCas(cas) : []);
     setShowCasSuggestions(false);
     setMsg(null);
+    setTab('issue');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function restartCoa(coa: COA) {
+    const sample = coa.sample_id ? samples.find(s => s.id === coa.sample_id) : undefined;
+    const meta = parseSampleMetadata(sample?.metadata ?? {});
+    const client = clients.find(c => c.id === coa.user_id);
+    const order = coa.order_id ? orders.find(o => o.id === coa.order_id) : undefined;
+    const cas = coa.peptide_sequence?.trim()
+      || casForSampleName(coa.sample_name)
+      || meta.peptide_identification?.trim()
+      || '';
+    const brandHint = coa.company_name || meta.brand_names?.[0] || order?.company_name || client?.company_name || '';
+    const vialFromCoa = (coa.chromatogram_data as { vial_size?: string } | null)?.vial_size;
+    const summary = (coa.result_summary && typeof coa.result_summary === 'object')
+      ? coa.result_summary as Record<string, unknown>
+      : {};
+    const summaryReceivedBy = typeof summary.received_by === 'string' ? summary.received_by.trim() : '';
+    const summaryReceivedAt = typeof summary.received_at === 'string' ? summary.received_at : '';
+    const summaryMatrix = (
+      (typeof summary.matrix_type === 'string' && summary.matrix_type.trim())
+      || (typeof summary.sample_matrix === 'string' && summary.sample_matrix.trim())
+      || (typeof (coa.chromatogram_data as { sample_matrix?: string } | null)?.sample_matrix === 'string'
+        ? (coa.chromatogram_data as { sample_matrix?: string }).sample_matrix!.trim()
+        : '')
+      || matrixTypeFromSampleMetadata(sample?.metadata)
+      || meta.sample_matrix
+      || ''
+    );
+    const summaryClaim = (
+      (typeof summary.labeled_content === 'string' && summary.labeled_content.trim())
+      || meta.labeled_content
+      || ''
+    );
+    const summaryClaimUnit = (
+      (typeof summary.label_claim_unit === 'string' && summary.label_claim_unit.trim())
+      || meta.label_claim_unit
+      || 'mg'
+    );
+    const chemistName = (profile?.full_name || '').trim();
+    setEditingCoaId(coa.id);
+    setForm({
+      ...BLANK,
+      clientId: coa.user_id,
+      sampleId: coa.sample_id || sample?.id || '',
+      orderId: coa.order_id || sample?.order_id || '',
+      sampleName: coa.sample_name,
+      displayName: coa.display_name || coa.sample_name,
+      companyName: brandHint,
+      batchNumber: coa.batch_number || meta.batch_number || '',
+      casNumber: cas,
+      vialSize: (VIAL_SIZE_OPTIONS.includes(vialFromCoa as VialSizeOption)
+        ? vialFromCoa
+        : VIAL_SIZE_OPTIONS.includes(meta.vial_size as VialSizeOption)
+          ? meta.vial_size
+          : '3ml') as VialSizeOption,
+      overallResult: coa.overall_result === 'fail' || coa.overall_result === 'pending'
+        ? coa.overall_result
+        : 'pass',
+      accessionNumber: (coa.accession_number || coa.slug || sample?.accession_number || '').trim().toUpperCase(),
+      receivedBy: summaryReceivedBy || sampleReceivedBy(sample) || chemistName,
+      receivedDate: isoToLocalDateInput(summaryReceivedAt || sampleIntakeAt(sample)) || localDateInputValue(),
+      matrixType: summaryMatrix,
+      labeledContent: summaryClaim,
+      labelClaimUnit: summaryClaimUnit,
+    });
+    setPreferredBrandName(brandHint);
+    setLabResults(buildLabResultsFromCoa(coa, sample?.metadata));
+    setVialImage(coa.vial_image || '');
+    setChromatographImage(coa.hplc_image || '');
+    setCasSuggestions(cas ? lookupCas(cas) : []);
+    setShowCasSuggestions(false);
+    setMsg({
+      type: 'success',
+      text: `Restarting ${coa.display_name || coa.sample_name} — edit results and save to re-issue.`,
+      slug: coa.slug,
+    });
     setTab('issue');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -329,7 +499,9 @@ export default function Lab() {
     setForm(prev => ({ ...prev, ...patch }));
   }
 
-  const linkedSample = form.sampleId ? samples.find(s => s.id === form.sampleId) : null;
+  const linkedSample = form.sampleId
+    ? (intakeSampleLive?.id === form.sampleId ? intakeSampleLive : samples.find(s => s.id === form.sampleId) || null)
+    : null;
   const linkedMeta = linkedSample ? parseSampleMetadata(linkedSample.metadata) : null;
   const linkedOrder = form.orderId ? orders.find(o => o.id === form.orderId) : null;
   const linkedClient = form.clientId ? clients.find(c => c.id === form.clientId) : undefined;
@@ -348,8 +520,8 @@ export default function Lab() {
       sample_name: form.sampleName || linkedSample?.sample_name || '',
       display_name: form.displayName || linkedSample?.display_name || form.sampleName,
       batch_number: form.batchNumber || linkedMeta?.batch_number || '',
-      labeled_content: linkedMeta?.labeled_content || '',
-      label_claim_unit: linkedMeta?.label_claim_unit || 'mg',
+      labeled_content: form.labeledContent || linkedMeta?.labeled_content || '',
+      label_claim_unit: form.labelClaimUnit || linkedMeta?.label_claim_unit || 'mg',
       primary_test_id:
         linkedMeta?.primary_test_id ||
         (mode === 'individual' ? 'identity_purity_quantity' : mode),
@@ -358,14 +530,17 @@ export default function Lab() {
       conformity_extra: Number(linkedMeta?.conformity_extra) || 0,
       include_fentanyl: !!labResults.includeFentanyl,
       category: (linkedMeta?.category as WizardSample['category'] | undefined) || undefined,
-      sample_matrix: (linkedMeta?.sample_matrix as WizardSample['sample_matrix'] | undefined) || undefined,
+      sample_matrix: (form.matrixType || linkedMeta?.sample_matrix || undefined) as WizardSample['sample_matrix'] | undefined,
     });
-  }, [form.sampleName, form.displayName, form.batchNumber, linkedMeta, linkedSample, labResults.includeFentanyl]);
+  }, [
+    form.sampleName, form.displayName, form.batchNumber, form.matrixType,
+    form.labeledContent, form.labelClaimUnit, linkedMeta, linkedSample, labResults.includeFentanyl,
+  ]);
 
   const issueAssayResults = useMemo((): DigitalCoaAssayResults | null => {
     const panels = labResultsToPanelResults(labResults);
     const fromPanels = assayResultsFromPanels(panels, {
-      quantityUnit: linkedMeta?.label_claim_unit || 'mg',
+      quantityUnit: form.labelClaimUnit || linkedMeta?.label_claim_unit || 'mg',
     });
     const purity = parsePurityPercent(labResults.netPurity);
     const quantityMatch = labResults.netContent.replace(/,/g, '').match(/-?\d+(?:\.\d+)?/);
@@ -379,9 +554,9 @@ export default function Lab() {
       purity: fromPanels?.purity ?? (purity != null ? [purity] : undefined),
       quantity: fromPanels?.quantity ?? (quantity != null ? [quantity] : undefined),
       identity: fromPanels?.identity ?? identity,
-      quantityUnit: linkedMeta?.label_claim_unit || 'mg',
+      quantityUnit: form.labelClaimUnit || linkedMeta?.label_claim_unit || 'mg',
     };
-  }, [labResults, linkedMeta?.label_claim_unit, form.overallResult]);
+  }, [labResults, form.labelClaimUnit, linkedMeta?.label_claim_unit, form.overallResult]);
 
   const issueTrackingStage =
     form.overallResult === 'pass' || form.overallResult === 'fail'
@@ -494,6 +669,16 @@ export default function Lab() {
     const currentStage = coaWorkflowStage(coa);
     if (currentStage === targetStage && targetStage !== 'pending_review') return;
 
+    if (targetStage === 'testing_in_progress') {
+      const publishedWarning = currentStage === 'published'
+        ? 'This COA is currently visible to the client. Moving it back will unpublish it.\n\n'
+        : '';
+      const ok = window.confirm(
+        `${publishedWarning}Move “${coa.display_name || coa.sample_name}” back to Testing in Progress?\n\nSignatures and publish state will be cleared. Use Restart COA to edit results and re-issue.`,
+      );
+      if (!ok) return;
+    }
+
     // Chemists may override stopping points (open checklist, incomplete review) and publish.
     if (targetStage === 'published' && !opts?.force) {
       const warnings: string[] = [];
@@ -576,10 +761,23 @@ export default function Lab() {
       }
     }
 
+    if (targetStage === 'testing_in_progress') {
+      if (coa.sample_id) {
+        await supabase.from('order_samples').update({ status: 'analyzing' }).eq('id', coa.sample_id);
+        setSamples(prev => prev.map(s => (s.id === coa.sample_id ? { ...s, status: 'analyzing' } : s)));
+      }
+      if (coa.order_id) {
+        await supabase.from('orders').update({ status: 'analyzing' }).eq('id', coa.order_id);
+        setOrders(prev => prev.map(o => o.id === coa.order_id ? { ...o, status: 'analyzing' } : o));
+      }
+    }
+
     setCoas(prev => prev.map(c => (c.id === coa.id ? { ...c, ...patch } as COA : c)));
     setMsg({
       type: 'success',
-      text: `Moved to ${COA_WORKFLOW_LABELS[targetStage]}.`,
+      text: targetStage === 'testing_in_progress'
+        ? `Moved to Testing in Progress. Use Restart COA to edit and re-issue.`
+        : `Moved to ${COA_WORKFLOW_LABELS[targetStage]}.`,
       slug: coa.slug,
     });
     setMovingCoaId(null);
@@ -589,159 +787,276 @@ export default function Lab() {
     e.preventDefault();
     if (!form.clientId) { setMsg({ type: 'error', text: 'Select the client this COA belongs to.' }); return; }
     if (!form.sampleName.trim()) { setMsg({ type: 'error', text: 'Enter a sample name.' }); return; }
+    if (!form.receivedBy.trim()) {
+      setMsg({ type: 'error', text: 'Enter who received this sample (Received by).' });
+      return;
+    }
+    if (!form.receivedDate.trim()) {
+      setMsg({ type: 'error', text: 'Enter the received date.' });
+      return;
+    }
 
     setSaving(true);
     setMsg(null);
 
-    const cleanPanels = labResultsToPanelResults(labResults);
+    try {
+      const cleanPanels = labResultsToPanelResults(labResults);
 
-    const purityNum = parsePurityPercent(labResults.netPurity);
-    const includeMw = labResults.includeMolecularWeight && !!labResults.molecularWeight.trim();
-    const mwNum = includeMw ? parseMolecularWeight(labResults.molecularWeight) : null;
-    const content_hash = computeCoaContentHash({
-      sample_name: form.sampleName.trim(),
-      batch_number: form.batchNumber.trim(),
-      purity_percent: purityNum,
-      panel_results: cleanPanels,
-    });
+      const purityNum = parsePurityPercent(labResults.netPurity);
+      const includeMw = labResults.includeMolecularWeight && !!labResults.molecularWeight.trim();
+      const mwNum = includeMw ? parseMolecularWeight(labResults.molecularWeight) : null;
+      const content_hash = computeCoaContentHash({
+        sample_name: form.sampleName.trim(),
+        batch_number: form.batchNumber.trim(),
+        purity_percent: purityNum,
+        panel_results: cleanPanels,
+      });
 
-    const profile = selectedCompany
-      ?? clientCompanies.find(c => c.is_default)
-      ?? clientCompanies[0]
-      ?? null;
+      const profile = selectedCompany
+        ?? clientCompanies.find(c => c.is_default)
+        ?? clientCompanies[0]
+        ?? null;
 
-    const headerLogoRaw = applyHeaderLogo ? (profile?.logo || '') : '';
-    const watermarkRaw = applyWatermark ? (profile?.chromatograph_background || '') : '';
-    const [companyLogoRaw, watermarkRawResolved, hplcRawResolved] = await Promise.all([
-      headerLogoRaw ? resolveImageAsDataUrl(headerLogoRaw) : Promise.resolve(''),
-      watermarkRaw ? resolveImageAsDataUrl(watermarkRaw) : Promise.resolve(''),
-      chromatographImage ? resolveImageAsDataUrl(chromatographImage) : Promise.resolve(''),
-    ]);
-    // Never drop the header logo if compression fails — keep the profile src so the
-    // certificate still shows the client mark on web + PNG.
-    const companyLogo = companyLogoRaw || headerLogoRaw || '';
-    const watermarkImage = watermarkRawResolved || watermarkRaw || '';
-    const hplcImage = hplcRawResolved;
+      const headerLogoRaw = applyHeaderLogo ? (profile?.logo || '') : '';
+      const watermarkRaw = applyWatermark ? (profile?.chromatograph_background || '') : '';
+      const [companyLogoRaw, watermarkRawResolved, hplcRawResolved, vialResolved] = await Promise.all([
+        headerLogoRaw ? resolveImageAsDataUrl(headerLogoRaw) : Promise.resolve(''),
+        watermarkRaw ? resolveImageAsDataUrl(watermarkRaw) : Promise.resolve(''),
+        chromatographImage ? resolveImageAsDataUrl(chromatographImage) : Promise.resolve(''),
+        vialImage ? prepareVialImage(vialImage) : Promise.resolve(''),
+      ]);
+      // Prefer compressed copies; fall back to raw only when still a short data/http URL.
+      const pickImage = (resolved: string, raw: string) => {
+        if (resolved) return resolved;
+        if (!raw) return '';
+        if (raw.startsWith('data:image/') && raw.length > 400_000) return '';
+        return raw;
+      };
+      const companyLogo = pickImage(companyLogoRaw, headerLogoRaw);
+      const watermarkImage = pickImage(watermarkRawResolved, watermarkRaw);
+      const hplcImage = hplcRawResolved;
+      const vialForSave = vialResolved || (vialImage.length <= 400_000 ? vialImage : '');
 
-    // Prefer accession assigned at Receiving; otherwise allocate a new YY-XXXXXX.
-    let intakeSample = linkedSample;
-    if (form.sampleId) {
-      const fresh = await supabase
-        .from('order_samples')
-        .select('id, metadata, received_at, status, created_at, accession_number')
-        .eq('id', form.sampleId)
-        .maybeSingle();
-      const freshSample = fresh.error && /received_at/i.test(fresh.error.message)
-        ? (await supabase
-            .from('order_samples')
-            .select('id, metadata, status, created_at, accession_number')
-            .eq('id', form.sampleId)
-            .maybeSingle()).data
-        : fresh.data;
-      if (freshSample) intakeSample = freshSample as typeof linkedSample;
-    }
-    const intakeAt = sampleIntakeAt(intakeSample);
-    const receivedDate = intakeAt ? formatDate(intakeAt) : '';
-    const sampleCreatedAt =
-      (intakeSample && 'created_at' in intakeSample && typeof intakeSample.created_at === 'string'
-        ? intakeSample.created_at
-        : null)
-      || linkedSample?.created_at
-      || new Date().toISOString();
-    const existingAccession = (
-      (intakeSample && 'accession_number' in intakeSample
-        ? (intakeSample as { accession_number?: string | null }).accession_number
-        : null)
-      || linkedSample?.accession_number
-      || ''
-    ).trim().toUpperCase();
-    const sampleCode = isValidSampleCode(existingAccession)
-      ? existingAccession
-      : await allocateUniqueSampleCode(sampleCreatedAt);
+      // Fresh sample row so Matrix Type / Received Date are snapshotted even if the
+      // queue list was stale or incomplete.
+      let intakeSample = linkedSample;
+      if (form.sampleId) {
+        const fresh = await supabase
+          .from('order_samples')
+          .select('id, metadata, received_at, status, created_at, accession_number')
+          .eq('id', form.sampleId)
+          .maybeSingle();
+        const freshSample = fresh.error && /received_at/i.test(fresh.error.message || '')
+          ? (await supabase
+              .from('order_samples')
+              .select('id, metadata, status, created_at, accession_number')
+              .eq('id', form.sampleId)
+              .maybeSingle()).data
+          : fresh.data;
+        if (freshSample) {
+          intakeSample = freshSample as typeof linkedSample;
+        }
+      }
+      const intakeAt = sampleIntakeAt(intakeSample);
+      const formReceivedAt = localDateInputToIso(form.receivedDate);
+      const receivedAtIso = formReceivedAt || intakeAt || new Date().toISOString();
+      const receivedDate = formatDate(receivedAtIso);
+      const receivedByName = form.receivedBy.trim();
+      const assayAverages = computeLabAssayAverages(labResults);
+      const avgPurityNum = parsePurityPercent(assayAverages.avg_purity);
+      const storedPurity = avgPurityNum ?? purityNum;
+      // Chemist-assigned accession wins; fall back to sample accession or allocate YY-XXXXXX.
+      const sampleCreatedAt =
+        (intakeSample && 'created_at' in intakeSample && typeof intakeSample.created_at === 'string'
+          ? intakeSample.created_at
+          : null)
+        || linkedSample?.created_at
+        || new Date().toISOString();
+      const typedAccession = form.accessionNumber.trim().toUpperCase();
+      const existingAccession = (
+        typedAccession
+        || (intakeSample && 'accession_number' in intakeSample
+          ? (intakeSample as { accession_number?: string | null }).accession_number
+          : null)
+        || linkedSample?.accession_number
+        || ''
+      ).trim().toUpperCase();
+      if (typedAccession && !isValidSampleCode(typedAccession)) {
+        setMsg({
+          type: 'error',
+          text: 'Accession must look like YY-XXXXXX (e.g. 26-K7M4Q9). Use Generate or leave blank to auto-assign.',
+        });
+        setSaving(false);
+        return;
+      }
+      const sampleCode = isValidSampleCode(existingAccession)
+        ? existingAccession
+        : await allocateUniqueSampleCode(sampleCreatedAt);
+      const resolvedSampleMatrix = (
+        form.matrixType.trim()
+        || matrixTypeFromSampleMetadata(intakeSample?.metadata)
+        || linkedMeta?.sample_matrix
+        || ''
+      ).trim();
 
-    const payload = {
-      user_id: form.clientId,
-      sample_id: form.sampleId || null,
-      order_id: form.orderId || null,
-      slug: sampleCode,
-      sample_name: form.sampleName.trim(),
-      display_name: form.displayName.trim() || form.sampleName.trim(),
-      company_name: (form.companyName.trim() || profile?.name || '').trim(),
-      company_logo: companyLogo,
-      peptide_sequence: form.casNumber.trim(),
-      batch_number: form.batchNumber.trim(),
-      purity_percent: purityNum,
-      molecular_weight: mwNum,
-      panel_results: cleanPanels,
-      chromatogram_data: {
-        vial_size: form.vialSize,
-        sample_matrix: linkedMeta?.sample_matrix || '',
-      },
-      vial_image: vialImage || '',
-      chromatogram_image: watermarkImage,
-      hplc_image: hplcImage || '',
-      result_summary: {
-        include_molecular_weight: includeMw,
-        molecular_weight: includeMw ? labResults.molecularWeight.trim() : '',
-        sterility_method: labResults.sterilityMethod,
-        sterility_pass: labResults.sterilityPass,
-        sterility_method_label: STERILITY_METHOD_LABELS[labResults.sterilityMethod],
-        sterility_specification: 'Not Detected',
-        endotoxin_eu_ml: labResults.endotoxinEuMl.trim(),
-        endotoxin_pass: labResults.endotoxinPass,
-        apply_company_logo: applyHeaderLogo,
-        apply_watermark: applyWatermark,
-        coa_profile_id: profile?.id ?? null,
-        // Auto-filled from lab intake / accession (Receiving Desk).
-        received_at: intakeAt || '',
-        received_date: receivedDate,
-        sample_matrix: linkedMeta?.sample_matrix || '',
-        matrix_type: linkedMeta?.sample_matrix || '',
-        category: linkedMeta?.category || '',
-        test_mode: linkedMeta?.test_mode || '',
-        labeled_content: linkedMeta?.labeled_content || '',
-        label_claim_unit: linkedMeta?.label_claim_unit || '',
-      },
-      overall_result: form.overallResult,
-      is_public: false,
-      coa_workflow_stage: 'issued',
-      content_hash,
-      signature: `AA-${Date.now().toString(36).toUpperCase()}`,
-    };
+      const payload = {
+        user_id: form.clientId,
+        sample_id: form.sampleId || null,
+        order_id: form.orderId || null,
+        slug: sampleCode,
+        accession_number: sampleCode,
+        sample_name: form.sampleName.trim(),
+        display_name: form.displayName.trim() || form.sampleName.trim(),
+        company_name: (form.companyName.trim() || profile?.name || '').trim(),
+        company_logo: companyLogo,
+        peptide_sequence: form.casNumber.trim(),
+        batch_number: form.batchNumber.trim(),
+        purity_percent: storedPurity,
+        molecular_weight: mwNum,
+        panel_results: cleanPanels,
+        chromatogram_data: {
+          vial_size: form.vialSize,
+          ...(resolvedSampleMatrix ? { sample_matrix: resolvedSampleMatrix } : {}),
+        },
+        vial_image: vialForSave || '',
+        chromatogram_image: watermarkImage,
+        hplc_image: hplcImage || '',
+        result_summary: {
+          include_molecular_weight: includeMw,
+          molecular_weight: includeMw ? labResults.molecularWeight.trim() : '',
+          sterility_method: labResults.sterilityMethod,
+          sterility_pass: labResults.sterilityPass,
+          sterility_method_label: STERILITY_METHOD_LABELS[labResults.sterilityMethod],
+          sterility_specification: 'Not Detected',
+          endotoxin_eu_ml: labResults.endotoxinEuMl.trim(),
+          endotoxin_pass: labResults.endotoxinPass,
+          // Pre-calculate Prepare COA averages from assay + conformity vials.
+          avg_net_peptide_content: assayAverages.avg_net_peptide_content,
+          avg_purity: assayAverages.avg_purity,
+          mean_of_vials_tested: assayAverages.mean_of_vials_tested,
+          vials_tested: assayAverages.mean_of_vials_tested,
+          content_values: assayAverages.content_values,
+          purity_values: assayAverages.purity_values,
+          apply_company_logo: applyHeaderLogo,
+          apply_watermark: applyWatermark,
+          coa_profile_id: profile?.id ?? null,
+          received_at: receivedAtIso,
+          received_date: receivedDate,
+          received_by: receivedByName,
+          ...(resolvedSampleMatrix ? { matrix_type: resolvedSampleMatrix, sample_matrix: resolvedSampleMatrix } : {}),
+          category: linkedMeta?.category || '',
+          test_mode: linkedMeta?.test_mode || '',
+          labeled_content: form.labeledContent.trim() || linkedMeta?.labeled_content || '',
+          label_claim_unit: form.labelClaimUnit.trim() || linkedMeta?.label_claim_unit || 'mg',
+        },
+        overall_result: form.overallResult,
+        is_public: false,
+        coa_workflow_stage: 'issued',
+        content_hash,
+        signature: `AA-${Date.now().toString(36).toUpperCase()}`,
+      };
 
-    const { data, error } = await insertCoa(payload);
+      const wasRestart = !!editingCoaId;
+      let issuedSlug = sampleCode;
 
-    if (error) {
-      setMsg({ type: 'error', text: error.message });
+      if (editingCoaId) {
+        const existing = coas.find(c => c.id === editingCoaId);
+        const { signature: _sig, slug: _slug, ...updateFields } = payload;
+        const restartPatch = {
+          ...updateFields,
+          slug: existing?.slug || sampleCode,
+          signature: existing?.signature || payload.signature,
+          review_assigned_to: null,
+          verified_at: null,
+          verified_by: null,
+          published_at: null,
+          is_public: false,
+          coa_workflow_stage: 'issued' as const,
+        };
+        const { error } = await supabase.from('coas').update(restartPatch).eq('id', editingCoaId);
+        if (error) {
+          setMsg({ type: 'error', text: error.message });
+          return;
+        }
+        issuedSlug = String(restartPatch.slug);
+        setCoas(prev => prev.map(c => (
+          c.id === editingCoaId ? { ...c, ...restartPatch, id: editingCoaId } as COA : c
+        )));
+      } else {
+        const { data, error } = await insertCoa(payload);
+
+        if (error) {
+          setMsg({ type: 'error', text: error.message });
+          return;
+        }
+        issuedSlug = data?.slug || sampleCode;
+
+        const sampleRow = form.sampleId ? samples.find(s => s.id === form.sampleId) : null;
+        const brandNames = (sampleRow?.metadata as { brand_names?: string[] } | null)?.brand_names?.filter(Boolean) ?? [];
+        for (const brand of brandNames) {
+          await issueCoaForBrand({ ...payload, coa_workflow_stage: 'issued' }, brand, sampleCreatedAt);
+        }
+      }
+
+      if (form.sampleId) {
+        const sampleRow = samples.find(s => s.id === form.sampleId) || intakeSample;
+        const prevMeta =
+          sampleRow?.metadata && typeof sampleRow.metadata === 'object' ? sampleRow.metadata : {};
+        const samplePatch: Record<string, unknown> = {
+          accession_number: sampleCode,
+          received_at: receivedAtIso,
+          metadata: {
+            ...prevMeta,
+            received_at: receivedAtIso,
+            sample_code: sampleCode,
+            received_by: receivedByName,
+            ...(resolvedSampleMatrix ? { sample_matrix: resolvedSampleMatrix } : {}),
+            ...(form.labeledContent.trim()
+              ? {
+                  labeled_content: form.labeledContent.trim(),
+                  label_claim_unit: form.labelClaimUnit.trim() || 'mg',
+                }
+              : {}),
+          },
+          status: 'in_review',
+        };
+        const sampleUpdate = await supabase
+          .from('order_samples')
+          .update(samplePatch)
+          .eq('id', form.sampleId);
+        if (sampleUpdate.error && /received_at/i.test(sampleUpdate.error.message || '')) {
+          const { received_at: _drop, ...withoutCol } = samplePatch;
+          await supabase.from('order_samples').update(withoutCol).eq('id', form.sampleId);
+        }
+        const orderId = form.orderId;
+        if (orderId) await supabase.from('orders').update({ status: 'in_review' }).eq('id', orderId);
+      }
+
+      setForm({ ...BLANK });
+      setEditingCoaId(null);
+      setLabResults({ ...EMPTY_LAB_RESULTS });
+      setVialImage('');
+      setChromatographImage('');
+      setApplyHeaderLogo(true);
+      setApplyWatermark(true);
+      setCasSuggestions([]);
+      setShowCasSuggestions(false);
+      setMsg({
+        type: 'success',
+        text: wasRestart
+          ? 'COA restarted and re-issued (private). Send for review when ready.'
+          : 'COA issued (private). Verify it, then publish for the client.',
+        slug: issuedSlug,
+      });
+      setWorkflowCompanyFilter('');
+      setTab('workflow');
+      loadAll();
+    } catch (err) {
+      const text = err instanceof Error ? err.message : 'Could not issue COA. Try smaller images and retry.';
+      setMsg({ type: 'error', text });
+    } finally {
       setSaving(false);
-      return;
     }
-
-    const brandSample = form.sampleId ? samples.find(s => s.id === form.sampleId) : null;
-    const brandNames = (brandSample?.metadata as { brand_names?: string[] } | null)?.brand_names?.filter(Boolean) ?? [];
-    for (const brand of brandNames) {
-      await issueCoaForBrand({ ...payload, coa_workflow_stage: 'issued' }, brand, sampleCreatedAt);
-    }
-
-    if (form.sampleId) {
-      await supabase.from('order_samples').update({ status: 'in_review' }).eq('id', form.sampleId);
-      const orderId = form.orderId;
-      if (orderId) await supabase.from('orders').update({ status: 'in_review' }).eq('id', orderId);
-    }
-
-    setForm({ ...BLANK });
-    setLabResults({ ...EMPTY_LAB_RESULTS });
-    setVialImage('');
-    setChromatographImage('');
-    setApplyHeaderLogo(true);
-    setApplyWatermark(true);
-    setCasSuggestions([]);
-    setShowCasSuggestions(false);
-    setMsg({ type: 'success', text: 'COA issued (private). Verify it, then publish for the client.', slug: data?.slug });
-    setSaving(false);
-    setWorkflowCompanyFilter('');
-    setTab('workflow');
-    loadAll();
   }
 
   const receiveCount = useMemo(() => {
@@ -756,16 +1071,9 @@ export default function Lab() {
     { id: 'bench', label: 'My Bench' },
     { id: 'receive', label: 'Receive', count: receiveCount || undefined },
     { id: 'queue', label: 'Testing Queue', count: pendingQueueCount || undefined },
-    { id: 'intake', label: 'Add Sample' },
     { id: 'issue', label: 'Issue COA' },
     { id: 'workflow', label: 'COA Workflow', count: workflowActiveCount || undefined },
   ];
-
-  function handleSampleCreated(successText: string) {
-    setMsg({ type: 'success', text: successText });
-    setTab('queue');
-    loadAll();
-  }
 
   return (
     <div className="min-h-screen bg-neutral-100">
@@ -786,7 +1094,7 @@ export default function Lab() {
             <FlaskConical size={24} className="text-brand-500" /> Lab Console
           </h1>
           <p className="text-sm text-neutral-500 mt-1">
-            My Bench → Receive → Testing queue → Issue COA → Verify → Publish for clients.
+            My Bench → Receive → Testing queue → Issue COA → Workflow (verify &amp; publish).
           </p>
         </div>
 
@@ -925,21 +1233,19 @@ export default function Lab() {
           </div>
         )}
 
-        {tab === 'intake' && (
-          <div className="space-y-4">
-            <p className="text-sm text-neutral-600">
-              Add a sample for a client who wasn&apos;t already in the system — e.g. a walk-in drop-off or mailed-in
-              vial that never went through the client portal. Tests are required; samples can never be created without them.
-            </p>
-            <LabSampleIntake clients={clients} chemists={chemistOptions} onCreated={handleSampleCreated} />
-          </div>
-        )}
-
         {tab === 'issue' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <form onSubmit={saveCoa} className="lg:col-span-2 card p-6 space-y-5">
               <p className="text-xs text-neutral-500 bg-neutral-50 border border-atlas-border rounded-md px-3 py-2">
-                Step 1 of 3: Issue creates a <strong>private</strong> COA. After review, verify it in Workflow, then publish for the client.
+                {editingCoaId ? (
+                  <>
+                    Restarting an existing COA — edits update the same certificate (accession stays the same), then return it to <strong>Issued</strong> for review.
+                  </>
+                ) : (
+                  <>
+                    Step 1 of 3: Issue creates a <strong>private</strong> COA. After review, verify it in Workflow, then publish for the client.
+                  </>
+                )}
               </p>
 
               {form.sampleId && (
@@ -948,8 +1254,8 @@ export default function Lab() {
                   <p className="text-neutral-700 mt-1">
                     Submitted by{' '}
                     <strong>{clientSubmittedLabel(linkedClient, linkedOrder?.company_name)}</strong>
-                    {linkedMeta?.labeled_content && (
-                      <> · Net content claim: <strong>{linkedMeta.labeled_content}</strong></>
+                    {form.labeledContent.trim() && (
+                      <> · Net content claim: <strong>{form.labeledContent.trim()}{form.labelClaimUnit ? ` ${form.labelClaimUnit}` : ''}</strong></>
                     )}
                     {labResults.includeFentanyl && (
                       <> · <strong>Fentanyl Detection</strong> requested</>
@@ -959,8 +1265,8 @@ export default function Lab() {
               )}
 
               <ClaimVsResultStrip
-                labelClaim={linkedMeta?.labeled_content || ''}
-                labelClaimUnit={linkedMeta?.label_claim_unit || 'mg'}
+                labelClaim={form.labeledContent || linkedMeta?.labeled_content || ''}
+                labelClaimUnit={form.labelClaimUnit || linkedMeta?.label_claim_unit || 'mg'}
                 results={labResults}
                 overallResult={form.overallResult}
               />
@@ -1097,37 +1403,124 @@ export default function Lab() {
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                  <label className="label">Sample Code / Accession</label>
+                <div className="sm:col-span-2">
+                  <label className="label">Label claim</label>
                   <input
-                    className="input-field bg-neutral-50 font-mono"
-                    readOnly
-                    value={(linkedSample?.accession_number || '').trim() || 'Assigned at Receiving (YY-XXXXXX)'}
+                    className="input-field"
+                    value={form.labeledContent}
+                    onChange={e => update({ labeledContent: e.target.value })}
+                    placeholder="e.g. 10"
+                    inputMode="decimal"
                   />
                   <p className="text-[11px] text-neutral-500 mt-1">
-                    Auto-set when received — becomes the COA Sample Code on Issue.
+                    Client / vial claim amount. Prefills from the order when available.
+                  </p>
+                </div>
+                <div>
+                  <label className="label">Claim unit</label>
+                  <select
+                    className="input-field"
+                    value={form.labelClaimUnit}
+                    onChange={e => update({ labelClaimUnit: e.target.value })}
+                  >
+                    {LABEL_CLAIM_UNITS.map(u => (
+                      <option key={u} value={u}>{u}</option>
+                    ))}
+                    {form.labelClaimUnit
+                      && !(LABEL_CLAIM_UNITS as readonly string[]).includes(form.labelClaimUnit) && (
+                      <option value={form.labelClaimUnit}>{form.labelClaimUnit}</option>
+                    )}
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="label">Sample Code / Accession</label>
+                  <div className="flex gap-2">
+                    <input
+                      className="input-field font-mono flex-1"
+                      value={form.accessionNumber}
+                      onChange={e => update({ accessionNumber: e.target.value.toUpperCase() })}
+                      placeholder="YY-XXXXXX"
+                      autoComplete="off"
+                    />
+                    <button
+                      type="button"
+                      className="btn-secondary text-xs px-3 whitespace-nowrap"
+                      onClick={async () => {
+                        const code = await allocateUniqueSampleCode(new Date());
+                        update({ accessionNumber: code });
+                      }}
+                    >
+                      Generate
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-neutral-500 mt-1">
+                    Assign here if not set at Receiving. Becomes the COA sample code.
                   </p>
                 </div>
                 <div>
                   <label className="label">Received by</label>
-                  <input
-                    className="input-field bg-neutral-50"
-                    readOnly
-                    value={sampleReceivedBy(linkedSample) || 'Set when sample is received'}
-                  />
+                  <div className="flex gap-2">
+                    <input
+                      className="input-field flex-1"
+                      value={form.receivedBy}
+                      onChange={e => update({ receivedBy: e.target.value })}
+                      placeholder="Full name"
+                      autoComplete="name"
+                    />
+                    <button
+                      type="button"
+                      className="btn-secondary text-xs px-3 whitespace-nowrap"
+                      disabled={!(profile?.full_name || '').trim()}
+                      onClick={() => update({ receivedBy: (profile?.full_name || '').trim() })}
+                      title="Use your name"
+                    >
+                      Me
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="label">Matrix Type</label>
+                  <select
+                    className="input-field"
+                    value={form.matrixType}
+                    onChange={e => update({ matrixType: e.target.value })}
+                  >
+                    <option value="">Select matrix type…</option>
+                    {SAMPLE_MATRICES.map(m => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                    {form.matrixType && !(SAMPLE_MATRICES as readonly string[]).includes(form.matrixType) && (
+                      <option value={form.matrixType}>{form.matrixType}</option>
+                    )}
+                  </select>
+                  <p className="text-[11px] text-neutral-500 mt-1">
+                    Prefills from the order when available — change it here if needed for the COA.
+                  </p>
                 </div>
                 <div>
                   <label className="label">Received date (COA)</label>
-                  <input
-                    className="input-field bg-neutral-50"
-                    readOnly
-                    value={(() => {
-                      const at = sampleIntakeAt(linkedSample);
-                      return at ? formatDate(at) : 'Set when sample is accessioned at Receiving';
-                    })()}
-                  />
+                  <div className="flex gap-2">
+                    <input
+                      type="date"
+                      className="input-field flex-1"
+                      value={form.receivedDate || localDateInputValue()}
+                      onChange={e => update({ receivedDate: e.target.value })}
+                    />
+                    <button
+                      type="button"
+                      className="btn-secondary text-xs px-3 whitespace-nowrap"
+                      onClick={() => update({ receivedDate: localDateInputValue() })}
+                      title="Use today (issue day)"
+                    >
+                      Today
+                    </button>
+                  </div>
                   <p className="text-[11px] text-neutral-500 mt-1">
-                    Auto-filled from Receiving Desk — not editable here.
+                    Defaults to the day you issue the COA. Change only if intake was a different day.
                   </p>
                 </div>
               </div>
@@ -1235,12 +1628,11 @@ export default function Lab() {
                         <div>
                           <label className="label">Endotoxin (EU/mL)</label>
                           <input
-                            type="number"
-                            step="0.01"
+                            type="text"
                             value={labResults.endotoxinEuMl}
                             onChange={e => updateResults({ endotoxinEuMl: e.target.value })}
                             className="input-field"
-                            placeholder="e.g. 0.25"
+                            placeholder={ENDOTOXIN_PASS_RESULT}
                           />
                           <p className="text-xs text-neutral-500 mt-1">Spec: {ENDOTOXIN_SPEC_EU_ML}</p>
                         </div>
@@ -1248,7 +1640,13 @@ export default function Lab() {
                           <label className="label">Endotoxin conformity</label>
                           <select
                             value={labResults.endotoxinPass ? 'pass' : 'fail'}
-                            onChange={e => updateResults({ endotoxinPass: e.target.value === 'pass' })}
+                            onChange={e => {
+                              const pass = e.target.value === 'pass';
+                              updateResults({
+                                endotoxinPass: pass,
+                                ...(pass ? { endotoxinEuMl: ENDOTOXIN_PASS_RESULT } : {}),
+                              });
+                            }}
                             className="input-field"
                           >
                             <option value="pass">PASS</option>
@@ -1261,26 +1659,47 @@ export default function Lab() {
                       <div>
                         <label className="label">Fentanyl Detection</label>
                         <select value={labResults.fentanylPass ? 'none_detected' : 'detected'} onChange={e => updateResults({ fentanylPass: e.target.value === 'none_detected' })} className="input-field">
-                          <option value="none_detected">None Detected</option>
-                          <option value="detected">Detected</option>
+                          <option value="none_detected">Not Detected — PASS</option>
+                          <option value="detected">Detected — FAIL</option>
                         </select>
                       </div>
                     )}
                   </div>
                   {labResults.includeHeavyMetals !== false && (
                   <div>
-                    <label className="label mb-2">Heavy Metals (ppm)</label>
+                    <div className="grid sm:grid-cols-2 gap-3 mb-3">
+                      <div>
+                        <label className="label">Heavy Metals</label>
+                        <p className="text-xs text-neutral-500 mt-1">USP {'<232>'} limits apply per metal</p>
+                      </div>
+                      <div>
+                        <label className="label">Heavy metals conformity</label>
+                        <select
+                          value={labResults.heavyMetalsPass ? 'pass' : 'fail'}
+                          onChange={e => {
+                            const pass = e.target.value === 'pass';
+                            updateResults({
+                              heavyMetalsPass: pass,
+                              ...(pass ? { heavyMetals: heavyMetalsPassDefaults() } : {}),
+                            });
+                          }}
+                          className="input-field"
+                        >
+                          <option value="pass">PASS — Not Detected</option>
+                          <option value="fail">FAIL — enter measured values</option>
+                        </select>
+                      </div>
+                    </div>
                     <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
                       {HEAVY_METAL_NAMES.map(metal => (
                         <div key={metal}>
                           <label className="text-xs text-neutral-500 mb-1 block">{metal}</label>
                           <input
-                            type="number"
-                            step="0.001"
+                            type="text"
                             value={labResults.heavyMetals[metal]}
                             onChange={e => updateHeavyMetal(metal, e.target.value)}
                             className="input-field py-1.5 text-sm"
-                            placeholder="ppm"
+                            placeholder={HEAVY_METAL_PASS_RESULT}
                           />
                         </div>
                       ))}
@@ -1354,7 +1773,11 @@ export default function Lab() {
                 </div>
               </div>
               <button type="submit" disabled={saving} className="btn-primary w-full gap-2">
-                <CheckCircle size={16} /> {saving ? 'Issuing…' : 'Issue COA (Private)'}
+                <CheckCircle size={16} /> {
+                  saving
+                    ? (editingCoaId ? 'Re-issuing…' : 'Issuing…')
+                    : (editingCoaId ? 'Re-issue COA (Private)' : 'Issue COA (Private)')
+                }
               </button>
             </form>
             <div className="space-y-4">
@@ -1369,7 +1792,7 @@ export default function Lab() {
                     companyName={form.companyName || linkedOrder?.company_name || ''}
                     stage="tracking"
                     trackingStage={issueTrackingStage}
-                    accession={linkedSample?.accession_number || null}
+                    accession={form.accessionNumber.trim() || linkedSample?.accession_number || null}
                     readinessPercent={
                       labResults.netPurity.trim() && labResults.netContent.trim() && labResults.identification.trim()
                         ? 100
@@ -1471,6 +1894,7 @@ export default function Lab() {
           <div className="space-y-4">
             <p className="text-sm text-neutral-600">
               Testing → Issued → Pending Review (assign lab director/chemist, signatures 1/2) → Verified (2/2) → Published.
+              Use Back to testing to rework an issued COA, then Restart COA to edit results and re-issue.
               Cards marked Assigned to you are yours to work or sign off. Use Publish now to override checklist or incomplete review when needed.
             </p>
             <CompanyFilterSearch
@@ -1487,6 +1911,7 @@ export default function Lab() {
               }}
               pendingSamples={filteredPendingQueueItems}
               onIssueCoa={prefillFromSample}
+              onRestartCoa={restartCoa}
               chemists={chemistOptions}
               reviewers={reviewerOptions}
               clients={allProfiles}
