@@ -94,11 +94,18 @@ export function buildWorkflowStagePatch(
   switch (targetStage) {
     case 'issued':
     case 'awaiting_info':
-    case 'testing_in_progress':
       patch.is_public = false;
       if (targetStage === 'issued') {
         patch.review_assigned_to = null;
       }
+      break;
+    case 'testing_in_progress':
+      // Restart / rework path: unpublish, clear signatures, return to testing.
+      patch.is_public = false;
+      patch.review_assigned_to = null;
+      patch.verified_at = null;
+      patch.verified_by = null;
+      patch.published_at = null;
       break;
     case 'pending_review':
       patch.is_public = false;
@@ -118,4 +125,13 @@ export function buildWorkflowStagePatch(
   }
 
   return patch;
+}
+
+/** Stages that may return an issued (or later) certificate to Testing in Progress. */
+export function canReturnCoaToTesting(stage: CoaWorkflowStage): boolean {
+  return stage === 'issued'
+    || stage === 'pending_review'
+    || stage === 'awaiting_info'
+    || stage === 'verified'
+    || stage === 'published';
 }
