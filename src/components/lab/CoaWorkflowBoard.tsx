@@ -9,7 +9,7 @@ import { COA, Order, OrderSample, UserProfile } from '../../lib/types';
 import { formatDate } from '../../lib/utils';
 import {
   COA_WORKFLOW_BOARD_COLUMNS, COA_WORKFLOW_LABELS, COA_WORKFLOW_STEPS,
-  CoaWorkflowStage, canPrepareCoa, coaSignatureProgress, coaWorkflowStage,
+  CoaWorkflowStage, canPrepareCoa, canReturnCoaToTesting, coaSignatureProgress, coaWorkflowStage,
 } from '../../lib/coaWorkflow';
 import { LAB_PRIORITY_LABELS, LAB_PRIORITY_STYLES, QueueSampleItem, testsLabelForSample } from '../../lib/labQueue';
 import { downloadCoaPdf } from '../../lib/coaPdf';
@@ -27,6 +27,8 @@ interface Props {
   /** Samples still awaiting a COA — shown in Testing in Progress. */
   pendingSamples?: QueueSampleItem[];
   onIssueCoa?: (sample: OrderSample) => void;
+  /** Open Issue COA with this certificate's values for a restart / re-issue. */
+  onRestartCoa?: (coa: COA) => void;
   chemists?: { id: string; name: string; role?: string }[];
   /** Reviewers eligible for second signature (chemists, admins, lab director). */
   reviewers?: { id: string; name: string; role?: string }[];
@@ -110,8 +112,8 @@ function AssignedToYouBadge() {
 }
 
 export default function CoaWorkflowBoard({
-  coas, onMoveCoa, movingId, onCoaImagesSaved, pendingSamples = [], onIssueCoa, chemists = [],
-  reviewers = [], clients = [], orders = [], samples = [], currentUserId = null,
+  coas, onMoveCoa, movingId, onCoaImagesSaved, pendingSamples = [], onIssueCoa, onRestartCoa,
+  chemists = [], reviewers = [], clients = [], orders = [], samples = [], currentUserId = null,
 }: Props) {
   const boardScrollRef = useRef<HTMLDivElement>(null);
   const columnScrollRefs = useRef<Partial<Record<CoaWorkflowStage, HTMLDivElement | null>>>({});
@@ -282,8 +284,6 @@ export default function CoaWorkflowBoard({
   }
 
   function handleDragOver(e: React.DragEvent, stage: CoaWorkflowStage) {
-    // Testing column is for pre-issue samples — not a COA drop target.
-    if (stage === 'testing_in_progress') return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
     setOverStage(stage);
@@ -291,10 +291,6 @@ export default function CoaWorkflowBoard({
 
   function handleDrop(e: React.DragEvent, stage: CoaWorkflowStage) {
     e.preventDefault();
-    if (stage === 'testing_in_progress') {
-      handleDragEnd();
-      return;
-    }
     const coaId = e.dataTransfer.getData('text/coa-id')
       || e.dataTransfer.getData('text/plain')
       || draggingId;
@@ -334,7 +330,8 @@ export default function CoaWorkflowBoard({
       <p className="text-xs text-neutral-500">
         After issue, send the certificate to <strong className="text-violet-800">Pending Review</strong> and assign a
         lab director or chemist for the second signature (shows <strong>1/2</strong>). After they sign off it becomes
-        Verified (2/2), then Published. Cards marked <strong className="text-sky-800">Assigned to you</strong> are yours.
+        Verified (2/2), then Published. Drag or use <strong>Back to testing</strong> to rework an issued COA, then
+        <strong> Restart COA</strong> to edit results and re-issue. Cards marked <strong className="text-sky-800">Assigned to you</strong> are yours.
         Chemists can <strong>Publish now</strong> from any stage to override stopping points when needed.
       </p>
 
@@ -413,7 +410,7 @@ export default function CoaWorkflowBoard({
         {COA_WORKFLOW_BOARD_COLUMNS.map(stage => {
           const styles = COLUMN_STYLES[stage];
           const isTestingCol = stage === 'testing_in_progress';
-          const isOver = !isTestingCol && overStage === stage && draggingId !== null;
+          const isOver = overStage === stage && draggingId !== null;
           const cards = grouped[stage];
           const columnCount = isTestingCol ? sortedPending.length + cards.length : cards.length;
 
@@ -516,12 +513,14 @@ export default function CoaWorkflowBoard({
                   </>
                 )}
 
-                {!isTestingCol && cards.length === 0 ? (
+                {cards.length === 0 && !(isTestingCol && sortedPending.length > 0) ? (
+                  isTestingCol ? null : (
                   <div className={`rounded-lg border-2 border-dashed p-6 text-center text-xs text-neutral-400 ${
                     isOver ? 'border-current bg-white/60' : 'border-neutral-200'
                   }`}>
                     {isOver ? 'Drop here' : 'No cards'}
                   </div>
+                  )
                 ) : (
                   cards.map(coa => {
                     const currentStage = coaWorkflowStage(coa);
@@ -732,6 +731,45 @@ export default function CoaWorkflowBoard({
                                 <Shield size={11} /> Send for review
                               </button>
                             )
+                          )}
+
+                          {currentStage === 'testing_in_progress' && (
+                            <>
+                              {onRestartCoa && (
+                                <button
+                                  type="button"
+                                  onClick={e => {
+                                    e.stopPropagation();
+                                    onRestartCoa(coa);
+                                  }}
+                                  disabled={!!movingId}
+                                  className="btn-primary text-xs py-1 px-2 gap-1"
+                                  title="Open Issue COA with this certificate's values and re-issue"
+                                >
+                                  <FlaskConical size={11} /> Restart COA
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => void onMoveCoa(coa, 'issued')}
+                                disabled={!!movingId}
+                                className="btn-secondary text-xs py-1 px-2 gap-1"
+                              >
+                                <ArrowRight size={11} /> Return to Issued
+                              </button>
+                            </>
+                          )}
+
+                          {canReturnCoaToTesting(currentStage) && (
+                            <button
+                              type="button"
+                              onClick={() => void onMoveCoa(coa, 'testing_in_progress')}
+                              disabled={!!movingId}
+                              className="btn-outline text-xs py-1 px-2 gap-1"
+                              title="Move back to Testing in Progress to rework or restart this COA"
+                            >
+                              <ArrowLeft size={11} /> Back to testing
+                            </button>
                           )}
 
                           {isAwaitingInfo && (

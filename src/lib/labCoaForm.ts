@@ -1,4 +1,4 @@
-import { OrderSample, PanelResult } from './types';
+import { COA, OrderSample, PanelResult } from './types';
 import { OrderSampleMetadata, parseSampleMetadata, orderSampleIncludesFentanyl } from './coaPanels';
 
 export const VIAL_SIZE_OPTIONS = ['3ml', '5ml', '10ml'] as const;
@@ -193,6 +193,103 @@ export function buildLabResultsFromSample(metadata: OrderSample['metadata'], sam
     includeEndotoxin,
     includeSterility,
     conformityPeptides: [],
+  };
+}
+
+/** Rebuild Issue COA form values from an existing certificate (restart / re-issue). */
+export function buildLabResultsFromCoa(
+  coa: Pick<COA, 'panel_results' | 'purity_percent' | 'molecular_weight' | 'result_summary' | 'sample_name'>,
+  sampleMetadata?: OrderSample['metadata'],
+): LabCoaResults {
+  const base = buildLabResultsFromSample(sampleMetadata ?? null, coa.sample_name || '');
+  const panels = Array.isArray(coa.panel_results) ? coa.panel_results : [];
+  const summary = (coa.result_summary && typeof coa.result_summary === 'object')
+    ? coa.result_summary as Record<string, unknown>
+    : {};
+
+  const findPanel = (...names: string[]) =>
+    panels.find(p => names.some(n => p.panel_name.toLowerCase().includes(n.toLowerCase())));
+
+  const idPanel = findPanel('identification');
+  const netPanel = findPanel('net content', 'peptide content');
+  const purityPanel = findPanel('net purity', 'purity');
+  const mwPanel = findPanel('molecular weight');
+  const sterilityPanel = findPanel('sterility');
+  const endotoxinPanel = findPanel('endotoxin');
+  const fentanylPanel = findPanel('fentanyl');
+
+  const netParts = (netPanel?.result || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+  const purityParts = (purityPanel?.result || '')
+    .split(',')
+    .map(s => s.trim().replace(/%\s*$/, ''))
+    .filter(Boolean);
+
+  const primaryNet = netParts[0] || '';
+  const primaryPurity = purityParts[0]
+    || (coa.purity_percent != null ? String(coa.purity_percent) : '');
+
+  const conformityPeptides: ConformityPeptideRow[] = [];
+  const maxExtra = Math.max(netParts.length, purityParts.length) - 1;
+  for (let i = 1; i <= maxExtra; i += 1) {
+    conformityPeptides.push({
+      name: idPanel?.result?.trim() || coa.sample_name || `Vial ${i + 1}`,
+      netContent: netParts[i] || '',
+      netPurity: purityParts[i] || '',
+    });
+  }
+
+  const heavyMetals = { ...base.heavyMetals };
+  let includeHeavyMetals = false;
+  let heavyMetalsPass = true;
+  for (const metal of HEAVY_METAL_NAMES) {
+    const row = panels.find(p => p.panel_name === metal);
+    if (row) {
+      includeHeavyMetals = true;
+      heavyMetals[metal] = row.result || '';
+      if (row.pass === false) heavyMetalsPass = false;
+    }
+  }
+
+  const sterilityResult = sterilityPanel?.result || '';
+  const sterilityMethod: SterilityMethod =
+    /14.?day|culture/i.test(sterilityResult)
+    || summary.sterility_method === 'culture_14_day'
+      ? 'culture_14_day'
+      : 'pcr';
+
+  const endotoxinRaw = endotoxinPanel?.result || '';
+  const endotoxinEuMl = endotoxinRaw
+    .replace(/\s*\(LAL\)\s*$/i, '')
+    .replace(/\s*EU\s*\/\s*mL\s*$/i, '')
+    .trim()
+    || (typeof summary.endotoxin_eu_ml === 'string' ? summary.endotoxin_eu_ml : ENDOTOXIN_PASS_RESULT);
+
+  const mwRaw = mwPanel?.result?.trim()
+    || (coa.molecular_weight != null ? String(coa.molecular_weight) : '')
+    || (typeof summary.molecular_weight === 'string' ? summary.molecular_weight : '');
+
+  return {
+    ...base,
+    identification: idPanel?.result?.trim() || base.identification,
+    netContent: primaryNet.replace(/\s*mg$/i, '').trim() || primaryNet,
+    netPurity: primaryPurity,
+    molecularWeight: mwRaw,
+    includeMolecularWeight: !!mwRaw || summary.include_molecular_weight === true,
+    sterilityMethod,
+    sterilityPass: sterilityPanel ? sterilityPanel.pass !== false && !/^detected\b/i.test(sterilityResult) : true,
+    includeSterility: !!sterilityPanel || base.includeSterility,
+    endotoxinEuMl,
+    endotoxinPass: endotoxinPanel ? endotoxinPanel.pass !== false : true,
+    includeEndotoxin: !!endotoxinPanel || base.includeEndotoxin,
+    includeHeavyMetals: includeHeavyMetals || base.includeHeavyMetals,
+    heavyMetalsPass,
+    heavyMetals,
+    includeFentanyl: !!fentanylPanel || base.includeFentanyl,
+    fentanylPass: fentanylPanel ? fentanylPanel.pass !== false : true,
+    conformityPeptides,
   };
 }
 
