@@ -186,14 +186,13 @@ export function buildLabResultsFromSample(metadata: OrderSample['metadata'], sam
   return {
     ...EMPTY_LAB_RESULTS,
     identification,
-    netContent: meta.labeled_content?.trim() ?? '',
+    // Leave measured fields empty — label claim must not seed Net Content or averages.
+    netContent: '',
     includeFentanyl,
     includeHeavyMetals,
     includeEndotoxin,
     includeSterility,
-    conformityPeptides: identification
-      ? [{ name: identification, netContent: meta.labeled_content?.trim() ?? '', netPurity: '' }]
-      : [],
+    conformityPeptides: [],
   };
 }
 
@@ -319,6 +318,8 @@ function collectContentPurityParts(results: LabCoaResults): {
     return m ? `${m[1]}%` : t;
   };
 
+  // Primary assay fields = first vial tested. Conformity rows = additional measured vials
+  // only (never seed them from label claim — that inflated averages for single-vial COAs).
   if (results.netContent.trim()) contentParts.push(asMg(results.netContent));
   if (results.netPurity.trim()) purityParts.push(asPct(results.netPurity));
   for (const row of results.conformityPeptides) {
