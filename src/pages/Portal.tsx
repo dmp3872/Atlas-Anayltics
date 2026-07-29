@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, Navigate, useLocation, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Truck, Copy, Check, X, Search, Download, FileText, ExternalLink,
   CheckCircle, XCircle, Clock, CreditCard, FlaskConical,
@@ -70,6 +70,7 @@ function portalTestsForSample(sample: OrderSample, panels: TestPanel[]): string[
 export default function Portal() {
   const { user, profile, refreshProfile } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const pathTab = location.pathname.includes('/orders') ? 'orders' : location.pathname.includes('/coas') ? 'coas' : null;
   const tab = (params.get('tab') as PortalTab) || pathTab || 'home';
@@ -162,8 +163,15 @@ export default function Portal() {
       : label
         ? orders.find(o => o.shipping_label_id === label)
         : undefined;
-    if (match) setExpandedOrders(prev => new Set(prev).add(match.id));
-  }, [orders, params]);
+    if (!match) return;
+    setExpandedOrders(prev => new Set(prev).add(match.id));
+    if (params.get('tab') === 'orders' || location.pathname.includes('/orders')) {
+      const t = window.setTimeout(() => {
+        document.getElementById(`portal-order-${match.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 80);
+      return () => window.clearTimeout(t);
+    }
+  }, [orders, params, location.pathname]);
 
   if (!user) return <Navigate to="/auth" replace />;
 
@@ -173,6 +181,25 @@ export default function Portal() {
     setStatusFilter('all');
     setSampleProduct('all');
     setCoaPeptide('all');
+  }
+
+  /** Jump from Samples → Orders with that order expanded. */
+  function openOrder(order: Order) {
+    setSearch('');
+    setStatusFilter('all');
+    setSampleProduct('all');
+    setCoaPeptide('all');
+    setExpandedOrders(prev => new Set(prev).add(order.id));
+    setParams({ tab: 'orders', order: order.order_number }, { replace: true });
+  }
+
+  /** Open this sample's COA in the portal overlay (or sample COA page if not issued yet). */
+  function openSampleCoa(sample: OrderSample, coa: COA | undefined) {
+    if (coa) {
+      setCelebrationCoa(coa);
+      return;
+    }
+    navigate(`/sample/${sample.id}/coa`);
   }
 
   async function copyAddress() {
@@ -260,7 +287,7 @@ export default function Portal() {
     const order = orders.find(o => o.id === s.order_id);
     const meta = s.metadata as { batch_number?: string } | null;
     const matchSearch = !q || [
-      s.sample_name, s.display_name, coa?.slug, order?.order_number,
+      s.sample_name, s.display_name, s.accession_number, coa?.slug, coa?.accession_number, order?.order_number,
       meta?.batch_number, coa?.batch_number,
     ].some(v => v?.toLowerCase().includes(q));
     const matchProduct = sampleProduct === 'all' || s.sample_name === sampleProduct;
@@ -353,7 +380,7 @@ export default function Portal() {
                 onChange={e => setSearch(e.target.value)}
                 placeholder={
                   tab === 'coas' ? 'Search by peptide, code, lot, sample, or order #…' :
-                  tab === 'samples' ? 'Search by product, lot, order, COA…' :
+                  tab === 'samples' ? 'Search by product, sample code, lot, order…' :
                   tab === 'orders' ? 'Search orders…' : 'Search invoices…'
                 }
                 className="input-field pl-9 py-2 text-sm"
@@ -507,6 +534,7 @@ export default function Portal() {
                         <thead>
                           <tr className="coa-table-header">
                             <th className="text-left px-5 py-3">Order</th>
+                            <th className="text-left px-5 py-3">Sample code</th>
                             <th className="text-left px-5 py-3">Name</th>
                             <th className="text-left px-5 py-3">Results</th>
                             <th className="text-left px-5 py-3">Lot</th>
@@ -520,14 +548,39 @@ export default function Portal() {
                             const order = orders.find(o => o.id === s.order_id);
                             const meta = s.metadata as { batch_number?: string; labeled_content?: string; tests_label?: string } | null;
                             const lot = meta?.batch_number || coa?.batch_number || '—';
+                            const sampleCode = (
+                              s.accession_number?.trim()
+                              || coa?.accession_number?.trim()
+                              || coa?.slug?.trim()
+                              || ''
+                            );
                             return (
                               <tr key={s.id} className="bg-white hover:bg-neutral-50 transition-colors">
                                 <td className="px-5 py-3">
                                   {order ? (
-                                    <button onClick={() => setTab('orders')} className="font-mono text-xs font-semibold text-brand-700 hover:underline">
+                                    <button
+                                      type="button"
+                                      onClick={() => openOrder(order)}
+                                      className="font-mono text-xs font-semibold text-brand-700 hover:underline"
+                                      title="Open this order"
+                                    >
                                       {order.order_number}
                                     </button>
                                   ) : <span className="text-neutral-400">—</span>}
+                                </td>
+                                <td className="px-5 py-3">
+                                  {sampleCode ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => openSampleCoa(s, coa)}
+                                      className="font-mono text-xs font-semibold text-brand-700 hover:underline"
+                                      title={coa ? 'Open COA for this sample' : 'Open sample COA'}
+                                    >
+                                      {sampleCode}
+                                    </button>
+                                  ) : (
+                                    <span className="text-xs text-neutral-400">Pending</span>
+                                  )}
                                 </td>
                                 <td className="px-5 py-3">
                                   <p className="font-medium text-black">{s.display_name || s.sample_name}</p>
@@ -548,9 +601,13 @@ export default function Portal() {
                                 <td className="px-5 py-3 text-neutral-600">{formatDate(s.created_at)}</td>
                                 <td className="px-5 py-3 text-right">
                                   {coa ? (
-                                    <Link to={`/coa/${coa.slug}`} className="btn-outline text-xs py-1.5 gap-1 inline-flex">
+                                    <button
+                                      type="button"
+                                      onClick={() => openSampleCoa(s, coa)}
+                                      className="btn-outline text-xs py-1.5 gap-1 inline-flex"
+                                    >
                                       <ExternalLink size={12} /> COA
-                                    </Link>
+                                    </button>
                                   ) : s.status === 'complete' ? (
                                     <Link to={`/sample/${s.id}/coa`} className="btn-outline text-xs py-1.5 gap-1 inline-flex">
                                       <ExternalLink size={12} /> COA
@@ -583,7 +640,7 @@ export default function Portal() {
                   const orderSamples = samples.filter(s => s.order_id === order.id);
                   const expanded = expandedOrders.has(order.id);
                   return (
-                  <div key={order.id} className="card overflow-hidden">
+                  <div key={order.id} id={`portal-order-${order.id}`} className="card overflow-hidden">
                     <button
                       onClick={() => setExpandedOrders(prev => {
                         const next = new Set(prev);
