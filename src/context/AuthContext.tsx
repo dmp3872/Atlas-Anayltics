@@ -272,7 +272,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function signOut() {
-    await supabase.auth.signOut();
+    // Clear local auth immediately so Log Out always leaves the portal even if
+    // the network call to Supabase hangs or fails.
+    setSession(null);
+    setUser(null);
+    setProfile(null);
+    setProfileError(null);
+    setLoading(false);
+
+    try {
+      const result = await Promise.race([
+        supabase.auth.signOut({ scope: 'global' }),
+        new Promise<{ error: Error }>(resolve => {
+          window.setTimeout(() => resolve({ error: new Error('Sign out timed out') }), 4000);
+        }),
+      ]);
+      if (result && 'error' in result && result.error) {
+        await supabase.auth.signOut({ scope: 'local' });
+      }
+    } catch {
+      try {
+        await supabase.auth.signOut({ scope: 'local' });
+      } catch {
+        /* local clear best-effort */
+      }
+    }
   }
 
   return (
