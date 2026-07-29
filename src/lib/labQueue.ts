@@ -159,8 +159,39 @@ export interface QueueSampleItem {
   ageHours: number;
   assigned_to?: string | null;
   assigned_at?: string | null;
+  /** Per-test chemist ids keyed by test display name. */
+  testAssignments: TestAssignments;
   overdue: boolean;
   dueAt?: string | null;
+}
+
+/** Map of ordered test name → chemist user id. Stored on sample.metadata.test_assignments. */
+export type TestAssignments = Record<string, string>;
+
+export function getTestAssignments(sample: Pick<OrderSample, 'metadata'>): TestAssignments {
+  const meta = sample.metadata as Record<string, unknown> | null | undefined;
+  const raw = meta?.test_assignments;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const out: TestAssignments = {};
+  for (const [test, userId] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof userId === 'string' && userId.trim() && test.trim()) {
+      out[test] = userId;
+    }
+  }
+  return out;
+}
+
+/** True when the sample lead assignee or any ordered test is assigned to this chemist. */
+export function isAssignedToChemist(sample: OrderSample, userId: string): boolean {
+  if (sample.assigned_to === userId) return true;
+  return Object.values(getTestAssignments(sample)).includes(userId);
+}
+
+/** True when neither the sample nor any of its ordered tests have an assignee. */
+export function isFullyUnassigned(sample: OrderSample, tests: string[]): boolean {
+  if (sample.assigned_to) return false;
+  const assigns = getTestAssignments(sample);
+  return !tests.some(t => !!assigns[t]);
 }
 
 /** Samples eligible for the chemist testing queue: paid + physically received. */
@@ -198,10 +229,11 @@ export function buildQueueItems(
     const dueAt = resolveEtaAt(order);
     const overdue = !!dueAt && new Date(dueAt).getTime() < Date.now() && !issued && sample.status !== 'complete';
 
+    const tests = testsForSample(sample);
     items.push({
       sample,
       order,
-      tests: testsForSample(sample),
+      tests,
       testsLabel: testsLabelForSample(sample),
       priority: effectiveLabPriority(sample, order),
       priorityScore: effectivePrioritySortScore(sample, order),
@@ -209,6 +241,7 @@ export function buildQueueItems(
       ageHours: Math.max(0, ageMs / (1000 * 60 * 60)),
       assigned_to: sample.assigned_to,
       assigned_at: sample.assigned_at,
+      testAssignments: getTestAssignments(sample),
       overdue,
       dueAt,
     });
@@ -240,8 +273,8 @@ export function filterQueueItems(items: QueueSampleItem[], filters: QueueFilters
 
     if (filters.assignedTo && filters.assignedTo !== 'all') {
       if (filters.assignedTo === 'unassigned') {
-        if (item.assigned_to) return false;
-      } else if (item.assigned_to !== filters.assignedTo) {
+        if (!isFullyUnassigned(item.sample, item.tests)) return false;
+      } else if (!isAssignedToChemist(item.sample, filters.assignedTo)) {
         return false;
       }
     }

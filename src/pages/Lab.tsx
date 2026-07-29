@@ -23,7 +23,7 @@ import CompanyFilterSearch from '../components/lab/CompanyFilterSearch';
 import TestingQueuePanel from '../components/lab/TestingQueuePanel';
 import QueueFilters, { QueueFilterValues } from '../components/lab/QueueFilters';
 import ClaimVsResultStrip from '../components/lab/ClaimVsResultStrip';
-import { buildQueueItems, filterQueueItems, normalizeLabPriority } from '../lib/labQueue';
+import { buildQueueItems, filterQueueItems, getTestAssignments, normalizeLabPriority } from '../lib/labQueue';
 import { sampleIntakeAt, sampleReceivedBy, setSampleStatus } from '../lib/services/orderWorkflow';
 import { allocateUniqueSampleCode, isValidSampleCode } from '../lib/sampleCode';
 import { formatDate } from '../lib/utils';
@@ -640,6 +640,28 @@ export default function Lab() {
     }
   }
 
+  async function assignSampleTest(sampleId: string, testName: string, userId: string | null) {
+    const sample = samples.find(s => s.id === sampleId);
+    if (!sample) return;
+    const prevMeta = (sample.metadata && typeof sample.metadata === 'object' && !Array.isArray(sample.metadata))
+      ? { ...(sample.metadata as Record<string, unknown>) }
+      : {};
+    const nextAssignments = { ...getTestAssignments(sample) };
+    if (userId) nextAssignments[testName] = userId;
+    else delete nextAssignments[testName];
+    const metadata = { ...prevMeta, test_assignments: nextAssignments };
+    setSamples(prev => prev.map(s => (s.id === sampleId ? { ...s, metadata } : s)));
+    const { error } = await supabase.from('order_samples').update({ metadata }).eq('id', sampleId);
+    if (error) {
+      setMsg({ type: 'error', text: error.message });
+      loadAll();
+      return;
+    }
+    if (userId && sample.status === 'received') {
+      await updateSampleStatus(sampleId, 'analyzing');
+    }
+  }
+
   async function claimSample(sampleId: string) {
     if (!user) return;
     await assignSample(sampleId, user.id);
@@ -1186,7 +1208,7 @@ export default function Lab() {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-sm text-neutral-600">
                 Work top-down: <span className="text-red-700 font-medium">urgent</span>, then{' '}
-                <span className="text-amber-700 font-medium">high</span>, then normal. Claim a sample to own it.
+                <span className="text-amber-700 font-medium">high</span>, then normal. Assign each ordered test to a chemist, or claim the whole sample.
                 {isAdmin ? (
                   <> Admins set order priority in <Link to="/admin" className="font-semibold text-brand-700 hover:underline">Admin → Orders</Link>.</>
                 ) : (
@@ -1228,6 +1250,7 @@ export default function Lab() {
               onClaim={claimSample}
               onRelease={releaseSample}
               onAssign={isAdmin ? assignSample : undefined}
+              onAssignTest={assignSampleTest}
               onSetSamplePriority={isAdmin ? setSamplePriority : undefined}
             />
           </div>

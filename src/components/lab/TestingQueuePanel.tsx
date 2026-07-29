@@ -6,7 +6,7 @@ import { SAMPLE_STATUS_LABELS } from '../../lib/utils';
 import { parseSampleMetadata } from '../../lib/coaPanels';
 import {
   LAB_PRIORITIES, LAB_PRIORITY_LABELS, LAB_PRIORITY_STYLES,
-  QueueSampleItem, normalizeLabPriority,
+  QueueSampleItem, normalizeLabPriority, isFullyUnassigned,
 } from '../../lib/labQueue';
 import { etaHeat, etaHeatPercent, resolveEtaAt } from '../../lib/etaHeat';
 
@@ -25,6 +25,8 @@ interface Props {
   onClaim?: (sampleId: string) => void;
   onAssign?: (sampleId: string, userId: string | null) => void;
   onRelease?: (sampleId: string) => void;
+  /** Assign a specific ordered test to a chemist (or null to clear). */
+  onAssignTest?: (sampleId: string, testName: string, userId: string | null) => void;
   /** Admin-only: set sample-level priority override (null = inherit from order). */
   onSetSamplePriority?: (sampleId: string, priority: LabPriority | null) => void;
 }
@@ -37,7 +39,7 @@ function formatAge(hours: number): string {
 
 export default function TestingQueuePanel({
   items, loading, onIssueCoa, onUpdateStatus,
-  chemists, currentUserId, onClaim, onAssign, onRelease, onSetSamplePriority,
+  chemists, currentUserId, onClaim, onAssign, onRelease, onAssignTest, onSetSamplePriority,
 }: Props) {
   if (loading) {
     return <div className="card p-8 text-center text-neutral-500">Loading testing queue…</div>;
@@ -55,8 +57,9 @@ export default function TestingQueuePanel({
 
   const urgentCount = items.filter(i => i.priority === 'urgent').length;
   const highCount = items.filter(i => i.priority === 'high').length;
-  const unassignedCount = items.filter(i => !i.assigned_to).length;
+  const unassignedCount = items.filter(i => isFullyUnassigned(i.sample, i.tests)).length;
   const canAssign = !!(onAssign && chemists && chemists.length > 0);
+  const canAssignTests = !!(onAssignTest && chemists && chemists.length > 0);
 
   function chemistName(id: string): string {
     return chemists?.find(c => c.id === id)?.name ?? 'Chemist';
@@ -92,11 +95,25 @@ export default function TestingQueuePanel({
 
       <div className="space-y-3">
         {items.map((item, idx) => {
-          const { sample, order, tests, testsLabel, priority, ageHours, assigned_to: assignedTo, overdue, dueAt, hasCoa } = item;
+          const {
+            sample, order, tests, testsLabel, priority, ageHours,
+            assigned_to: assignedTo, testAssignments, overdue, dueAt, hasCoa,
+          } = item;
           const meta = parseSampleMetadata(sample.metadata);
           const styles = LAB_PRIORITY_STYLES[priority];
           const isMine = !!currentUserId && assignedTo === currentUserId;
-          const assignmentLabel = !assignedTo ? 'Unassigned' : isMine ? 'You' : chemistName(assignedTo);
+          const myTests = currentUserId
+            ? tests.filter(t => testAssignments[t] === currentUserId)
+            : [];
+          const assignmentLabel = !assignedTo && myTests.length === 0
+            ? 'Unassigned'
+            : isMine
+              ? (myTests.length ? 'You · lead' : 'You')
+              : assignedTo
+                ? chemistName(assignedTo)
+                : myTests.length
+                  ? `You · ${myTests.length} test${myTests.length === 1 ? '' : 's'}`
+                  : 'Split across chemists';
           const testsMissing = testsLabel.trim() === 'Tests not specified' || testsLabel.trim() === '';
           const heat = etaHeat(resolveEtaAt(order) || dueAt, { complete: hasCoa || sample.status === 'complete' });
           const heatPct = etaHeatPercent(heat.level);
@@ -137,9 +154,9 @@ export default function TestingQueuePanel({
                           <Clock size={11} /> Waiting {formatAge(ageHours)}
                         </span>
                         <span className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${
-                          !assignedTo
+                          !assignedTo && myTests.length === 0
                             ? 'bg-neutral-50 text-neutral-500 border-atlas-border'
-                            : isMine
+                            : isMine || myTests.length > 0
                               ? 'bg-brand-100 text-brand-800 border-brand-200'
                               : 'bg-neutral-100 text-neutral-700 border-neutral-200'
                         }`}>
@@ -176,17 +193,78 @@ export default function TestingQueuePanel({
                       </div>
 
                       <div>
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-400 mb-1.5">Tests to run</p>
-                        <div className="flex flex-wrap gap-1.5">
-                          {tests.map(test => (
-                            <span
-                              key={test}
-                              className="text-xs px-2 py-1 rounded-md bg-white border border-atlas-border text-neutral-800 font-medium"
-                            >
-                              {test}
-                            </span>
-                          ))}
-                        </div>
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-400 mb-1.5">
+                          Tests to run{canAssignTests ? ' · assign per test' : ''}
+                        </p>
+                        {canAssignTests ? (
+                          <ul className="space-y-1.5">
+                            {tests.map(test => {
+                              const testAssignee = testAssignments[test] || '';
+                              const mine = !!currentUserId && testAssignee === currentUserId;
+                              return (
+                                <li
+                                  key={test}
+                                  className={`flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2 rounded-md border px-2.5 py-1.5 bg-white ${
+                                    mine ? 'border-brand-300' : 'border-atlas-border'
+                                  }`}
+                                >
+                                  <span className="text-xs font-medium text-neutral-800 min-w-0 flex-1">
+                                    {test}
+                                  </span>
+                                  <div className="flex flex-wrap items-center gap-1.5">
+                                    <select
+                                      value={testAssignee}
+                                      onChange={e => onAssignTest?.(sample.id, test, e.target.value || null)}
+                                      className="input-field py-1 text-xs min-w-[140px]"
+                                      title={`Assign ${test}`}
+                                    >
+                                      <option value="">Unassigned</option>
+                                      {chemists!.map(c => (
+                                        <option key={c.id} value={c.id}>{c.name}</option>
+                                      ))}
+                                    </select>
+                                    {currentUserId && !testAssignee && (
+                                      <button
+                                        type="button"
+                                        onClick={() => onAssignTest?.(sample.id, test, currentUserId)}
+                                        className="btn-outline text-[11px] py-1 px-2 gap-1"
+                                        title="Claim this test"
+                                      >
+                                        <UserPlus size={11} /> Claim
+                                      </button>
+                                    )}
+                                    {mine && (
+                                      <button
+                                        type="button"
+                                        onClick={() => onAssignTest?.(sample.id, test, null)}
+                                        className="btn-outline text-[11px] py-1 px-2 gap-1"
+                                        title="Release this test"
+                                      >
+                                        <UserMinus size={11} /> Release
+                                      </button>
+                                    )}
+                                  </div>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        ) : (
+                          <div className="flex flex-wrap gap-1.5">
+                            {tests.map(test => (
+                              <span
+                                key={test}
+                                className="text-xs px-2 py-1 rounded-md bg-white border border-atlas-border text-neutral-800 font-medium"
+                              >
+                                {test}
+                                {testAssignments[test] ? (
+                                  <span className="text-neutral-500 font-normal">
+                                    {' · '}{chemistName(testAssignments[test])}
+                                  </span>
+                                ) : null}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                         <p className="text-xs text-neutral-500 mt-2">{testsLabel}</p>
                       </div>
 
@@ -204,7 +282,7 @@ export default function TestingQueuePanel({
                         onClick={() => onClaim(sample.id)}
                         className="btn-outline text-xs py-1.5 gap-1 justify-center"
                       >
-                        <UserPlus size={12} /> Claim
+                        <UserPlus size={12} /> Claim sample
                       </button>
                     )}
                     {isMine && onRelease && (
@@ -213,7 +291,7 @@ export default function TestingQueuePanel({
                         onClick={() => onRelease(sample.id)}
                         className="btn-outline text-xs py-1.5 gap-1 justify-center"
                       >
-                        <UserMinus size={12} /> Release
+                        <UserMinus size={12} /> Release sample
                       </button>
                     )}
                     {canAssign && (
@@ -221,11 +299,11 @@ export default function TestingQueuePanel({
                         value={assignedTo ?? ''}
                         onChange={e => onAssign?.(sample.id, e.target.value || null)}
                         className="input-field py-1.5 text-xs"
-                        title="Assign chemist"
+                        title="Assign lead chemist for this sample"
                       >
-                        <option value="">Unassigned</option>
+                        <option value="">Lead: Unassigned</option>
                         {chemists!.map(c => (
-                          <option key={c.id} value={c.id}>{c.name}</option>
+                          <option key={c.id} value={c.id}>Lead: {c.name}</option>
                         ))}
                       </select>
                     )}
