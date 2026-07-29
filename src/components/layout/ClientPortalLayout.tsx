@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useLocation, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   LayoutDashboard, FileText, ShoppingCart, FlaskConical, Beaker,
   LogOut, Menu, X, Rocket, User, Key, HelpCircle, Plus,
@@ -32,11 +32,24 @@ function activeTab(location: ReturnType<typeof useLocation>, params: URLSearchPa
 export default function ClientPortalLayout({ children }: { children: React.ReactNode }) {
   const { user, profile, signOut } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const [params] = useSearchParams();
   const [open, setOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const current = activeTab(location, params);
 
   const displayName = profile?.full_name || user?.email?.split('@')[0] || 'Client';
+
+  async function handleSignOut() {
+    if (signingOut) return;
+    setSigningOut(true);
+    try {
+      await signOut();
+    } finally {
+      navigate('/auth', { replace: true });
+      setSigningOut(false);
+    }
+  }
 
   const Sidebar = () => (
     <div className="flex flex-col h-full bg-white">
@@ -88,8 +101,13 @@ export default function ClientPortalLayout({ children }: { children: React.React
       </nav>
 
       <div className="p-3 border-t border-atlas-border">
-        <button type="button" onClick={() => signOut()} className="portal-nav-item w-full text-red-600 hover:bg-red-50 hover:text-red-700">
-          <LogOut size={17} /> Log Out
+        <button
+          type="button"
+          onClick={() => void handleSignOut()}
+          disabled={signingOut}
+          className="portal-nav-item w-full text-red-600 hover:bg-red-50 hover:text-red-700 disabled:opacity-60"
+        >
+          <LogOut size={17} /> {signingOut ? 'Signing out…' : 'Log Out'}
         </button>
       </div>
     </div>
