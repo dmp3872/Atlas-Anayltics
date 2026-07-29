@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { COA, Order, OrderSample } from '../../lib/types';
 import { SAMPLE_STATUS_LABELS, formatDate } from '../../lib/utils';
 import { coaWorkflowStage, COA_WORKFLOW_LABELS } from '../../lib/coaWorkflow';
-import { QueueSampleItem } from '../../lib/labQueue';
+import { QueueSampleItem, isAssignedToChemist } from '../../lib/labQueue';
 import { etaHeat, resolveEtaAt } from '../../lib/etaHeat';
 import { openActionCount, type OrderActionItem } from '../../lib/orderActions';
 import { supabase } from '../../lib/supabase';
@@ -32,7 +32,7 @@ export default function MyBenchPanel({
   onOpenWorkflow,
   onIssueCoa,
 }: Props) {
-  const mineQueue = queueItems.filter(i => i.assigned_to === userId);
+  const mineQueue = queueItems.filter(i => isAssignedToChemist(i.sample, userId));
   const overdueMine = mineQueue.filter(i => {
     const heat = etaHeat(resolveEtaAt(i.order) || i.dueAt);
     return heat.level === 'overdue' || heat.level === 'today';
@@ -52,7 +52,7 @@ export default function MyBenchPanel({
 
   const mineOrderIds = useMemo(
     () => [...new Set(
-      queueItems.filter(i => i.assigned_to === userId).map(i => i.order.id),
+      queueItems.filter(i => isAssignedToChemist(i.sample, userId)).map(i => i.order.id),
     )],
     [queueItems, userId],
   );
@@ -95,7 +95,7 @@ export default function MyBenchPanel({
           My Bench
         </h2>
         <p className="text-sm text-neutral-500 mt-1">
-          Your assigned samples, due dates, reviews waiting on your signature, and open actions.
+          Samples and individual tests assigned to you, due dates, reviews waiting on your signature, and open actions.
         </p>
       </div>
 
@@ -152,6 +152,11 @@ export default function MyBenchPanel({
                     </div>
                     <p className="text-xs text-neutral-500 mt-0.5">
                       {item.order.company_name || '—'} · {item.order.order_number} · {SAMPLE_STATUS_LABELS[item.sample.status]}
+                      {(() => {
+                        const mineTests = item.tests.filter(t => item.testAssignments[t] === userId);
+                        if (mineTests.length === 0) return item.assigned_to === userId ? ' · Lead assignee' : '';
+                        return ` · Your tests: ${mineTests.join(', ')}`;
+                      })()}
                     </p>
                     <div className="mt-1.5 h-1.5 w-full max-w-xs rounded-full bg-neutral-200 overflow-hidden">
                       <div className={`h-full ${heat.bar}`} style={{ width: `${heat.level === 'none' ? 0 : heat.level === 'ok' ? 25 : heat.level === 'soon' ? 55 : heat.level === 'today' ? 85 : 100}%` }} />
