@@ -10,6 +10,7 @@ import { markOrderPaid, markSampleReceived } from '../../lib/services/orderWorkf
 import { useAuth } from '../../context/AuthContext';
 import PrintPackButton from './PrintPackButton';
 import { LAB_PRINT_PACK_ENABLED } from '../../lib/labFeatures';
+import { parseSampleMetadata } from '../../lib/coaPanels';
 
 interface Props {
   orders: Order[];
@@ -331,7 +332,12 @@ export default function ReceivingDesk({ orders, samples, clients, onChanged }: P
                     )}
 
                     <ul className="space-y-3">
-                      {orderRows.map(({ sample, readyToReceive }) => (
+                      {orderRows.map(({ sample, readyToReceive }) => {
+                        const meta = parseSampleMetadata(sample.metadata);
+                        const lot = (meta.batch_number || '').trim();
+                        const claim = (meta.labeled_content || '').trim();
+                        const claimUnit = (meta.label_claim_unit || '').trim() || 'mg';
+                        return (
                         <li
                           key={sample.id}
                           className="rounded-lg border border-atlas-border bg-white p-3 space-y-2"
@@ -340,6 +346,21 @@ export default function ReceivingDesk({ orders, samples, clients, onChanged }: P
                             <div className="min-w-0">
                               <p className="font-semibold text-black text-sm">
                                 {sample.display_name || sample.sample_name}
+                              </p>
+                              <p className="text-xs text-neutral-600 mt-1">
+                                <span className="font-semibold text-neutral-800">Lot</span>
+                                {': '}
+                                {lot ? (
+                                  <span className="font-mono font-medium text-black">{lot}</span>
+                                ) : (
+                                  <span className="text-amber-700">Not provided</span>
+                                )}
+                                {claim ? (
+                                  <>
+                                    {' · '}
+                                    <span className="text-neutral-500">Claim {claim}{claimUnit ? ` ${claimUnit}` : ''}</span>
+                                  </>
+                                ) : null}
                               </p>
                               <p className="text-xs text-neutral-500 mt-0.5">
                                 {sample.vial_count} vial{sample.vial_count === 1 ? '' : 's'}
@@ -358,6 +379,7 @@ export default function ReceivingDesk({ orders, samples, clients, onChanged }: P
                               </p>
                               <p className="text-[11px] text-brand-900/80">
                                 Accession # will be auto-generated (e.g. 26-K7M4Q9) and used as the COA sample code.
+                                {lot ? <> Confirm package lot matches <strong className="font-mono">{lot}</strong>.</> : null}
                               </p>
                               <div>
                                 <label className="text-[11px] font-semibold text-brand-900">
@@ -389,7 +411,8 @@ export default function ReceivingDesk({ orders, samples, clients, onChanged }: P
                             </div>
                           )}
                         </li>
-                      ))}
+                        );
+                      })}
                     </ul>
                   </div>
                 )}
