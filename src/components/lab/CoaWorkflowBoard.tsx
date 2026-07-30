@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  ArrowLeft, ArrowRight, Building2, CheckCircle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp,
-  Clock, Download, ExternalLink, Fingerprint, FlaskConical, Globe, GripVertical, Hash, MessageCircle, Phone,
-  Shield, UserCircle2, XCircle,
+  ArrowLeft, ArrowRight, Building2, CalendarClock, CheckCircle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp,
+  Clock, Download, ExternalLink, Fingerprint, FlaskConical, Globe, GripVertical, Hash, Loader, MessageCircle, Phone,
+  Save, Shield, UserCircle2, XCircle,
 } from 'lucide-react';
 import { COA, Order, OrderSample, UserProfile } from '../../lib/types';
 import { formatDate } from '../../lib/utils';
@@ -15,6 +15,8 @@ import { LAB_PRIORITY_LABELS, LAB_PRIORITY_STYLES, QueueSampleItem, testsLabelFo
 import { parseSampleMetadata } from '../../lib/coaPanels';
 import { downloadCoaPdf } from '../../lib/coaPdf';
 import CoaPdfPrepModal from './CoaPdfPrepModal';
+import OrderNotesThread from '../order/OrderNotesThread';
+import { resolveEtaAt } from '../../lib/etaHeat';
 
 interface Props {
   coas: COA[];
@@ -30,6 +32,9 @@ interface Props {
   onIssueCoa?: (sample: OrderSample) => void;
   /** Open Issue COA with this certificate's values for a restart / re-issue. */
   onRestartCoa?: (coa: COA) => void;
+  /** Save client-visible ETA from a workflow card. */
+  onSaveOrderEta?: (order: Order, iso: string | null) => void | Promise<void>;
+  etaSavingOrderId?: string | null;
   chemists?: { id: string; name: string; role?: string }[];
   /** Reviewers eligible for second signature (chemists, admins, lab director). */
   reviewers?: { id: string; name: string; role?: string }[];
@@ -38,6 +43,8 @@ interface Props {
   samples?: OrderSample[];
   /** Logged-in chemist — cards assigned to them are highlighted. */
   currentUserId?: string | null;
+  /** Show admin order detail link on ETA/Notes panel. */
+  isAdmin?: boolean;
 }
 
 function ResultBadge({ result }: { result?: COA['overall_result'] }) {
@@ -126,9 +133,124 @@ function LotLine({ lot }: { lot: string }) {
   );
 }
 
+/** Compact ETA + notes drawer on a workflow card (stops drag when interacting). */
+function WorkflowOrderTools({
+  order,
+  sampleId,
+  onSaveEta,
+  saving = false,
+  isAdmin = false,
+}: {
+  order: Order;
+  sampleId?: string | null;
+  onSaveEta?: (order: Order, iso: string | null) => void | Promise<void>;
+  saving?: boolean;
+  isAdmin?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const etaIso = resolveEtaAt(order);
+  const dateValue = etaIso ? etaIso.slice(0, 10) : '';
+  const [draft, setDraft] = useState(dateValue);
+
+  useEffect(() => {
+    setDraft(dateValue);
+  }, [dateValue, order.id]);
+
+  return (
+    <div
+      className="mt-2 border-t border-atlas-border pt-2"
+      onClick={e => e.stopPropagation()}
+      onMouseDown={e => e.stopPropagation()}
+      onDragStart={e => e.preventDefault()}
+    >
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        className="w-full flex items-center justify-between gap-2 text-left rounded-md border border-atlas-border bg-neutral-50 hover:bg-neutral-100 px-2 py-1.5"
+      >
+        <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-neutral-800 min-w-0">
+          <CalendarClock size={12} className="text-brand-700 flex-shrink-0" />
+          <span className="truncate">ETA / Notes</span>
+          {etaIso ? (
+            <span className="font-mono font-medium text-brand-900 truncate">{formatDate(etaIso)}</span>
+          ) : (
+            <span className="text-neutral-400 font-normal">Not set</span>
+          )}
+        </span>
+        {open ? <ChevronUp size={14} className="text-neutral-400 flex-shrink-0" /> : <ChevronDown size={14} className="text-neutral-400 flex-shrink-0" />}
+      </button>
+
+      {open && (
+        <div className="mt-2 space-y-2 rounded-md border border-brand-200 bg-brand-50/40 p-2">
+          {onSaveEta && (
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold uppercase tracking-wide text-neutral-500">Ready by</label>
+              <div className="flex gap-1.5">
+                <input
+                  type="date"
+                  value={draft}
+                  onChange={e => setDraft(e.target.value)}
+                  className="input-field py-1 text-xs flex-1 min-w-0"
+                />
+                <button
+                  type="button"
+                  disabled={saving || !draft}
+                  onClick={() => {
+                    const iso = draft ? new Date(`${draft}T17:00:00`).toISOString() : null;
+                    void onSaveEta(order, iso);
+                  }}
+                  className="btn-primary text-[11px] py-1 px-2 gap-1"
+                  title="Save ETA"
+                >
+                  {saving ? <Loader size={11} className="animate-spin" /> : <Save size={11} />}
+                  Save
+                </button>
+              </div>
+              {etaIso && (
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => {
+                    setDraft('');
+                    void onSaveEta(order, null);
+                  }}
+                  className="text-[10px] font-semibold text-neutral-500 hover:text-red-600"
+                >
+                  Clear ETA
+                </button>
+              )}
+            </div>
+          )}
+
+          {isAdmin && (
+            <Link
+              to={`/admin/orders/${order.id}`}
+              className="inline-flex items-center gap-1 text-[11px] font-semibold text-brand-700 hover:underline"
+              draggable={false}
+            >
+              <ExternalLink size={11} /> Open order detail
+            </Link>
+          )}
+
+          <div className="rounded-md border border-atlas-border bg-white overflow-hidden">
+            <OrderNotesThread
+              orderId={order.id}
+              sampleId={sampleId ?? null}
+              compact
+              allowActions
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function CoaWorkflowBoard({
   coas, onMoveCoa, movingId, onCoaImagesSaved, pendingSamples = [], onIssueCoa, onRestartCoa,
+  onSaveOrderEta, etaSavingOrderId = null,
   chemists = [], reviewers = [], clients = [], orders = [], samples = [], currentUserId = null,
+  isAdmin = false,
 }: Props) {
   const boardScrollRef = useRef<HTMLDivElement>(null);
   const columnScrollRefs = useRef<Partial<Record<CoaWorkflowStage, HTMLDivElement | null>>>({});
@@ -357,7 +479,8 @@ export default function CoaWorkflowBoard({
       <p className="text-xs text-neutral-500">
         After issue, send the certificate to <strong className="text-violet-800">Pending Review</strong> and assign a
         lab director or chemist for the second signature (shows <strong>1/2</strong>). After they sign off it becomes
-        Verified (2/2), then Published. Drag or use <strong>Back to testing</strong> to rework an issued COA, then
+        Verified (2/2), then Published. Open <strong>ETA / Notes</strong> on any card to update the client-visible ready
+        date or leave staff/client notes. Drag or use <strong>Back to testing</strong> to rework an issued COA, then
         <strong> Restart COA</strong> to edit results and re-issue. Cards marked <strong className="text-sky-800">Assigned to you</strong> are yours.
         Chemists can <strong>Publish now</strong> from any stage to override stopping points when needed.
       </p>
@@ -536,6 +659,13 @@ export default function CoaWorkflowBoard({
                               Issue COA <ArrowRight size={11} />
                             </button>
                           )}
+                          <WorkflowOrderTools
+                            order={order}
+                            sampleId={sample.id}
+                            isAdmin={isAdmin}
+                            saving={etaSavingOrderId === order.id}
+                            onSaveEta={onSaveOrderEta}
+                          />
                         </article>
                       );
                     })}
@@ -597,6 +727,16 @@ export default function CoaWorkflowBoard({
                             </div>
 
                             <LotLine lot={lot} />
+
+                            {order && (
+                              <WorkflowOrderTools
+                                order={order}
+                                sampleId={coa.sample_id}
+                                isAdmin={isAdmin}
+                                saving={etaSavingOrderId === order.id}
+                                onSaveEta={onSaveOrderEta}
+                              />
+                            )}
 
                             {mine && <AssignedToYouBadge />}
 
