@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   FlaskConical, Plus, Trash2, CheckCircle, AlertCircle, ClipboardList,
-  RefreshCw,
+  RefreshCw, ArrowLeft,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { COA, Company, LabPriority, Order, OrderSample, SampleStatus, UserProfile } from '../lib/types';
@@ -53,6 +53,19 @@ const MAX_COA_IMAGE_BYTES = 1024 * 1024;
 type Message = { type: 'success' | 'error'; text: string; slug?: string } | null;
 type LabTab = 'bench' | 'receive' | 'queue' | 'issue' | 'workflow';
 
+const LAB_TABS: LabTab[] = ['bench', 'receive', 'queue', 'issue', 'workflow'];
+const LAB_TAB_LABELS: Record<LabTab, string> = {
+  bench: 'My Bench',
+  receive: 'Receive',
+  queue: 'Testing Queue',
+  issue: 'Issue COA',
+  workflow: 'COA Workflow',
+};
+
+function parseLabTab(value: string | null): LabTab | null {
+  return LAB_TABS.includes(value as LabTab) ? (value as LabTab) : null;
+}
+
 const BLANK = {
   clientId: '', sampleId: '', orderId: '',
   sampleName: '', displayName: '', companyName: '',
@@ -98,7 +111,20 @@ const QUEUE_FILTERS_BLANK: QueueFilterValues = {
 export default function Lab() {
   const { user, profile } = useAuth();
   const isAdmin = profile?.role === 'admin';
-  const [tab, setTab] = useState<LabTab>('bench');
+  const [params, setParams] = useSearchParams();
+  const tab = parseLabTab(params.get('tab')) ?? 'bench';
+  const returnTab = parseLabTab(params.get('from')) ?? 'queue';
+
+  function setTab(next: LabTab, opts?: { from?: LabTab; replace?: boolean }) {
+    setParams(prev => {
+      const nextParams = new URLSearchParams(prev);
+      nextParams.set('tab', next);
+      if (opts?.from) nextParams.set('from', opts.from);
+      else if (next !== 'issue') nextParams.delete('from');
+      return nextParams;
+    }, { replace: opts?.replace ?? false });
+  }
+
   const [clients, setClients] = useState<UserProfile[]>([]);
   const [allProfiles, setAllProfiles] = useState<UserProfile[]>([]);
   const [chemists, setChemists] = useState<UserProfile[]>([]);
@@ -381,7 +407,7 @@ export default function Lab() {
     setCasSuggestions(cas ? lookupCas(cas) : []);
     setShowCasSuggestions(false);
     setMsg(null);
-    setTab('issue');
+    setTab('issue', { from: tab === 'issue' ? returnTab : tab });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
@@ -459,7 +485,7 @@ export default function Lab() {
       text: `Restarting ${coa.display_name || coa.sample_name} — edit results and save to re-issue.`,
       slug: coa.slug,
     });
-    setTab('issue');
+    setTab('issue', { from: tab === 'issue' ? returnTab : tab });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
@@ -1090,11 +1116,11 @@ export default function Lab() {
   }, [samples, orders]);
 
   const tabs: { id: LabTab; label: string; count?: number }[] = [
-    { id: 'bench', label: 'My Bench' },
-    { id: 'receive', label: 'Receive', count: receiveCount || undefined },
-    { id: 'queue', label: 'Testing Queue', count: pendingQueueCount || undefined },
-    { id: 'issue', label: 'Issue COA' },
-    { id: 'workflow', label: 'COA Workflow', count: workflowActiveCount || undefined },
+    { id: 'bench', label: LAB_TAB_LABELS.bench },
+    { id: 'receive', label: LAB_TAB_LABELS.receive, count: receiveCount || undefined },
+    { id: 'queue', label: LAB_TAB_LABELS.queue, count: pendingQueueCount || undefined },
+    { id: 'issue', label: LAB_TAB_LABELS.issue },
+    { id: 'workflow', label: LAB_TAB_LABELS.workflow, count: workflowActiveCount || undefined },
   ];
 
   return (
@@ -1259,6 +1285,18 @@ export default function Lab() {
         {tab === 'issue' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <form onSubmit={saveCoa} className="lg:col-span-2 card p-6 space-y-5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => setTab(returnTab)}
+                  className="inline-flex items-center gap-1.5 text-sm font-medium text-neutral-600 hover:text-brand-700"
+                >
+                  <ArrowLeft size={14} /> Back to {LAB_TAB_LABELS[returnTab]}
+                </button>
+                <p className="text-xs text-neutral-500">
+                  {editingCoaId ? 'Restarting COA' : 'Issue new COA'}
+                </p>
+              </div>
               <p className="text-xs text-neutral-500 bg-neutral-50 border border-atlas-border rounded-md px-3 py-2">
                 {editingCoaId ? (
                   <>

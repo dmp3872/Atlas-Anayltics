@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
-import { COA, Order, OrderSample, TestPanel } from '../lib/types';
+import { COA, Order, OrderSample, PanelResult, TestPanel } from '../lib/types';
 import {
   formatCurrency, formatDate, formatDateTime,
   ORDER_STATUS_LABELS, SAMPLE_STATUS_LABELS, PAYMENT_STATUS_LABELS,
@@ -33,7 +33,7 @@ import PortalHome from '../components/portal/PortalHome';
 import OrderShippingChecklist from '../components/order/OrderShippingChecklist';
 import AtlasDigitalCoaCard from '../components/order/AtlasDigitalCoaCard';
 import OrderNotesThread from '../components/order/OrderNotesThread';
-import { assayResultsFromPanels } from '../lib/coaDisplayPanels';
+import { assayResultsFromPanels, partitionCoaPanels } from '../lib/coaDisplayPanels';
 import { createEmptySample, TestMode, type SampleCategory, type SampleMatrix } from '../lib/orderCatalog';
 import { trackingStageFromStatuses } from '../lib/orderProjection';
 import { queueNotification } from '../lib/notifications';
@@ -55,6 +55,121 @@ function CoaPublicationBadge({ coa }: { coa: COA }) {
     return <span className="badge-pass"><CheckCircle size={10} /> Published</span>;
   }
   return <span className="badge-pending"><Lock size={10} /> Private Draft</span>;
+}
+
+function panelPassStatus(panel: PanelResult, opts?: { metal?: boolean }): {
+  pass: boolean | null;
+  label: string;
+} {
+  const isNetContent = /net content|peptide content/i.test(panel.panel_name);
+  if (isNetContent) return { pass: null, label: 'N/A' };
+  if (opts?.metal) {
+    const showPass = !panel.result?.trim() || panel.pass;
+    return { pass: showPass, label: showPass ? 'Pass' : 'Fail' };
+  }
+  return { pass: panel.pass, label: panel.pass ? 'Pass' : 'Fail' };
+}
+
+function shortPanelLabel(name: string): string {
+  const n = name.toLowerCase();
+  if (n.includes('net purity') || (n.includes('purity') && n.includes('hplc'))) return 'Purity';
+  if (n.includes('identification') || n.includes('identity')) return 'Identity';
+  if (n.includes('net content') || n.includes('peptide content') || n.includes('quantit')) return 'Quantity';
+  if (n.includes('endotoxin')) return 'Endotoxins';
+  if (n.includes('sterility')) return 'Sterility';
+  if (n.includes('fentanyl')) return 'Fentanyl';
+  if (n.includes('molecular weight') || n.includes('mass')) return 'MW';
+  // Strip trailing method noise: "Foo (HPLC)" → "Foo"
+  return name.replace(/\s*\([^)]*\)\s*$/, '').trim() || name;
+}
+
+type CoaResultLine = {
+  key: string;
+  label: string;
+  value: string;
+  pass: boolean | null;
+};
+
+function coaResultLines(coa: COA): CoaResultLine[] {
+  const panels = Array.isArray(coa.panel_results) ? coa.panel_results : [];
+  const { main, metals } = partitionCoaPanels(panels);
+  const lines: CoaResultLine[] = [];
+
+  for (const [i, panel] of main.entries()) {
+    const status = panelPassStatus(panel);
+    const value = panel.result?.trim()
+      ? `${panel.result}${panel.unit ? ` ${panel.unit}` : ''}`
+      : '—';
+    lines.push({
+      key: `m-${i}`,
+      label: shortPanelLabel(panel.panel_name),
+      value,
+      pass: status.pass,
+    });
+  }
+  for (const [i, panel] of metals.entries()) {
+    const status = panelPassStatus(panel, { metal: true });
+    const value = panel.result?.trim()
+      ? `${panel.result}${panel.unit ? ` ${panel.unit}` : ''}`
+      : 'Not Detected';
+    lines.push({
+      key: `h-${i}`,
+      label: shortPanelLabel(panel.panel_name),
+      value,
+      pass: status.pass,
+    });
+  }
+  return lines;
+}
+
+/** Compact Accumark-style result stack: small green/red lines in the Results column. */
+function CoaTestResultsList({ coa, previewCount = 5 }: { coa: COA; previewCount?: number }) {
+  const [expanded, setExpanded] = useState(false);
+  const lines = coaResultLines(coa);
+
+  if (lines.length === 0) {
+    return <span className="text-[11px] text-neutral-400">Results pending</span>;
+  }
+
+  const visible = expanded ? lines : lines.slice(0, previewCount);
+  const hidden = Math.max(0, lines.length - previewCount);
+
+  return (
+    <div className="space-y-0.5 min-w-[10rem]">
+      {visible.map(line => {
+        const tone =
+          line.pass === true
+            ? 'text-emerald-700'
+            : line.pass === false
+              ? 'text-red-600'
+              : 'text-neutral-500';
+        return (
+          <div key={line.key} className={`flex items-start gap-1 text-[11px] leading-snug ${tone}`}>
+            {line.pass === true ? (
+              <CheckCircle size={11} className="mt-0.5 flex-shrink-0" />
+            ) : line.pass === false ? (
+              <XCircle size={11} className="mt-0.5 flex-shrink-0" />
+            ) : (
+              <span className="w-[11px] flex-shrink-0" />
+            )}
+            <span className="min-w-0">
+              <span className="font-medium">{line.label}:</span>{' '}
+              <span className="tabular-nums">{line.value}</span>
+            </span>
+          </div>
+        );
+      })}
+      {hidden > 0 && (
+        <button
+          type="button"
+          onClick={() => setExpanded(v => !v)}
+          className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-brand-700 hover:underline"
+        >
+          {expanded ? 'Show less' : `Additional results (+${hidden})`}
+        </button>
+      )}
+    </div>
+  );
 }
 
 function portalTestsForSample(sample: OrderSample, panels: TestPanel[]): string[] {
@@ -441,73 +556,71 @@ export default function Portal() {
               <div className="space-y-4">
                 <div>
                   <h1 className="portal-page-title">Your COAs</h1>
-                  <p className="portal-page-subtitle">Certificates of analysis from your Atlas Analytics testing. Open a certificate to download a PNG.</p>
+                  <p className="portal-page-subtitle">
+                    Certificates of analysis from your Atlas Analytics testing. Green = pass, red = fail.
+                  </p>
                 </div>
                 <div className="card overflow-hidden">
-                {filteredCoas.length === 0 ? (
-                  <div className="p-12 text-center">
-                    <FileText size={32} className="mx-auto mb-3 text-neutral-300" />
-                    <p className="font-medium">No certificates yet</p>
-                    <Link to="/order-new" className="btn-primary text-sm mt-4 inline-flex">Submit a Sample</Link>
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="portal-data-table">
-                      <thead>
-                        <tr className="coa-table-header">
-                          <th className="text-left px-5 py-3">Name</th>
-                          <th className="text-left px-5 py-3">Results</th>
-                          <th className="text-left px-5 py-3">Visibility</th>
-                          <th className="text-left px-5 py-3">Lot</th>
-                          <th className="text-left px-5 py-3">Date</th>
-                          <th className="px-5 py-3"></th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-atlas-border">
-                        {filteredCoas.map(coa => (
-                          <tr key={coa.id} className="bg-white hover:bg-neutral-50">
-                            <td className="px-5 py-3">
-                              <p className="font-medium text-black">{coa.display_name || coa.sample_name}</p>
-                              <p className="text-xs text-neutral-500 font-mono">{coa.slug.slice(0, 16)}</p>
-                            </td>
-                            <td className="px-5 py-3"><ResultBadge result={coa.overall_result} /></td>
-                            <td className="px-5 py-3"><CoaPublicationBadge coa={coa} /></td>
-                            <td className="px-5 py-3 text-neutral-600">{coa.batch_number || '—'}</td>
-                            <td className="px-5 py-3 text-neutral-600">{formatDate(coa.issued_at)}</td>
-                            <td className="px-5 py-3 text-right">
-                              <div className="inline-flex flex-wrap gap-2 justify-end">
-                                <Link to={`/coa/${coa.slug}`} className="btn-primary text-xs py-1.5 gap-1 inline-flex">
-                                  <ExternalLink size={12} /> Open & download PNG
-                                </Link>
-                                {coa.is_public && (
-                                  <>
-                                    <a
-                                      href={`/embed/coa/${encodeURIComponent(coa.slug)}`}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="btn-outline text-xs py-1.5 gap-1 inline-flex"
-                                    >
-                                      <ExternalLink size={12} /> Preview embed
-                                    </a>
-                                    <button
-                                      type="button"
-                                      onClick={() => void copyCoaEmbed(coa.slug)}
-                                      className="btn-outline text-xs py-1.5 gap-1 inline-flex"
-                                      title="Copy an iframe to paste into your website"
-                                    >
-                                      {copiedEmbedSlug === coa.slug ? <Check size={12} /> : <Copy size={12} />}
-                                      {copiedEmbedSlug === coa.slug ? 'Copied' : 'Copy embed code'}
-                                    </button>
-                                  </>
-                                )}
-                              </div>
-                            </td>
+                  {filteredCoas.length === 0 ? (
+                    <div className="p-12 text-center">
+                      <FileText size={32} className="mx-auto mb-3 text-neutral-300" />
+                      <p className="font-medium">No certificates yet</p>
+                      <Link to="/order-new" className="btn-primary text-sm mt-4 inline-flex">Submit a Sample</Link>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="portal-data-table w-full text-sm">
+                        <thead>
+                          <tr className="coa-table-header">
+                            <th className="text-left px-4 py-2.5">Name</th>
+                            <th className="text-left px-4 py-2.5">Results</th>
+                            <th className="text-left px-4 py-2.5">Lot</th>
+                            <th className="text-left px-4 py-2.5">Date</th>
+                            <th className="px-4 py-2.5"></th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+                        </thead>
+                        <tbody className="divide-y divide-atlas-border">
+                          {filteredCoas.map(coa => {
+                            const order = orders.find(o => o.id === coa.order_id);
+                            return (
+                              <tr key={coa.id} className="bg-white hover:bg-neutral-50/80 align-top">
+                                <td className="px-4 py-3 min-w-[10rem]">
+                                  <p className="font-semibold text-black text-sm leading-snug">
+                                    {coa.display_name || coa.sample_name}
+                                  </p>
+                                  <p className="text-[11px] text-neutral-500 mt-0.5 font-mono">
+                                    {coa.accession_number || coa.slug.slice(0, 14)}
+                                    {order?.order_number ? ` · ${order.order_number}` : ''}
+                                  </p>
+                                  <div className="mt-1.5 flex flex-wrap gap-1">
+                                    <ResultBadge result={coa.overall_result} />
+                                    <CoaPublicationBadge coa={coa} />
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <CoaTestResultsList coa={coa} />
+                                </td>
+                                <td className="px-4 py-3 text-xs text-neutral-600 whitespace-nowrap">
+                                  {coa.batch_number || '—'}
+                                </td>
+                                <td className="px-4 py-3 text-xs text-neutral-600 whitespace-nowrap">
+                                  {formatDate(coa.issued_at)}
+                                </td>
+                                <td className="px-4 py-3 text-right whitespace-nowrap">
+                                  <Link
+                                    to={`/coa/${coa.slug}`}
+                                    className="btn-outline text-[11px] py-1 px-2 gap-1 inline-flex"
+                                  >
+                                    <ExternalLink size={11} /> Open
+                                  </Link>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
