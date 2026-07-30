@@ -134,6 +134,7 @@ export default function Lab() {
   const [coas, setCoas] = useState<COA[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [etaSavingOrderId, setEtaSavingOrderId] = useState<string | null>(null);
   const [msg, setMsg] = useState<Message>(null);
   const [queueView, setQueueView] = useState<'pending' | 'all'>('pending');
   const [queueFilters, setQueueFilters] = useState<QueueFilterValues>({ ...QUEUE_FILTERS_BLANK });
@@ -721,6 +722,42 @@ export default function Lab() {
     if (error) {
       setMsg({ type: 'error', text: error.message });
       loadAll();
+    }
+  }
+
+  async function saveOrderEta(order: Order, iso: string | null) {
+    setEtaSavingOrderId(order.id);
+    try {
+      const { error } = await supabase
+        .from('orders')
+        .update({
+          estimated_ready_at: iso,
+          due_at: iso ?? order.due_at ?? null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', order.id);
+      if (error) {
+        setMsg({ type: 'error', text: error.message });
+        return;
+      }
+      setOrders(prev => prev.map(o => (
+        o.id === order.id
+          ? { ...o, estimated_ready_at: iso, due_at: iso ?? o.due_at }
+          : o
+      )));
+      if (iso) {
+        await notifyOrderEtaUpdated(
+          order.user_id,
+          order.order_number,
+          formatDate(iso),
+        );
+      }
+      setMsg({
+        type: 'success',
+        text: iso ? `ETA set to ${formatDate(iso)}.` : 'ETA cleared.',
+      });
+    } finally {
+      setEtaSavingOrderId(null);
     }
   }
 
@@ -2198,6 +2235,7 @@ export default function Lab() {
           <div className="space-y-4">
             <p className="text-sm text-neutral-600">
               Testing → Issued → Pending Review (assign lab director/chemist, signatures 1/2) → Verified (2/2) → Published.
+              Open ETA / Notes on any card to update the client-visible ready date or leave staff/client notes.
               Use Back to testing to rework an issued COA, then Restart COA to edit results and re-issue.
               Cards marked Assigned to you are yours to work or sign off. Use Publish now to override checklist or incomplete review when needed.
             </p>
@@ -2216,12 +2254,15 @@ export default function Lab() {
               pendingSamples={filteredPendingQueueItems}
               onIssueCoa={prefillFromSample}
               onRestartCoa={restartCoa}
+              onSaveOrderEta={saveOrderEta}
+              etaSavingOrderId={etaSavingOrderId}
               chemists={chemistOptions}
               reviewers={reviewerOptions}
               clients={allProfiles}
               orders={orders}
               samples={samples}
               currentUserId={user?.id}
+              isAdmin={isAdmin}
             />
           </div>
         )}
