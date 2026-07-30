@@ -72,9 +72,12 @@ function panelPassStatus(panel: PanelResult, opts?: { metal?: boolean }): {
 
 function shortPanelLabel(name: string): string {
   const n = name.toLowerCase();
+  const blendMatch = /^blend content\s*[—–-]\s*(.+)$/i.exec(name.trim());
+  if (blendMatch) return blendMatch[1].trim() || 'Blend';
   if (n.includes('net purity') || (n.includes('purity') && n.includes('hplc'))) return 'Purity';
   if (n.includes('identification') || n.includes('identity')) return 'Identity';
-  if (n.includes('net content') || n.includes('peptide content') || n.includes('quantit')) return 'Quantity';
+  if (n === 'net content' || n.includes('total peptide') || (n.includes('net content') && !n.includes('blend'))) return 'Quantity';
+  if (n.includes('peptide content') || n.includes('quantit')) return 'Quantity';
   if (n.includes('endotoxin')) return 'Endotoxins';
   if (n.includes('sterility')) return 'Sterility';
   if (n.includes('fentanyl')) return 'Fentanyl';

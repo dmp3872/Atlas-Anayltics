@@ -8,8 +8,11 @@ export type CoaPdfFieldValues = Record<string, string>;
 
 function findPanel(panels: PanelResult[], ...keywords: string[]): PanelResult | undefined {
   const lowered = keywords.map(k => k.toLowerCase());
+  const lookingForContent = lowered.some(k => k.includes('net content') || k.includes('peptide content'));
   return panels.find(p => {
     const name = p.panel_name.toLowerCase();
+    // Per-peptide blend rows must not steal the total Net Content field.
+    if (lookingForContent && name.startsWith('blend content')) return false;
     return lowered.some(k => name.includes(k));
   });
 }
@@ -188,8 +191,14 @@ export function buildCoaPdfFieldValues(coa: COA): CoaPdfFieldValues {
         !used.has(p) &&
         !p.panel_name.toLowerCase().includes('fentanyl') &&
         !p.panel_name.toLowerCase().includes('molecular') &&
-        (p.result?.trim() || p.specification?.trim()),
+        (p.result?.trim() || p.specification?.trim() || /^blend content\b/i.test(p.panel_name)),
     );
+    // Show blend component content rows first in the optional Text2 slots.
+    extras.sort((a, b) => {
+      const aBlend = /^blend content\b/i.test(a.panel_name) ? 0 : 1;
+      const bBlend = /^blend content\b/i.test(b.panel_name) ? 0 : 1;
+      return aBlend - bBlend;
+    });
 
     // Optional molecular weight occupies the first Text2 slot when included.
     let slot = 0;
@@ -201,7 +210,11 @@ export function buildCoaPdfFieldValues(coa: COA): CoaPdfFieldValues {
 
     for (let i = slot; i < 5; i++) {
       const panel = extras[i - slot];
-      fields[`Text2_T${i + 1}`] = panel ? (panel.result || panel.panel_name) : '';
+      fields[`Text2_T${i + 1}`] = panel
+        ? (panel.panel_name.toLowerCase().startsWith('blend content')
+          ? `${panel.panel_name.replace(/^blend content\s*[—–-]\s*/i, '').trim()}: ${panel.result || 'Pending'}`
+          : (panel.result || panel.panel_name))
+        : '';
       fields[`Text2_T${i + 6}`] = panel ? conformityLabel(panel) : '';
     }
   } else {
