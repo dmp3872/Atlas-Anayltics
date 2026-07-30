@@ -87,7 +87,9 @@ export default function ClaimVsResultStrip({
         <div>
           <p className="text-sm font-bold text-black">Claim vs result</p>
           <p className="text-xs text-neutral-500">
-            Live comparison while entering Issue COA values.
+            {results.blendPeptides.length > 0
+              ? 'Blend: total content & purity above; per-peptide net content in Test Results.'
+              : 'Live comparison while entering Issue COA values.'}
           </p>
         </div>
         <span
@@ -110,13 +112,13 @@ export default function ClaimVsResultStrip({
           state={identityState}
         />
         <Cell
-          label="Quantity"
+          label={results.blendPeptides.length > 0 ? 'Total quantity' : 'Quantity'}
           claim={claimText || '—'}
           result={results.netContent.trim() || 'Pending'}
           state={quantityState}
         />
         <Cell
-          label="Purity"
+          label={results.blendPeptides.length > 0 ? 'Total purity' : 'Purity'}
           claim="≥ 98%"
           result={results.netPurity.trim() ? `${results.netPurity.trim()}%` : 'Pending'}
           state={purityState}
