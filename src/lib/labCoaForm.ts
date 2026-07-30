@@ -14,6 +14,61 @@ export const HEAVY_METAL_NAMES = [
 
 export type HeavyMetalName = (typeof HEAVY_METAL_NAMES)[number];
 
+/** Default result when Heavy Metals conformity is PASS. */
+export const HEAVY_METAL_PASS_RESULT = 'Not Detected';
+
+export const HEAVY_METAL_USP_SPECS: Record<HeavyMetalName, string> = {
+  'Lead (Pb)': 'NMT 1 ppm',
+  'Arsenic (As)': 'NMT 1.5 ppm',
+  'Cadmium (Cd)': 'NMT 0.5 ppm',
+  'Mercury (Hg)': 'NMT 1.5 ppm',
+  'Chromium (Cr)': 'NMT 10 ppm',
+};
+
+export function heavyMetalsPassDefaults(): Record<HeavyMetalName, string> {
+  return {
+    'Lead (Pb)': HEAVY_METAL_PASS_RESULT,
+    'Arsenic (As)': HEAVY_METAL_PASS_RESULT,
+    'Cadmium (Cd)': HEAVY_METAL_PASS_RESULT,
+    'Mercury (Hg)': HEAVY_METAL_PASS_RESULT,
+    'Chromium (Cr)': HEAVY_METAL_PASS_RESULT,
+  };
+}
+
+/** Empty metal cells while Heavy Metals conformity is still Pending. */
+export function heavyMetalsEmptyDefaults(): Record<HeavyMetalName, string> {
+  return {
+    'Lead (Pb)': '',
+    'Arsenic (As)': '',
+    'Cadmium (Cd)': '',
+    'Mercury (Hg)': '',
+    'Chromium (Cr)': '',
+  };
+}
+
+/** Pass / fail / pending for biosafety assays that may return after the COA is started. */
+export type AssayPassState = boolean | null;
+
+export function assayPassSelectValue(state: AssayPassState): 'pass' | 'fail' | 'pending' {
+  if (state === true) return 'pass';
+  if (state === false) return 'fail';
+  return 'pending';
+}
+
+export function assayPassFromSelect(value: string): AssayPassState {
+  if (value === 'pass') return true;
+  if (value === 'fail') return false;
+  return null;
+}
+
+export function parseAssayPassState(value: unknown, fallback: AssayPassState = null): AssayPassState {
+  if (value === true || value === false) return value;
+  if (value === 'pass') return true;
+  if (value === 'fail') return false;
+  if (value === 'pending' || value === null) return null;
+  return fallback;
+}
+
 export type SterilityMethod = 'pcr' | 'culture_14_day';
 
 export const STERILITY_METHOD_LABELS: Record<SterilityMethod, string> = {
@@ -21,7 +76,19 @@ export const STERILITY_METHOD_LABELS: Record<SterilityMethod, string> = {
   culture_14_day: '14-day culture',
 };
 
-export const ENDOTOXIN_SPEC_EU_ML = '<= 5.0 EU/mL';
+export const ENDOTOXIN_SPEC_EU_ML = '≤ 5.0 EU/mL';
+/** Default measured result when Endotoxin conformity is PASS. */
+export const ENDOTOXIN_PASS_RESULT = '≤ 5.0 EU/mL';
+
+/** Format endotoxin entry for panel_results without doubling "EU/mL". */
+export function formatEndotoxinResult(value: string): string {
+  const v = value.trim();
+  if (!v) return '';
+  if (/eu\s*\/\s*ml/i.test(v)) {
+    return /\(\s*lal\s*\)/i.test(v) ? v : `${v} (LAL)`;
+  }
+  return `${v} EU/mL (LAL)`;
+}
 
 export interface ConformityPeptideRow {
   name: string;
@@ -37,11 +104,15 @@ export interface LabCoaResults {
   /** When false, Molecular Weight is omitted from the COA. */
   includeMolecularWeight: boolean;
   sterilityMethod: SterilityMethod;
-  sterilityPass: boolean;
+  /** null = Pending until the lab result is entered. */
+  sterilityPass: AssayPassState;
   endotoxinEuMl: string;
-  endotoxinPass: boolean;
+  /** null = Pending until the lab result is entered. */
+  endotoxinPass: AssayPassState;
   /** When false, Endotoxin is omitted from the COA (e.g. revised Full QC). */
   includeEndotoxin: boolean;
+  /** null = Pending; true fills metal boxes with Not Detected. */
+  heavyMetalsPass: AssayPassState;
   heavyMetals: Record<HeavyMetalName, string>;
   /** When false, Heavy Metals rows are omitted from the COA. */
   includeHeavyMetals: boolean;
@@ -58,17 +129,12 @@ export const EMPTY_LAB_RESULTS: LabCoaResults = {
   molecularWeight: '',
   includeMolecularWeight: false,
   sterilityMethod: 'pcr',
-  sterilityPass: true,
+  sterilityPass: null,
   endotoxinEuMl: '',
-  endotoxinPass: true,
+  endotoxinPass: null,
   includeEndotoxin: true,
-  heavyMetals: {
-    'Lead (Pb)': '',
-    'Arsenic (As)': '',
-    'Cadmium (Cd)': '',
-    'Mercury (Hg)': '',
-    'Chromium (Cr)': '',
-  },
+  heavyMetalsPass: null,
+  heavyMetals: heavyMetalsEmptyDefaults(),
   includeHeavyMetals: true,
   includeSterility: true,
   conformityPeptides: [],
@@ -213,17 +279,29 @@ export function buildLabResultsFromCoa(
 
   const heavyMetals = { ...base.heavyMetals };
   let includeHeavyMetals = false;
-  let heavyMetalsPass = true;
+  let sawMetal = false;
+  let sawFilledMetal = false;
+  let anyMetalFail = false;
   for (const metal of HEAVY_METAL_NAMES) {
     const row = panels.find(p => p.panel_name === metal);
     if (row) {
       includeHeavyMetals = true;
-      heavyMetals[metal] = row.result || '';
-      if (row.pass === false) heavyMetalsPass = false;
+      sawMetal = true;
+      const result = (row.result || '').trim();
+      heavyMetals[metal] = result;
+      if (result) sawFilledMetal = true;
+      if (row.pass === false) anyMetalFail = true;
     }
   }
+  const heavyMetalsPass: AssayPassState = !sawMetal
+    ? parseAssayPassState(summary.heavy_metals_pass, null)
+    : !sawFilledMetal
+      ? null
+      : anyMetalFail
+        ? false
+        : true;
 
-  const sterilityResult = sterilityPanel?.result || '';
+  const sterilityResult = (sterilityPanel?.result || '').trim();
   const sterilityMethod: SterilityMethod =
     /14.?day|culture/i.test(sterilityResult)
     || summary.sterility_method === 'culture_14_day'
@@ -235,11 +313,23 @@ export function buildLabResultsFromCoa(
     .replace(/\s*\(LAL\)\s*$/i, '')
     .replace(/\s*EU\s*\/\s*mL\s*$/i, '')
     .trim()
-    || (typeof summary.endotoxin_eu_ml === 'string' ? summary.endotoxin_eu_ml : ENDOTOXIN_PASS_RESULT);
+    || (typeof summary.endotoxin_eu_ml === 'string' ? summary.endotoxin_eu_ml : '');
 
   const mwRaw = mwPanel?.result?.trim()
     || (coa.molecular_weight != null ? String(coa.molecular_weight) : '')
     || (typeof summary.molecular_weight === 'string' ? summary.molecular_weight : '');
+
+  const sterilityPass: AssayPassState = sterilityPanel
+    ? (!sterilityResult
+      ? parseAssayPassState(summary.sterility_pass, null)
+      : sterilityPanel.pass !== false && !/^detected\b/i.test(sterilityResult))
+    : parseAssayPassState(summary.sterility_pass, null);
+
+  const endotoxinPass: AssayPassState = endotoxinPanel
+    ? (!(endotoxinPanel.result || '').trim()
+      ? parseAssayPassState(summary.endotoxin_pass, null)
+      : endotoxinPanel.pass !== false)
+    : parseAssayPassState(summary.endotoxin_pass, null);
 
   return {
     ...base,
@@ -249,10 +339,10 @@ export function buildLabResultsFromCoa(
     molecularWeight: mwRaw,
     includeMolecularWeight: !!mwRaw || summary.include_molecular_weight === true,
     sterilityMethod,
-    sterilityPass: sterilityPanel ? sterilityPanel.pass !== false && !/^detected\b/i.test(sterilityResult) : true,
+    sterilityPass,
     includeSterility: !!sterilityPanel || base.includeSterility,
     endotoxinEuMl,
-    endotoxinPass: endotoxinPanel ? endotoxinPanel.pass !== false : true,
+    endotoxinPass,
     includeEndotoxin: !!endotoxinPanel || base.includeEndotoxin,
     includeHeavyMetals: includeHeavyMetals || base.includeHeavyMetals,
     heavyMetalsPass,
@@ -284,34 +374,51 @@ export function labResultsToPanelResults(results: LabCoaResults): PanelResult[] 
   }
 
   if (results.includeSterility !== false) {
-    rows.push({
-      panel_name: 'Sterility',
-      specification: 'Not Detected',
-      result: results.sterilityPass
-        ? `Not Detected (${STERILITY_METHOD_LABELS[results.sterilityMethod]})`
-        : `Detected (${STERILITY_METHOD_LABELS[results.sterilityMethod]})`,
-      pass: results.sterilityPass,
-    });
+    if (results.sterilityPass === null) {
+      rows.push({
+        panel_name: 'Sterility',
+        specification: 'Not Detected',
+        result: '',
+        pass: false,
+      });
+    } else {
+      rows.push({
+        panel_name: 'Sterility',
+        specification: 'Not Detected',
+        result: results.sterilityPass
+          ? `Not Detected (${STERILITY_METHOD_LABELS[results.sterilityMethod]})`
+          : `Detected (${STERILITY_METHOD_LABELS[results.sterilityMethod]})`,
+        pass: results.sterilityPass,
+      });
+    }
   }
 
   if (results.includeEndotoxin !== false) {
-    rows.push({
-      panel_name: 'Endotoxin',
-      specification: ENDOTOXIN_SPEC_EU_ML,
-      result: results.endotoxinEuMl.trim()
-        ? `${results.endotoxinEuMl.trim()} EU/mL (LAL)`
-        : '',
-      pass: results.endotoxinPass,
-    });
+    if (results.endotoxinPass === null) {
+      rows.push({
+        panel_name: 'Endotoxin',
+        specification: ENDOTOXIN_SPEC_EU_ML,
+        result: '',
+        pass: false,
+      });
+    } else {
+      rows.push({
+        panel_name: 'Endotoxin',
+        specification: ENDOTOXIN_SPEC_EU_ML,
+        result: formatEndotoxinResult(results.endotoxinEuMl),
+        pass: results.endotoxinPass,
+      });
+    }
   }
 
   if (results.includeHeavyMetals !== false) {
     for (const metal of HEAVY_METAL_NAMES) {
+      const filled = (results.heavyMetals[metal] ?? '').trim();
       rows.push({
         panel_name: metal,
-        specification: 'ppm',
-        result: results.heavyMetals[metal] ?? '',
-        pass: true,
+        specification: HEAVY_METAL_USP_SPECS[metal],
+        result: results.heavyMetalsPass === null ? '' : filled,
+        pass: results.heavyMetalsPass === true,
       });
     }
   }
@@ -319,36 +426,14 @@ export function labResultsToPanelResults(results: LabCoaResults): PanelResult[] 
   if (results.includeFentanyl) {
     rows.push({
       panel_name: 'Fentanyl Detection',
-      specification: 'None Detected',
-      result: results.fentanylPass ? 'None Detected' : 'Detected',
+      specification: 'Not Detected',
+      result: results.fentanylPass ? 'Not Detected' : 'Detected',
       pass: results.fentanylPass,
     });
   }
 
   // Fold conformity vials into Net Content / Net Purity (one line each), not extra rows.
-  const contentParts: string[] = [];
-  const purityParts: string[] = [];
-  const asMg = (v: string) => {
-    const t = v.trim();
-    if (!t) return '';
-    const m = t.match(/^(-?\d+(?:\.\d+)?)\s*(mg)?$/i);
-    return m ? `${m[1]} mg` : t;
-  };
-  const asPct = (v: string) => {
-    const t = v.trim();
-    if (!t) return '';
-    const m = t.match(/^(-?\d+(?:\.\d+)?)\s*%?$/);
-    return m ? `${m[1]}%` : t;
-  };
-
-  if (results.netContent.trim()) contentParts.push(asMg(results.netContent));
-  if (results.netPurity.trim()) purityParts.push(asPct(results.netPurity));
-
-  for (const row of results.conformityPeptides) {
-    if (!row.name.trim() && !row.netContent.trim() && !row.netPurity.trim()) continue;
-    if (row.netContent.trim()) contentParts.push(asMg(row.netContent));
-    if (row.netPurity.trim()) purityParts.push(asPct(row.netPurity));
-  }
+  const { contentParts, purityParts } = collectContentPurityParts(results);
 
   if (contentParts.length > 0) {
     const net = rows.find(r => r.panel_name === 'Net Content');
@@ -370,6 +455,113 @@ export function parsePurityPercent(netPurity: string): number | null {
 export function parseMolecularWeight(mw: string): number | null {
   const n = parseFloat(mw.trim());
   return Number.isFinite(n) ? n : null;
+}
+
+function parseNumericTokens(raw: string): number[] {
+  return (raw || '')
+    .split(',')
+    .map(part => {
+      const m = part.trim().match(/-?\d+(?:\.\d+)?/);
+      return m ? Number(m[0]) : NaN;
+    })
+    .filter((n): n is number => Number.isFinite(n));
+}
+
+function formatMeanNumber(values: number[]): string {
+  if (values.length === 0) return '';
+  const mean = values.reduce((a, b) => a + b, 0) / values.length;
+  const rounded = Math.round(mean * 100) / 100;
+  if (Number.isInteger(rounded)) return String(rounded);
+  return String(rounded);
+}
+
+function collectContentPurityParts(results: LabCoaResults): {
+  contentParts: string[];
+  purityParts: string[];
+} {
+  const contentParts: string[] = [];
+  const purityParts: string[] = [];
+  const asMg = (v: string) => {
+    const t = v.trim();
+    if (!t) return '';
+    const m = t.match(/^(-?\d+(?:\.\d+)?)\s*(mg)?$/i);
+    return m ? `${m[1]} mg` : t;
+  };
+  const asPct = (v: string) => {
+    const t = v.trim();
+    if (!t) return '';
+    const m = t.match(/^(-?\d+(?:\.\d+)?)\s*%?$/);
+    return m ? `${m[1]}%` : t;
+  };
+
+  // Primary assay fields = first vial tested. Conformity rows = additional measured vials
+  // only (never seed them from label claim — that inflated averages for single-vial COAs).
+  if (results.netContent.trim()) contentParts.push(asMg(results.netContent));
+  if (results.netPurity.trim()) purityParts.push(asPct(results.netPurity));
+  for (const row of results.conformityPeptides) {
+    if (!row.name.trim() && !row.netContent.trim() && !row.netPurity.trim()) continue;
+    if (row.netContent.trim()) contentParts.push(asMg(row.netContent));
+    if (row.netPurity.trim()) purityParts.push(asPct(row.netPurity));
+  }
+  return { contentParts, purityParts };
+}
+
+export type AssayAverages = {
+  avg_net_peptide_content: string;
+  avg_purity: string;
+  mean_of_vials_tested: string;
+  content_values: string[];
+  purity_values: string[];
+};
+
+/** Mean net peptide content / purity from Issue COA assay + conformity rows. */
+export function computeLabAssayAverages(results: LabCoaResults): AssayAverages {
+  const { contentParts, purityParts } = collectContentPurityParts(results);
+  const contentNums = contentParts.flatMap(parseNumericTokens);
+  const purityNums = purityParts.flatMap(parseNumericTokens);
+  const meanMg = formatMeanNumber(contentNums);
+  const meanPct = formatMeanNumber(purityNums);
+  const vialCount = Math.max(contentParts.length, purityParts.length, contentNums.length ? 1 : 0);
+
+  return {
+    avg_net_peptide_content: meanMg ? `${meanMg} mg` : '',
+    avg_purity: meanPct ? `${meanPct}%` : '',
+    mean_of_vials_tested: vialCount > 0 ? String(vialCount) : '',
+    content_values: contentParts,
+    purity_values: purityParts,
+  };
+}
+
+/** Recover averages from an issued COA's Net Content / Net Purity panel strings. */
+export function computeAssayAveragesFromPanels(
+  panels: PanelResult[],
+  purityPercent?: number | null,
+): AssayAverages {
+  const net = panels.find(p => /net content|peptide content/i.test(p.panel_name));
+  const pur = panels.find(p => /net purity|^purity\b/i.test(p.panel_name));
+  const contentParts = (net?.result || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+  const purityParts = (pur?.result || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean);
+  const contentNums = contentParts.flatMap(parseNumericTokens);
+  const purityNums = purityParts.flatMap(parseNumericTokens);
+  const meanMg = formatMeanNumber(contentNums);
+  const meanPct = formatMeanNumber(purityNums);
+  const vialCount = Math.max(contentParts.length, purityParts.length, contentNums.length ? 1 : 0);
+
+  return {
+    avg_net_peptide_content: meanMg ? `${meanMg} mg` : '',
+    avg_purity: meanPct
+      ? `${meanPct}%`
+      : (purityPercent != null && Number.isFinite(purityPercent) ? `${purityPercent}%` : ''),
+    mean_of_vials_tested: vialCount > 0 ? String(vialCount) : '',
+    content_values: contentParts,
+    purity_values: purityParts,
+  };
 }
 
 export type { OrderSampleMetadata };

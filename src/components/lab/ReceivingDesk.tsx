@@ -1,12 +1,14 @@
 import { useMemo, useState } from 'react';
 import {
-  AlertCircle, CheckCircle, ChevronDown, ChevronRight, Package, PackageCheck, DollarSign, Fingerprint,
+  AlertCircle, CalendarClock, CheckCircle, ChevronDown, ChevronRight, Package, PackageCheck, DollarSign, Fingerprint,
 } from 'lucide-react';
 import { Order, OrderSample, UserProfile } from '../../lib/types';
 import {
   ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS, formatDateTime, normalizePaymentStatus, orderIsPayable,
 } from '../../lib/utils';
-import { markOrderPaid, markSampleReceived } from '../../lib/services/orderWorkflow';
+import {
+  defaultIntakeEtaDateValue, intakeEtaDateToIso, markOrderPaid, markSampleReceived,
+} from '../../lib/services/orderWorkflow';
 import { useAuth } from '../../context/AuthContext';
 import PrintPackButton from './PrintPackButton';
 import { LAB_PRINT_PACK_ENABLED } from '../../lib/labFeatures';
@@ -43,6 +45,7 @@ export default function ReceivingDesk({ orders, samples, clients, onChanged }: P
   const [busyId, setBusyId] = useState<string | null>(null);
   const [receivedByBySample, setReceivedByBySample] = useState<Record<string, string>>({});
   const [noteBySample, setNoteBySample] = useState<Record<string, string>>({});
+  const [etaBySample, setEtaBySample] = useState<Record<string, string>>({});
   const [payNoteByOrder, setPayNoteByOrder] = useState<Record<string, string>>({});
   /** Explicit expand/collapse overrides. Missing key = auto (open if 1 sample). */
   const [expandedByOrder, setExpandedByOrder] = useState<Record<string, boolean>>({});
@@ -56,6 +59,10 @@ export default function ReceivingDesk({ orders, samples, clients, onChanged }: P
 
   function receivedByFor(sampleId: string) {
     return (receivedByBySample[sampleId] ?? defaultReceivedBy).trim();
+  }
+
+  function etaFor(sample: OrderSample, order: Order) {
+    return etaBySample[sample.id] ?? defaultIntakeEtaDateValue(order);
   }
 
   const clientName = (userId: string) => {
@@ -153,6 +160,12 @@ export default function ReceivingDesk({ orders, samples, clients, onChanged }: P
       setMsg({ type: 'error', text: 'Enter who received this sample before continuing.' });
       return;
     }
+    const etaYmd = etaFor(sample, order);
+    const estimatedReadyAt = intakeEtaDateToIso(etaYmd);
+    if (!estimatedReadyAt) {
+      setMsg({ type: 'error', text: 'Enter a valid ETA date before receiving.' });
+      return;
+    }
     setBusyId(sample.id);
     setMsg(null);
     const { error, sample: updated } = await markSampleReceived(sample, order, {
@@ -160,6 +173,7 @@ export default function ReceivingDesk({ orders, samples, clients, onChanged }: P
       note: noteBySample[sample.id] || '',
       changedBy: user?.id,
       vialCountConfirmed: sample.vial_count,
+      estimatedReadyAt,
     });
     if (error) setMsg({ type: 'error', text: error.message });
     else {
@@ -176,8 +190,8 @@ export default function ReceivingDesk({ orders, samples, clients, onChanged }: P
       setMsg({
         type: 'success',
         text: code
-          ? `Received ${sample.display_name || sample.sample_name} as ${code} (by ${receivedBy}) — now in testing queue.`
-          : `Received ${sample.display_name || sample.sample_name} (by ${receivedBy}) — now in testing queue.`,
+          ? `Received ${sample.display_name || sample.sample_name} as ${code} (by ${receivedBy}) — ETA ${etaYmd}. Now in testing queue.`
+          : `Received ${sample.display_name || sample.sample_name} (by ${receivedBy}) — ETA ${etaYmd}. Now in testing queue.`,
       });
       onChanged();
     }
@@ -394,6 +408,24 @@ export default function ReceivingDesk({ orders, samples, clients, onChanged }: P
                                   required
                                 />
                               </div>
+                              <div>
+                                <label className="text-[11px] font-semibold text-brand-900 flex items-center gap-1">
+                                  <CalendarClock size={11} />
+                                  ETA / ready by <span className="text-red-500">*</span>
+                                </label>
+                                <input
+                                  type="date"
+                                  value={etaFor(sample, order)}
+                                  onChange={e => setEtaBySample(prev => ({ ...prev, [sample.id]: e.target.value }))}
+                                  className="input-field text-sm mt-1"
+                                  required
+                                />
+                                <p className="text-[10px] text-brand-900/70 mt-1">
+                                  {order.rush_processing
+                                    ? 'Defaults to rush TAT (3 days). Change for a custom client-visible date.'
+                                    : 'Defaults to standard TAT (7 days). Change for a custom client-visible date.'}
+                                </p>
+                              </div>
                               <input
                                 value={noteBySample[sample.id] ?? ''}
                                 onChange={e => setNoteBySample(prev => ({ ...prev, [sample.id]: e.target.value }))}
@@ -402,7 +434,7 @@ export default function ReceivingDesk({ orders, samples, clients, onChanged }: P
                               />
                               <button
                                 type="button"
-                                disabled={busyId === sample.id || !receivedByFor(sample.id)}
+                                disabled={busyId === sample.id || !receivedByFor(sample.id) || !etaFor(sample, order)}
                                 onClick={() => handleReceive(sample, order)}
                                 className="btn-primary text-xs py-1.5 gap-1"
                               >
