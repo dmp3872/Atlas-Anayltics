@@ -57,6 +57,7 @@ function isConformityPanel(name: string): boolean {
 }
 
 function isNetContentPanel(name: string): boolean {
+  if (/^blend content\b/i.test(name.trim())) return false;
   const n = name.toLowerCase();
   return n.includes('net content') || n.includes('peptide content');
 }

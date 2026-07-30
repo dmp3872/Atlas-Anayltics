@@ -1,5 +1,6 @@
 import { COA, OrderSample, PanelResult } from './types';
 import { OrderSampleMetadata, parseSampleMetadata, orderSampleIncludesFentanyl } from './coaPanels';
+import { ATLAS_PRO_INCLUDED_CONFORMITY_VIALS } from './orderCatalog';
 
 export const VIAL_SIZE_OPTIONS = ['3ml', '5ml', '10ml'] as const;
 export type VialSizeOption = (typeof VIAL_SIZE_OPTIONS)[number];
@@ -96,6 +97,86 @@ export interface ConformityPeptideRow {
   netPurity: string;
 }
 
+/** One peptide in a blend — claim from the order, tested net content from the lab. */
+export interface BlendPeptideRow {
+  name: string;
+  claimMg: string;
+  netContent: string;
+}
+
+export const BLEND_CONTENT_PANEL_PREFIX = 'Blend Content — ';
+
+export function blendContentPanelName(peptideName: string): string {
+  return `${BLEND_CONTENT_PANEL_PREFIX}${peptideName.trim()}`;
+}
+
+export function parseBlendContentPanelName(panelName: string): string | null {
+  const m = /^blend content\s*[—–-]\s*(.+)$/i.exec((panelName || '').trim());
+  return m ? m[1].trim() || null : null;
+}
+
+export function isBlendContentPanel(panelName: string): boolean {
+  return parseBlendContentPanelName(panelName) != null;
+}
+
+export function sampleIsBlend(metadata: OrderSample['metadata'] | null | undefined): boolean {
+  const meta = parseSampleMetadata(metadata ?? null);
+  if (meta.sample_type === 'blend' || meta.category === 'peptide_blend') return true;
+  return Array.isArray(meta.blend_components)
+    && meta.blend_components.some(c => (c?.name || '').trim());
+}
+
+export function blendPeptidesFromMetadata(metadata: OrderSample['metadata'] | null | undefined): BlendPeptideRow[] {
+  const meta = parseSampleMetadata(metadata ?? null);
+  const components = Array.isArray(meta.blend_components) ? meta.blend_components : [];
+  return components
+    .map(c => ({
+      name: (c?.name || '').trim(),
+      claimMg: (c?.amount_mg || '').trim(),
+      netContent: '',
+    }))
+    .filter(c => c.name);
+}
+
+/** Extra conformity vials beyond the primary assay vial (Atlas Pro includes 3 total). */
+export function extraConformityVialCount(metadata: OrderSample['metadata'] | null | undefined): number {
+  const meta = parseSampleMetadata(metadata ?? null);
+  const extras = typeof meta.conformity_extra === 'number' ? Math.max(0, meta.conformity_extra) : 0;
+  if (meta.test_mode === 'atlas_pro') {
+    return Math.max(0, ATLAS_PRO_INCLUDED_CONFORMITY_VIALS - 1) + extras;
+  }
+  return extras;
+}
+
+/** One conformity vial for a blend: peptide names auto-filled, content empty, no per-peptide purity. */
+export function blendConformityVialRows(blendPeptides: BlendPeptideRow[]): ConformityPeptideRow[] {
+  return blendPeptides
+    .filter(p => p.name.trim())
+    .map(p => ({
+      name: p.name.trim(),
+      netContent: '',
+      netPurity: '',
+    }));
+}
+
+/** Seed N extra blend conformity vials (total + peptide names). */
+export function seedBlendConformityPeptides(
+  blendPeptides: BlendPeptideRow[],
+  vialCount: number,
+): ConformityPeptideRow[] {
+  if (blendPeptides.length === 0 || vialCount <= 0) return [];
+  const rows: ConformityPeptideRow[] = [];
+  for (let i = 0; i < vialCount; i += 1) {
+    rows.push({ name: `Total (vial ${i + 2})`, netContent: '', netPurity: '' });
+    rows.push(...blendConformityVialRows(blendPeptides));
+  }
+  return rows;
+}
+
+export function isBlendTotalConformityRow(name: string): boolean {
+  return /^total\b/i.test((name || '').trim());
+}
+
 export interface LabCoaResults {
   identification: string;
   netContent: string;
@@ -118,6 +199,11 @@ export interface LabCoaResults {
   includeHeavyMetals: boolean;
   includeSterility: boolean;
   conformityPeptides: ConformityPeptideRow[];
+  /**
+   * Blend components listed on the order. Chemist fills net content per peptide;
+   * purity stays on the total Net Purity field only.
+   */
+  blendPeptides: BlendPeptideRow[];
   includeFentanyl: boolean;
   fentanylPass: boolean;
 }
@@ -138,6 +224,7 @@ export const EMPTY_LAB_RESULTS: LabCoaResults = {
   includeHeavyMetals: true,
   includeSterility: true,
   conformityPeptides: [],
+  blendPeptides: [],
   includeFentanyl: false,
   fentanylPass: true,
 };
@@ -203,7 +290,11 @@ export function joinConformityPurity(rows: ConformityPeptideRow[]): string {
 
 export function buildLabResultsFromSample(metadata: OrderSample['metadata'], sampleName = ''): LabCoaResults {
   const meta = parseSampleMetadata(metadata);
-  const identification = meta.peptide_identification?.trim() || sampleName.trim();
+  const blendPeptides = blendPeptidesFromMetadata(metadata);
+  const isBlend = sampleIsBlend(metadata) || blendPeptides.length > 0;
+  const identification = isBlend && blendPeptides.length > 0
+    ? blendPeptides.map(p => p.name).join(' + ')
+    : (meta.peptide_identification?.trim() || sampleName.trim());
   const includeFentanyl = orderSampleIncludesFentanyl(metadata);
   const assayIds = Array.isArray(meta.individual_tests) ? meta.individual_tests.map(String) : [];
   const mode = typeof meta.test_mode === 'string' ? meta.test_mode : '';
@@ -228,7 +319,10 @@ export function buildLabResultsFromSample(metadata: OrderSample['metadata'], sam
     includeHeavyMetals,
     includeEndotoxin,
     includeSterility,
-    conformityPeptides: [],
+    conformityPeptides: isBlend
+      ? seedBlendConformityPeptides(blendPeptides, extraConformityVialCount(metadata))
+      : [],
+    blendPeptides,
   };
 }
 
@@ -244,7 +338,10 @@ export function buildLabResultsFromCoa(
     : {};
 
   const findPanel = (...names: string[]) =>
-    panels.find(p => names.some(n => p.panel_name.toLowerCase().includes(n.toLowerCase())));
+    panels.find(p => {
+      if (isBlendContentPanel(p.panel_name)) return false;
+      return names.some(n => p.panel_name.toLowerCase().includes(n.toLowerCase()));
+    });
 
   const idPanel = findPanel('identification');
   const netPanel = findPanel('net content', 'peptide content');
@@ -267,14 +364,90 @@ export function buildLabResultsFromCoa(
   const primaryPurity = purityParts[0]
     || (coa.purity_percent != null ? String(coa.purity_percent) : '');
 
+  // Prefer order metadata for blend component names/claims; overlay saved panel results.
+  const blendFromMeta = blendPeptidesFromMetadata(sampleMetadata);
+  const blendPanelParts = panels
+    .map(p => {
+      const name = parseBlendContentPanelName(p.panel_name);
+      if (!name) return null;
+      const parts = (p.result || '')
+        .split(',')
+        .map(s => s.trim().replace(/\s*mg\s*$/i, '').trim())
+        .filter(Boolean);
+      return {
+        name,
+        claimMg: (p.specification || '').replace(/^label claim:?\s*/i, '').replace(/\s*mg\s*$/i, '').trim(),
+        parts,
+      };
+    })
+    .filter((row): row is { name: string; claimMg: string; parts: string[] } => !!row);
+
+  const blendPeptides: BlendPeptideRow[] = (blendFromMeta.length > 0 ? blendFromMeta : blendPanelParts.map(p => ({
+    name: p.name,
+    claimMg: p.claimMg,
+    netContent: '',
+  }))).map(row => {
+    const saved = blendPanelParts.find(p => p.name.toLowerCase() === row.name.toLowerCase());
+    return {
+      ...row,
+      claimMg: row.claimMg || saved?.claimMg || '',
+      netContent: saved?.parts[0] || row.netContent || '',
+    };
+  });
+
+  // Also accept result_summary.blend_peptides when panels were wiped.
+  if (blendPeptides.length === 0 && Array.isArray(summary.blend_peptides)) {
+    for (const raw of summary.blend_peptides) {
+      if (!raw || typeof raw !== 'object') continue;
+      const row = raw as Record<string, unknown>;
+      const name = String(row.name || '').trim();
+      if (!name) continue;
+      blendPeptides.push({
+        name,
+        claimMg: String(row.claimMg || row.claim_mg || '').trim(),
+        netContent: String(row.netContent || row.net_content || '').trim(),
+      });
+    }
+  }
+
+  const isBlend = blendPeptides.length > 0;
   const conformityPeptides: ConformityPeptideRow[] = [];
-  const maxExtra = Math.max(netParts.length, purityParts.length) - 1;
-  for (let i = 1; i <= maxExtra; i += 1) {
-    conformityPeptides.push({
-      name: idPanel?.result?.trim() || coa.sample_name || `Vial ${i + 1}`,
-      netContent: netParts[i] || '',
-      netPurity: purityParts[i] || '',
-    });
+
+  if (isBlend) {
+    // Extra vial totals from comma-separated Net Content / Net Purity.
+    const maxExtraTotals = Math.max(netParts.length, purityParts.length) - 1;
+    for (let i = 1; i <= maxExtraTotals; i += 1) {
+      conformityPeptides.push({
+        name: `Total (vial ${i + 1})`,
+        netContent: (netParts[i] || '').replace(/\s*mg\s*$/i, '').trim(),
+        netPurity: purityParts[i] || '',
+      });
+    }
+    // Extra per-peptide measurements after the primary value on each Blend Content panel.
+    const maxExtraPeptide = Math.max(0, ...blendPanelParts.map(p => p.parts.length - 1));
+    for (let vial = 1; vial <= maxExtraPeptide; vial += 1) {
+      for (const peptide of blendPeptides) {
+        const saved = blendPanelParts.find(p => p.name.toLowerCase() === peptide.name.toLowerCase());
+        conformityPeptides.push({
+          name: peptide.name,
+          netContent: saved?.parts[vial] || '',
+          netPurity: '',
+        });
+      }
+    }
+    // If COA had no extra peptide values yet, keep order-seeded blank conformity vials.
+    if (maxExtraPeptide === 0 && maxExtraTotals === 0 && base.conformityPeptides.length > 0) {
+      conformityPeptides.push(...base.conformityPeptides);
+    }
+  } else {
+    const maxExtra = Math.max(netParts.length, purityParts.length) - 1;
+    for (let i = 1; i <= maxExtra; i += 1) {
+      conformityPeptides.push({
+        name: idPanel?.result?.trim() || coa.sample_name || `Vial ${i + 1}`,
+        netContent: netParts[i] || '',
+        netPurity: purityParts[i] || '',
+      });
+    }
   }
 
   const heavyMetals = { ...base.heavyMetals };
@@ -350,6 +523,7 @@ export function buildLabResultsFromCoa(
     includeFentanyl: !!fentanylPanel || base.includeFentanyl,
     fentanylPass: fentanylPanel ? fentanylPanel.pass !== false : true,
     conformityPeptides,
+    blendPeptides: blendPeptides.length > 0 ? blendPeptides : base.blendPeptides,
   };
 }
 
@@ -358,11 +532,46 @@ export function sterilitySpecLabel(_method?: SterilityMethod): string {
 }
 
 export function labResultsToPanelResults(results: LabCoaResults): PanelResult[] {
+  const isBlend = results.blendPeptides.some(r => r.name.trim());
   const rows: PanelResult[] = [
-    { panel_name: 'Identification', specification: 'Peptide ID', result: results.identification, pass: !!results.identification.trim() },
-    { panel_name: 'Net Content', specification: 'Label claim', result: results.netContent, pass: !!results.netContent.trim() },
-    { panel_name: 'Net Purity', specification: '≥98%', result: results.netPurity ? `${results.netPurity}%` : '', pass: true },
+    {
+      panel_name: 'Identification',
+      specification: isBlend ? 'Blend peptide ID' : 'Peptide ID',
+      result: results.identification,
+      pass: !!results.identification.trim(),
+    },
+    {
+      panel_name: 'Net Content',
+      specification: isBlend ? 'Total peptide content' : 'Label claim',
+      result: results.netContent,
+      pass: !!results.netContent.trim(),
+    },
+    {
+      panel_name: 'Net Purity',
+      specification: '≥98%',
+      result: results.netPurity ? `${results.netPurity}%` : '',
+      pass: true,
+    },
   ];
+
+  for (const row of results.blendPeptides) {
+    const name = row.name.trim();
+    if (!name) continue;
+    const claim = row.claimMg.trim();
+    const contentParts = [formatMgAmount(row.netContent)].filter(Boolean);
+    for (const c of results.conformityPeptides) {
+      if (isBlendTotalConformityRow(c.name)) continue;
+      if (c.name.trim().toLowerCase() !== name.toLowerCase()) continue;
+      const formatted = formatMgAmount(c.netContent);
+      if (formatted) contentParts.push(formatted);
+    }
+    rows.push({
+      panel_name: blendContentPanelName(name),
+      specification: claim ? `Label claim: ${claim} mg` : 'Label claim',
+      result: contentParts.join(', '),
+      pass: contentParts.length > 0,
+    });
+  }
 
   if (results.includeMolecularWeight && results.molecularWeight.trim()) {
     rows.push({
@@ -432,7 +641,7 @@ export function labResultsToPanelResults(results: LabCoaResults): PanelResult[] 
     });
   }
 
-  // Fold conformity vials into Net Content / Net Purity (one line each), not extra rows.
+  // Fold multi-vial conformity into Net Content / Net Purity totals only — never blend component rows.
   const { contentParts, purityParts } = collectContentPurityParts(results);
 
   if (contentParts.length > 0) {
@@ -498,8 +707,23 @@ function collectContentPurityParts(results: LabCoaResults): {
   // only (never seed them from label claim — that inflated averages for single-vial COAs).
   if (results.netContent.trim()) contentParts.push(asMg(results.netContent));
   if (results.netPurity.trim()) purityParts.push(asPct(results.netPurity));
+
+  const isBlend = results.blendPeptides.some(r => r.name.trim());
+  const blendNames = new Set(
+    results.blendPeptides.map(r => r.name.trim().toLowerCase()).filter(Boolean),
+  );
+
   for (const row of results.conformityPeptides) {
     if (!row.name.trim() && !row.netContent.trim() && !row.netPurity.trim()) continue;
+    if (isBlend) {
+      // Per-peptide blend conformity rows feed Blend Content panels, not total averages.
+      // Only explicit "Total …" rows (or unknown names) contribute to vial totals/purity.
+      const nameKey = row.name.trim().toLowerCase();
+      if (blendNames.has(nameKey) && !isBlendTotalConformityRow(row.name)) continue;
+      if (row.netContent.trim()) contentParts.push(asMg(row.netContent));
+      if (row.netPurity.trim()) purityParts.push(asPct(row.netPurity));
+      continue;
+    }
     if (row.netContent.trim()) contentParts.push(asMg(row.netContent));
     if (row.netPurity.trim()) purityParts.push(asPct(row.netPurity));
   }
@@ -537,7 +761,7 @@ export function computeAssayAveragesFromPanels(
   panels: PanelResult[],
   purityPercent?: number | null,
 ): AssayAverages {
-  const net = panels.find(p => /net content|peptide content/i.test(p.panel_name));
+  const net = panels.find(p => /net content|peptide content/i.test(p.panel_name) && !/^blend content\b/i.test(p.panel_name));
   const pur = panels.find(p => /net purity|^purity\b/i.test(p.panel_name));
   const contentParts = (net?.result || '')
     .split(',')

@@ -16,7 +16,7 @@ import {
   parsePurityPercent, parseMolecularWeight, lookupCas, casForSampleName,
   ENDOTOXIN_SPEC_EU_ML, ENDOTOXIN_PASS_RESULT, STERILITY_METHOD_LABELS,
   HEAVY_METAL_PASS_RESULT, heavyMetalsPassDefaults, heavyMetalsEmptyDefaults, computeLabAssayAverages,
-  assayPassSelectValue, assayPassFromSelect,
+  assayPassSelectValue, assayPassFromSelect, blendConformityVialRows, isBlendTotalConformityRow,
 } from '../lib/labCoaForm';
 import { COA_WORKFLOW_LABELS, canPrepareCoa, coaWorkflowStage, buildWorkflowStagePatch, CoaWorkflowStage } from '../lib/coaWorkflow';
 import CoaWorkflowBoard from '../components/lab/CoaWorkflowBoard';
@@ -502,10 +502,24 @@ export default function Lab() {
   }
 
   function addConformityPeptide() {
-    setLabResults(prev => ({
-      ...prev,
-      conformityPeptides: [...prev.conformityPeptides, { name: '', netContent: '', netPurity: '' }],
-    }));
+    setLabResults(prev => {
+      if (prev.blendPeptides.some(p => p.name.trim())) {
+        // Blend: append one full vial set with peptide names auto-filled + a total row.
+        const vialNum = Math.floor(prev.conformityPeptides.filter(r => isBlendTotalConformityRow(r.name)).length) + 2;
+        return {
+          ...prev,
+          conformityPeptides: [
+            ...prev.conformityPeptides,
+            { name: `Total (vial ${vialNum})`, netContent: '', netPurity: '' },
+            ...blendConformityVialRows(prev.blendPeptides),
+          ],
+        };
+      }
+      return {
+        ...prev,
+        conformityPeptides: [...prev.conformityPeptides, { name: '', netContent: '', netPurity: '' }],
+      };
+    });
   }
 
   function updateConformityPeptide(index: number, patch: Partial<{ name: string; netContent: string; netPurity: string }>) {
@@ -981,6 +995,7 @@ export default function Lab() {
           endotoxin_pass: labResults.endotoxinPass,
           heavy_metals_pass: labResults.heavyMetalsPass,
           heavy_metals: labResults.heavyMetals,
+          blend_peptides: labResults.blendPeptides,
           // Pre-calculate Prepare COA averages from assay + conformity vials.
           avg_net_peptide_content: assayAverages.avg_net_peptide_content,
           avg_purity: assayAverages.avg_purity,
@@ -1633,15 +1648,35 @@ export default function Lab() {
                   <div className="grid sm:grid-cols-2 gap-4">
                     <div>
                       <label className="label">Identification</label>
-                      <input value={labResults.identification} onChange={e => updateResults({ identification: e.target.value })} className="input-field" placeholder="Peptide identification" />
+                      <input
+                        value={labResults.identification}
+                        onChange={e => updateResults({ identification: e.target.value })}
+                        className="input-field"
+                        placeholder={labResults.blendPeptides.length > 0 ? 'e.g. BPC-157 + TB-500' : 'Peptide identification'}
+                      />
+                      {labResults.blendPeptides.length > 0 && (
+                        <p className="text-xs text-neutral-500 mt-1">Blend — list all peptides identified in this sample.</p>
+                      )}
                     </div>
                     <div>
-                      <label className="label">Net Content (tested)</label>
-                      <input value={labResults.netContent} onChange={e => updateResults({ netContent: e.target.value })} className="input-field" placeholder="Measured mg — not label claim" />
+                      <label className="label">
+                        {labResults.blendPeptides.length > 0 ? 'Total peptide content (tested)' : 'Net Content (tested)'}
+                      </label>
+                      <input
+                        value={labResults.netContent}
+                        onChange={e => updateResults({ netContent: e.target.value })}
+                        className="input-field"
+                        placeholder={labResults.blendPeptides.length > 0 ? 'Total measured mg for the blend' : 'Measured mg — not label claim'}
+                      />
                     </div>
                     <div>
-                      <label className="label">Net Purity (%)</label>
+                      <label className="label">
+                        {labResults.blendPeptides.length > 0 ? 'Total purity (%)' : 'Net Purity (%)'}
+                      </label>
                       <input type="number" step="0.1" value={labResults.netPurity} onChange={e => updateResults({ netPurity: e.target.value })} className="input-field" placeholder="e.g. 99.2" />
+                      {labResults.blendPeptides.length > 0 && (
+                        <p className="text-xs text-neutral-500 mt-1">One purity for the whole blend — not per peptide.</p>
+                      )}
                     </div>
                     <div>
                       <div className="flex items-center justify-between gap-2 mb-1">
@@ -1667,6 +1702,82 @@ export default function Lab() {
                       />
                     </div>
                   </div>
+                  {labResults.blendPeptides.length > 0 && (
+                    <div className="rounded-lg border border-brand-200 bg-white p-3 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-bold text-black">Blend components</p>
+                          <p className="text-xs text-neutral-500">
+                            Each ordered peptide appears on the COA. Enter tested net content only — purity is total above.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => updateResults({
+                            blendPeptides: [...labResults.blendPeptides, { name: '', claimMg: '', netContent: '' }],
+                          })}
+                          className="text-xs text-brand-700 font-medium inline-flex items-center gap-1"
+                        >
+                          <Plus size={13} /> Add peptide
+                        </button>
+                      </div>
+                      <div className="space-y-2">
+                        {labResults.blendPeptides.map((row, i) => (
+                          <div key={i} className="grid grid-cols-12 gap-2 items-end">
+                            <div className="col-span-4">
+                              <label className="text-[10px] font-semibold uppercase tracking-wide text-neutral-400">Peptide</label>
+                              <input
+                                value={row.name}
+                                onChange={e => updateResults({
+                                  blendPeptides: labResults.blendPeptides.map((r, idx) => (
+                                    idx === i ? { ...r, name: e.target.value } : r
+                                  )),
+                                })}
+                                className="input-field py-1.5 text-sm mt-0.5"
+                                placeholder="Peptide name"
+                              />
+                            </div>
+                            <div className="col-span-3">
+                              <label className="text-[10px] font-semibold uppercase tracking-wide text-neutral-400">Claim (mg)</label>
+                              <input
+                                value={row.claimMg}
+                                onChange={e => updateResults({
+                                  blendPeptides: labResults.blendPeptides.map((r, idx) => (
+                                    idx === i ? { ...r, claimMg: e.target.value } : r
+                                  )),
+                                })}
+                                className="input-field py-1.5 text-sm mt-0.5"
+                                placeholder="Label claim"
+                              />
+                            </div>
+                            <div className="col-span-3">
+                              <label className="text-[10px] font-semibold uppercase tracking-wide text-neutral-400">Net content tested</label>
+                              <input
+                                value={row.netContent}
+                                onChange={e => updateResults({
+                                  blendPeptides: labResults.blendPeptides.map((r, idx) => (
+                                    idx === i ? { ...r, netContent: e.target.value } : r
+                                  )),
+                                })}
+                                className="input-field py-1.5 text-sm mt-0.5"
+                                placeholder="Measured mg"
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => updateResults({
+                                blendPeptides: labResults.blendPeptides.filter((_, idx) => idx !== i),
+                              })}
+                              className="col-span-2 text-neutral-400 hover:text-red-600 flex justify-center pb-2"
+                              title="Remove peptide"
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   <div className="grid sm:grid-cols-2 gap-4">
                     <div>
                       <label className="label">Sterility method</label>
@@ -1785,13 +1896,131 @@ export default function Lab() {
                     <div className="flex items-center justify-between mb-2">
                       <label className="label mb-0">Conformity (additional measured vials)</label>
                       <button type="button" onClick={addConformityPeptide} className="text-xs text-brand-700 font-medium inline-flex items-center gap-1">
-                        <Plus size={13} /> Add peptide
+                        <Plus size={13} />
+                        {labResults.blendPeptides.length > 0 ? 'Add vial' : 'Add peptide'}
                       </button>
                     </div>
                     {labResults.conformityPeptides.length === 0 ? (
                       <p className="text-xs text-neutral-500">
-                        Optional. Add a row only for each extra vial or peptide measured. Average net content uses tested values only — never the label claim.
+                        {labResults.blendPeptides.length > 0
+                          ? 'Optional. Add a vial to enter another set of per-peptide net content (names auto-fill from the blend). Total purity stays above.'
+                          : 'Optional. Add a row only for each extra vial or peptide measured. Average net content uses tested values only — never the label claim.'}
                       </p>
+                    ) : labResults.blendPeptides.length > 0 ? (
+                      <div className="space-y-3">
+                        {(() => {
+                          // Group: Total row opens a vial, followed by blend peptide rows.
+                          const groups: { totalIdx: number | null; peptideIdxs: number[] }[] = [];
+                          let current: { totalIdx: number | null; peptideIdxs: number[] } | null = null;
+                          labResults.conformityPeptides.forEach((row, i) => {
+                            if (isBlendTotalConformityRow(row.name)) {
+                              current = { totalIdx: i, peptideIdxs: [] };
+                              groups.push(current);
+                              return;
+                            }
+                            if (!current) {
+                              current = { totalIdx: null, peptideIdxs: [] };
+                              groups.push(current);
+                            }
+                            current.peptideIdxs.push(i);
+                          });
+                          return groups.map((group, gIdx) => (
+                            <div key={gIdx} className="rounded-lg border border-atlas-border bg-white p-3 space-y-2">
+                              <p className="text-[10px] font-bold uppercase tracking-wide text-neutral-400">
+                                Conformity vial {gIdx + 2}
+                              </p>
+                              {group.totalIdx != null && (
+                                <div className="grid grid-cols-12 gap-2 items-end">
+                                  <div className="col-span-4">
+                                    <label className="text-[10px] font-semibold uppercase tracking-wide text-neutral-400">Total</label>
+                                    <input
+                                      value={labResults.conformityPeptides[group.totalIdx].name}
+                                      onChange={e => updateConformityPeptide(group.totalIdx!, { name: e.target.value })}
+                                      className="input-field py-1.5 text-sm mt-0.5"
+                                    />
+                                  </div>
+                                  <div className="col-span-3">
+                                    <label className="text-[10px] font-semibold uppercase tracking-wide text-neutral-400">Total content</label>
+                                    <input
+                                      value={labResults.conformityPeptides[group.totalIdx].netContent}
+                                      onChange={e => updateConformityPeptide(group.totalIdx!, { netContent: e.target.value })}
+                                      className="input-field py-1.5 text-sm mt-0.5"
+                                      placeholder="Measured mg"
+                                    />
+                                  </div>
+                                  <div className="col-span-3">
+                                    <label className="text-[10px] font-semibold uppercase tracking-wide text-neutral-400">Total purity %</label>
+                                    <input
+                                      value={labResults.conformityPeptides[group.totalIdx].netPurity}
+                                      onChange={e => updateConformityPeptide(group.totalIdx!, { netPurity: e.target.value })}
+                                      className="input-field py-1.5 text-sm mt-0.5"
+                                      placeholder="e.g. 99.2"
+                                    />
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const remove = new Set([group.totalIdx!, ...group.peptideIdxs]);
+                                      setLabResults(prev => ({
+                                        ...prev,
+                                        conformityPeptides: prev.conformityPeptides.filter((_, i) => !remove.has(i)),
+                                      }));
+                                    }}
+                                    className="col-span-2 text-neutral-400 hover:text-red-600 flex justify-center pb-2"
+                                    title="Remove vial"
+                                  >
+                                    <Trash2 size={15} />
+                                  </button>
+                                </div>
+                              )}
+                              {group.peptideIdxs.map(i => {
+                                const row = labResults.conformityPeptides[i];
+                                const claim = labResults.blendPeptides.find(
+                                  p => p.name.trim().toLowerCase() === row.name.trim().toLowerCase(),
+                                )?.claimMg || '';
+                                return (
+                                  <div key={i} className="grid grid-cols-12 gap-2 items-end">
+                                    <div className="col-span-4">
+                                      <label className="text-[10px] font-semibold uppercase tracking-wide text-neutral-400">Peptide</label>
+                                      <input
+                                        value={row.name}
+                                        onChange={e => updateConformityPeptide(i, { name: e.target.value })}
+                                        className="input-field py-1.5 text-sm mt-0.5"
+                                        placeholder="Peptide name"
+                                      />
+                                    </div>
+                                    <div className="col-span-3">
+                                      <label className="text-[10px] font-semibold uppercase tracking-wide text-neutral-400">Claim (mg)</label>
+                                      <input
+                                        value={claim}
+                                        readOnly
+                                        className="input-field py-1.5 text-sm mt-0.5 bg-neutral-50 text-neutral-600"
+                                        placeholder="—"
+                                      />
+                                    </div>
+                                    <div className="col-span-3">
+                                      <label className="text-[10px] font-semibold uppercase tracking-wide text-neutral-400">Net content tested</label>
+                                      <input
+                                        value={row.netContent}
+                                        onChange={e => updateConformityPeptide(i, { netContent: e.target.value })}
+                                        className="input-field py-1.5 text-sm mt-0.5"
+                                        placeholder="Measured mg"
+                                      />
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => removeConformityPeptide(i)}
+                                      className="col-span-2 text-neutral-400 hover:text-red-600 flex justify-center pb-2"
+                                    >
+                                      <Trash2 size={15} />
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ));
+                        })()}
+                      </div>
                     ) : (
                       <div className="space-y-2">
                         {labResults.conformityPeptides.map((row, i) => (
