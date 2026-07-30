@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, Link, useSearchParams } from 'react-router-dom';
+import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Shield, CheckCircle, XCircle,
   ArrowLeft, Copy, Check, Droplets, Boxes, AlertTriangle, Download,
@@ -16,6 +16,7 @@ import { compressImageDataUrl } from '../lib/imageCompress';
 import { coaPngFilename, downloadCoaPngFromElement } from '../lib/coaPdf';
 import { coaHasDirectorSignature, coaSignatureProgress, coaWorkflowStage } from '../lib/coaWorkflow';
 import { useAuth } from '../context/AuthContext';
+import { resolveUserRole, roleHome } from '../lib/roles';
 import Header from '../components/layout/Header';
 import Footer from '../components/layout/Footer';
 import AtlasLogo from '../components/brand/AtlasLogo';
@@ -66,11 +67,14 @@ function IntegrityBadge({ status }: { status: ReturnType<typeof verifyCoaIntegri
 
 export default function COADetail() {
   const { slug } = useParams<{ slug: string }>();
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const autoPrint = searchParams.get('print') === '1';
   const exportMode = searchParams.get('export') === '1';
   const hideChrome = autoPrint || exportMode;
-  const { user, loading: authLoading } = useAuth();
+  const { user, profile, loading: authLoading } = useAuth();
+  const role = resolveUserRole(profile, user?.email);
+  const isStaff = role === 'chemist' || role === 'admin' || role === 'verifier' || role === 'reviewer';
   const [coa, setCoa] = useState<COA | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -232,6 +236,27 @@ export default function COADetail() {
     Array.isArray(coa.panel_results) ? coa.panel_results : [],
   );
   const isOwner = !!user && user.id === coa.user_id;
+  const backFallback = isStaff
+    ? '/lab?tab=workflow'
+    : isOwner
+      ? '/dashboard/coas'
+      : '/coa-library';
+  const backLabel = isStaff
+    ? 'Back to Lab Console'
+    : isOwner
+      ? 'Back to My COAs'
+      : 'Public Library';
+
+  function goBack() {
+    const ref = document.referrer;
+    const sameOrigin = !!ref && ref.startsWith(window.location.origin);
+    if (sameOrigin && window.history.length > 1) {
+      navigate(-1);
+      return;
+    }
+    navigate(backFallback);
+  }
+
   const integrity = verifyCoaIntegrity(coa);
   const stats = readCoaPdfStats(coa);
   const summary = (coa.result_summary && typeof coa.result_summary === 'object'
@@ -372,9 +397,13 @@ export default function COADetail() {
 
         <div className="max-w-4xl mx-auto px-4 sm:px-6 py-4 coa-print-body flex-1 flex flex-col w-full">
           <div className="flex items-center justify-between gap-3 mb-3 no-print">
-            <Link to={isOwner ? '/dashboard/coas' : '/coa-library'} className="inline-flex items-center gap-1.5 text-neutral-500 hover:text-brand-600 text-sm">
-              <ArrowLeft size={14} /> {isOwner ? 'Back to My COAs' : 'Public Library'}
-            </Link>
+            <button
+              type="button"
+              onClick={goBack}
+              className="inline-flex items-center gap-1.5 text-neutral-500 hover:text-brand-600 text-sm"
+            >
+              <ArrowLeft size={14} /> {backLabel}
+            </button>
             <div className="flex items-center gap-2 flex-wrap justify-end">
               <IntegrityBadge status={integrity} />
               {isOwner && !coa.is_public && (

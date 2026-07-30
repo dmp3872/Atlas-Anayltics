@@ -103,8 +103,8 @@ export default function LabManagerDashboard({ samples, orders, coas, chemists, o
           >
             <Download size={12} /> Export CSV
           </button>
-          <Link to="/lab" className="text-xs font-semibold text-brand-700 hover:underline flex items-center gap-1 whitespace-nowrap">
-            Open chemist console <ArrowRight size={12} />
+          <Link to="/lab?tab=queue" className="text-xs font-semibold text-brand-700 hover:underline flex items-center gap-1 whitespace-nowrap">
+            Open testing queue <ArrowRight size={12} />
           </Link>
         </div>
       </div>

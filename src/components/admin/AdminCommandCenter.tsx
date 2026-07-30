@@ -72,8 +72,8 @@ export default function AdminCommandCenter({ samples, orders, coas, users, onNav
               <h3 className="font-bold text-black">Testing queue snapshot</h3>
               <p className="text-xs text-neutral-500">What chemists should run next — synced with Lab Console</p>
             </div>
-            <Link to="/lab" className="text-xs font-semibold text-brand-700 hover:underline flex items-center gap-1">
-              Open chemist console <ArrowRight size={12} />
+            <Link to="/lab?tab=queue" className="text-xs font-semibold text-brand-700 hover:underline flex items-center gap-1">
+              Open testing queue <ArrowRight size={12} />
             </Link>
           </div>
           {queue.length === 0 ? (
@@ -132,8 +132,8 @@ export default function AdminCommandCenter({ samples, orders, coas, users, onNav
                 </div>
               ))}
             </div>
-            <Link to="/lab" className="mt-4 block text-center text-xs font-medium text-brand-700 hover:underline">
-              Manage in Lab Console →
+            <Link to="/lab?tab=queue" className="mt-4 block text-center text-xs font-medium text-brand-700 hover:underline">
+              Manage in Testing Queue →
             </Link>
           </div>
 
