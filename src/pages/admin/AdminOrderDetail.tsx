@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
-  AlertCircle, AlertTriangle, ArrowLeft, ArrowRight, CheckCircle, CheckCircle2, Clock,
+  AlertCircle, AlertTriangle, ArrowLeft, ArrowRight, CalendarClock, CheckCircle, CheckCircle2, Clock,
   DollarSign, Fingerprint, Package, PackageCheck, Zap,
 } from 'lucide-react';
 import StaffHeader from '../../components/layout/StaffHeader';
@@ -16,8 +16,8 @@ import {
   PAYMENT_STATUS_LABELS, SAMPLE_STATUS_LABELS, normalizePaymentStatus, orderIsPayable,
 } from '../../lib/utils';
 import {
-  ORDER_ADMIN_NEXT_STATUS, fetchOrderHistory, logOrderStatusChange, markOrderPaid, markSampleReceived,
-  sampleReceivedBy,
+  ORDER_ADMIN_NEXT_STATUS, defaultIntakeEtaDateValue, fetchOrderHistory, intakeEtaDateToIso,
+  logOrderStatusChange, markOrderPaid, markSampleReceived, sampleReceivedBy,
 } from '../../lib/services/orderWorkflow';
 import OrderStatusPipeline from '../../components/order/OrderStatusPipeline';
 import OrderNotesThread from '../../components/order/OrderNotesThread';
@@ -46,11 +46,17 @@ export default function AdminOrderDetail() {
   const [statusNote, setStatusNote] = useState('');
   const [receivedByBySample, setReceivedByBySample] = useState<Record<string, string>>({});
   const [receiveNoteBySample, setReceiveNoteBySample] = useState<Record<string, string>>({});
+  const [etaBySample, setEtaBySample] = useState<Record<string, string>>({});
   const [etaSaving, setEtaSaving] = useState(false);
   const defaultReceivedBy = (profile?.full_name || '').trim();
 
   function receivedByFor(sampleId: string) {
     return (receivedByBySample[sampleId] ?? defaultReceivedBy).trim();
+  }
+
+  function etaFor(sampleId: string) {
+    if (!order) return '';
+    return etaBySample[sampleId] ?? defaultIntakeEtaDateValue(order);
   }
 
   async function reload() {
@@ -155,6 +161,12 @@ export default function AdminOrderDetail() {
       setMsg({ type: 'error', text: 'Enter who received this sample before continuing.' });
       return;
     }
+    const etaYmd = etaFor(sample.id);
+    const estimatedReadyAt = intakeEtaDateToIso(etaYmd);
+    if (!estimatedReadyAt) {
+      setMsg({ type: 'error', text: 'Enter a valid ETA date before receiving.' });
+      return;
+    }
     setActionLoading(true);
     setMsg(null);
     const { error, sample: updated } = await markSampleReceived(sample, order, {
@@ -162,6 +174,7 @@ export default function AdminOrderDetail() {
       note: receiveNoteBySample[sample.id] || '',
       changedBy: user?.id,
       vialCountConfirmed: sample.vial_count,
+      estimatedReadyAt,
     });
     if (error) {
       setMsg({ type: 'error', text: error.message });
@@ -170,8 +183,8 @@ export default function AdminOrderDetail() {
       setMsg({
         type: 'success',
         text: code
-          ? `${sample.display_name || sample.sample_name} received as ${code} (by ${receivedBy}).`
-          : `${sample.display_name || sample.sample_name} received (by ${receivedBy}).`,
+          ? `${sample.display_name || sample.sample_name} received as ${code} (by ${receivedBy}) — ETA ${etaYmd}.`
+          : `${sample.display_name || sample.sample_name} received (by ${receivedBy}) — ETA ${etaYmd}.`,
       });
       await reload();
     }
@@ -397,6 +410,22 @@ export default function AdminOrderDetail() {
                           required
                         />
                       </div>
+                      <div>
+                        <label className="text-[11px] font-semibold text-brand-900 flex items-center gap-1">
+                          <CalendarClock size={11} />
+                          ETA / ready by <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="date"
+                          value={etaFor(sample.id)}
+                          onChange={e => setEtaBySample(prev => ({ ...prev, [sample.id]: e.target.value }))}
+                          className="input-field text-sm mt-1"
+                          required
+                        />
+                        <p className="text-[10px] text-brand-900/70 mt-1">
+                          Client-visible date. Defaults to {order.rush_processing ? 'rush (3 days)' : 'standard (7 days)'} TAT.
+                        </p>
+                      </div>
                       <input
                         value={receiveNoteBySample[sample.id] ?? ''}
                         onChange={e => setReceiveNoteBySample(prev => ({ ...prev, [sample.id]: e.target.value }))}
@@ -405,7 +434,7 @@ export default function AdminOrderDetail() {
                       />
                       <button
                         type="button"
-                        disabled={actionLoading || !paid || !receivedByFor(sample.id)}
+                        disabled={actionLoading || !paid || !receivedByFor(sample.id) || !etaFor(sample.id)}
                         onClick={() => handleReceiveSample(sample)}
                         className="btn-primary text-xs py-1.5 gap-1"
                       >

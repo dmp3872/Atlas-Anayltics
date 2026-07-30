@@ -15,7 +15,8 @@ import {
   HEAVY_METAL_NAMES, buildLabResultsFromSample, buildLabResultsFromCoa, labResultsToPanelResults,
   parsePurityPercent, parseMolecularWeight, lookupCas, casForSampleName,
   ENDOTOXIN_SPEC_EU_ML, ENDOTOXIN_PASS_RESULT, STERILITY_METHOD_LABELS,
-  HEAVY_METAL_PASS_RESULT, heavyMetalsPassDefaults, computeLabAssayAverages,
+  HEAVY_METAL_PASS_RESULT, heavyMetalsPassDefaults, heavyMetalsEmptyDefaults, computeLabAssayAverages,
+  assayPassSelectValue, assayPassFromSelect,
 } from '../lib/labCoaForm';
 import { COA_WORKFLOW_LABELS, canPrepareCoa, coaWorkflowStage, buildWorkflowStagePatch, CoaWorkflowStage } from '../lib/coaWorkflow';
 import CoaWorkflowBoard from '../components/lab/CoaWorkflowBoard';
@@ -70,7 +71,7 @@ const BLANK = {
   clientId: '', sampleId: '', orderId: '',
   sampleName: '', displayName: '', companyName: '',
   batchNumber: '', casNumber: '', vialSize: '3ml' as VialSizeOption,
-  overallResult: 'pass' as COA['overall_result'],
+  overallResult: 'pending' as COA['overall_result'],
   accessionNumber: '',
   receivedBy: '',
   receivedDate: '',
@@ -978,6 +979,8 @@ export default function Lab() {
           sterility_specification: 'Not Detected',
           endotoxin_eu_ml: labResults.endotoxinEuMl.trim(),
           endotoxin_pass: labResults.endotoxinPass,
+          heavy_metals_pass: labResults.heavyMetalsPass,
+          heavy_metals: labResults.heavyMetals,
           // Pre-calculate Prepare COA averages from assay + conformity vials.
           avg_net_peptide_content: assayAverages.avg_net_peptide_content,
           avg_purity: assayAverages.avg_purity,
@@ -1679,7 +1682,12 @@ export default function Lab() {
                     </div>
                     <div>
                       <label className="label">Sterility result</label>
-                      <select value={labResults.sterilityPass ? 'pass' : 'fail'} onChange={e => updateResults({ sterilityPass: e.target.value === 'pass' })} className="input-field">
+                      <select
+                        value={assayPassSelectValue(labResults.sterilityPass)}
+                        onChange={e => updateResults({ sterilityPass: assayPassFromSelect(e.target.value) })}
+                        className="input-field"
+                      >
+                        <option value="pending">Pending</option>
                         <option value="pass">Not Detected — PASS</option>
                         <option value="fail">Detected — FAIL</option>
                       </select>
@@ -1692,24 +1700,27 @@ export default function Lab() {
                             type="text"
                             value={labResults.endotoxinEuMl}
                             onChange={e => updateResults({ endotoxinEuMl: e.target.value })}
-                            className="input-field"
-                            placeholder={ENDOTOXIN_PASS_RESULT}
+                            disabled={labResults.endotoxinPass === null}
+                            className="input-field disabled:opacity-50"
+                            placeholder={labResults.endotoxinPass === null ? 'Pending' : ENDOTOXIN_PASS_RESULT}
                           />
                           <p className="text-xs text-neutral-500 mt-1">Spec: {ENDOTOXIN_SPEC_EU_ML}</p>
                         </div>
                         <div>
                           <label className="label">Endotoxin conformity</label>
                           <select
-                            value={labResults.endotoxinPass ? 'pass' : 'fail'}
+                            value={assayPassSelectValue(labResults.endotoxinPass)}
                             onChange={e => {
-                              const pass = e.target.value === 'pass';
+                              const next = assayPassFromSelect(e.target.value);
                               updateResults({
-                                endotoxinPass: pass,
-                                ...(pass ? { endotoxinEuMl: ENDOTOXIN_PASS_RESULT } : {}),
+                                endotoxinPass: next,
+                                ...(next === true ? { endotoxinEuMl: ENDOTOXIN_PASS_RESULT } : {}),
+                                ...(next === null ? { endotoxinEuMl: '' } : {}),
                               });
                             }}
                             className="input-field"
                           >
+                            <option value="pending">Pending</option>
                             <option value="pass">PASS</option>
                             <option value="fail">FAIL</option>
                           </select>
@@ -1736,16 +1747,18 @@ export default function Lab() {
                       <div>
                         <label className="label">Heavy metals conformity</label>
                         <select
-                          value={labResults.heavyMetalsPass ? 'pass' : 'fail'}
+                          value={assayPassSelectValue(labResults.heavyMetalsPass)}
                           onChange={e => {
-                            const pass = e.target.value === 'pass';
+                            const next = assayPassFromSelect(e.target.value);
                             updateResults({
-                              heavyMetalsPass: pass,
-                              ...(pass ? { heavyMetals: heavyMetalsPassDefaults() } : {}),
+                              heavyMetalsPass: next,
+                              ...(next === true ? { heavyMetals: heavyMetalsPassDefaults() } : {}),
+                              ...(next === null ? { heavyMetals: heavyMetalsEmptyDefaults() } : {}),
                             });
                           }}
                           className="input-field"
                         >
+                          <option value="pending">Pending</option>
                           <option value="pass">PASS — Not Detected</option>
                           <option value="fail">FAIL — enter measured values</option>
                         </select>
@@ -1759,8 +1772,9 @@ export default function Lab() {
                             type="text"
                             value={labResults.heavyMetals[metal]}
                             onChange={e => updateHeavyMetal(metal, e.target.value)}
-                            className="input-field py-1.5 text-sm"
-                            placeholder={HEAVY_METAL_PASS_RESULT}
+                            disabled={labResults.heavyMetalsPass === null}
+                            className="input-field py-1.5 text-sm disabled:opacity-50"
+                            placeholder={labResults.heavyMetalsPass === null ? 'Pending' : HEAVY_METAL_PASS_RESULT}
                           />
                         </div>
                       ))}

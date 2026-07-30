@@ -12,6 +12,7 @@ import {
   CoaWorkflowStage, canPrepareCoa, canReturnCoaToTesting, coaSignatureProgress, coaWorkflowStage,
 } from '../../lib/coaWorkflow';
 import { LAB_PRIORITY_LABELS, LAB_PRIORITY_STYLES, QueueSampleItem, testsLabelForSample } from '../../lib/labQueue';
+import { parseSampleMetadata } from '../../lib/coaPanels';
 import { downloadCoaPdf } from '../../lib/coaPdf';
 import CoaPdfPrepModal from './CoaPdfPrepModal';
 
@@ -108,6 +109,20 @@ function AssignedToYouBadge() {
     <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border border-sky-400 bg-sky-100 text-sky-900">
       Assigned to you
     </span>
+  );
+}
+
+function LotLine({ lot }: { lot: string }) {
+  return (
+    <p className="text-xs text-neutral-600">
+      <span className="font-semibold text-neutral-800">Lot</span>
+      {': '}
+      {lot ? (
+        <span className="font-mono font-medium text-black">{lot}</span>
+      ) : (
+        <span className="text-amber-700">Not provided</span>
+      )}
+    </p>
   );
 }
 
@@ -224,6 +239,18 @@ export default function CoaWorkflowBoard({
     if (!coa.sample_id) return null;
     const sample = samples.find(s => s.id === coa.sample_id);
     return sample ? testsLabelForSample(sample) : null;
+  }
+
+  function lotForSample(sample: OrderSample | undefined | null): string {
+    if (!sample) return '';
+    return (parseSampleMetadata(sample.metadata).batch_number || '').trim();
+  }
+
+  function lotForCoa(coa: COA): string {
+    const fromCoa = (coa.batch_number || '').trim();
+    if (fromCoa) return fromCoa;
+    if (!coa.sample_id) return '';
+    return lotForSample(samples.find(s => s.id === coa.sample_id));
   }
 
   const grouped = useMemo(() => {
@@ -475,6 +502,7 @@ export default function CoaWorkflowBoard({
                       const { sample, order, priority, assigned_to: assignedTo } = item;
                       const mine = !!currentUserId && assignedTo === currentUserId;
                       const pStyles = LAB_PRIORITY_STYLES[priority];
+                      const lot = lotForSample(sample);
                       return (
                         <article
                           key={sample.id}
@@ -492,6 +520,7 @@ export default function CoaWorkflowBoard({
                           <p className="font-medium text-sm text-black leading-snug truncate">
                             {sample.display_name || sample.sample_name}
                           </p>
+                          <LotLine lot={lot} />
                           <p className="text-xs text-neutral-500 mt-0.5 truncate">
                             {order.company_name || '—'} · {order.order_number}
                           </p>
@@ -531,6 +560,7 @@ export default function CoaWorkflowBoard({
                     const companyName = order?.company_name || coa.company_name;
                     const accession = accessionForCoa(coa);
                     const testsLabel = testsLabelForCoa(coa);
+                    const lot = lotForCoa(coa);
                     const isAwaitingInfo = currentStage === 'awaiting_info';
                     const assignee = assigneeForCoa(coa);
                     const reviewAssigneeId = coa.review_assigned_to ?? null;
@@ -565,6 +595,8 @@ export default function CoaWorkflowBoard({
                               </p>
                               <ResultBadge result={coa.overall_result} />
                             </div>
+
+                            <LotLine lot={lot} />
 
                             {mine && <AssignedToYouBadge />}
 
@@ -628,7 +660,6 @@ export default function CoaWorkflowBoard({
                                   <Hash size={10} className="text-neutral-400" /> {order.order_number}
                                 </span>
                               )}
-                              {coa.batch_number && <span>Batch {coa.batch_number}</span>}
                               {accession && (
                                 <span className="flex items-center gap-1 font-mono" title={accession.label}>
                                   <Fingerprint size={10} className="text-neutral-400" />

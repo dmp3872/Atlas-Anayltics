@@ -54,6 +54,14 @@ function resolveSterility(coa: COA, panels: PanelResult[]) {
   const panel = findPanel(panels, 'steril');
   const methodLabel = STERILITY_METHOD_LABELS[stats.sterility_method];
   const pass = stats.sterility_pass;
+  if (pass === null) {
+    return {
+      specification: 'Not Detected',
+      result: 'Pending',
+      conformity: 'PENDING',
+      panel,
+    };
+  }
   return {
     specification: 'Not Detected',
     result: pass
@@ -67,6 +75,14 @@ function resolveSterility(coa: COA, panels: PanelResult[]) {
 function resolveEndotoxin(coa: COA, panels: PanelResult[]) {
   const stats = readCoaPdfStats(coa);
   const panel = findPanel(panels, 'endotoxin', 'lal');
+  if (stats.endotoxin_pass === null) {
+    return {
+      specification: ENDOTOXIN_SPEC_EU_ML,
+      result: 'Pending',
+      conformity: 'PENDING',
+      panel,
+    };
+  }
   const value = stats.endotoxin_eu_ml.trim();
   const raw = value ? `${value} EU/mL` : (panel?.result ?? '').trim();
   const result = raw && !/\(\s*lal\s*\)/i.test(raw) ? `${raw.replace(/\s+$/, '')} (LAL)` : raw;
