@@ -35,6 +35,40 @@ export function heavyMetalsPassDefaults(): Record<HeavyMetalName, string> {
   };
 }
 
+/** Empty metal cells while Heavy Metals conformity is still Pending. */
+export function heavyMetalsEmptyDefaults(): Record<HeavyMetalName, string> {
+  return {
+    'Lead (Pb)': '',
+    'Arsenic (As)': '',
+    'Cadmium (Cd)': '',
+    'Mercury (Hg)': '',
+    'Chromium (Cr)': '',
+  };
+}
+
+/** Pass / fail / pending for biosafety assays that may return after the COA is started. */
+export type AssayPassState = boolean | null;
+
+export function assayPassSelectValue(state: AssayPassState): 'pass' | 'fail' | 'pending' {
+  if (state === true) return 'pass';
+  if (state === false) return 'fail';
+  return 'pending';
+}
+
+export function assayPassFromSelect(value: string): AssayPassState {
+  if (value === 'pass') return true;
+  if (value === 'fail') return false;
+  return null;
+}
+
+export function parseAssayPassState(value: unknown, fallback: AssayPassState = null): AssayPassState {
+  if (value === true || value === false) return value;
+  if (value === 'pass') return true;
+  if (value === 'fail') return false;
+  if (value === 'pending' || value === null) return null;
+  return fallback;
+}
+
 export type SterilityMethod = 'pcr' | 'culture_14_day';
 
 export const STERILITY_METHOD_LABELS: Record<SterilityMethod, string> = {
@@ -70,13 +104,15 @@ export interface LabCoaResults {
   /** When false, Molecular Weight is omitted from the COA. */
   includeMolecularWeight: boolean;
   sterilityMethod: SterilityMethod;
-  sterilityPass: boolean;
+  /** null = Pending until the lab result is entered. */
+  sterilityPass: AssayPassState;
   endotoxinEuMl: string;
-  endotoxinPass: boolean;
+  /** null = Pending until the lab result is entered. */
+  endotoxinPass: AssayPassState;
   /** When false, Endotoxin is omitted from the COA (e.g. revised Full QC). */
   includeEndotoxin: boolean;
-  /** When true, metal result boxes default to Not Detected. */
-  heavyMetalsPass: boolean;
+  /** null = Pending; true fills metal boxes with Not Detected. */
+  heavyMetalsPass: AssayPassState;
   heavyMetals: Record<HeavyMetalName, string>;
   /** When false, Heavy Metals rows are omitted from the COA. */
   includeHeavyMetals: boolean;
@@ -93,12 +129,12 @@ export const EMPTY_LAB_RESULTS: LabCoaResults = {
   molecularWeight: '',
   includeMolecularWeight: false,
   sterilityMethod: 'pcr',
-  sterilityPass: true,
-  endotoxinEuMl: ENDOTOXIN_PASS_RESULT,
-  endotoxinPass: true,
+  sterilityPass: null,
+  endotoxinEuMl: '',
+  endotoxinPass: null,
   includeEndotoxin: true,
-  heavyMetalsPass: true,
-  heavyMetals: heavyMetalsPassDefaults(),
+  heavyMetalsPass: null,
+  heavyMetals: heavyMetalsEmptyDefaults(),
   includeHeavyMetals: true,
   includeSterility: true,
   conformityPeptides: [],
@@ -243,17 +279,29 @@ export function buildLabResultsFromCoa(
 
   const heavyMetals = { ...base.heavyMetals };
   let includeHeavyMetals = false;
-  let heavyMetalsPass = true;
+  let sawMetal = false;
+  let sawFilledMetal = false;
+  let anyMetalFail = false;
   for (const metal of HEAVY_METAL_NAMES) {
     const row = panels.find(p => p.panel_name === metal);
     if (row) {
       includeHeavyMetals = true;
-      heavyMetals[metal] = row.result || '';
-      if (row.pass === false) heavyMetalsPass = false;
+      sawMetal = true;
+      const result = (row.result || '').trim();
+      heavyMetals[metal] = result;
+      if (result) sawFilledMetal = true;
+      if (row.pass === false) anyMetalFail = true;
     }
   }
+  const heavyMetalsPass: AssayPassState = !sawMetal
+    ? parseAssayPassState(summary.heavy_metals_pass, null)
+    : !sawFilledMetal
+      ? null
+      : anyMetalFail
+        ? false
+        : true;
 
-  const sterilityResult = sterilityPanel?.result || '';
+  const sterilityResult = (sterilityPanel?.result || '').trim();
   const sterilityMethod: SterilityMethod =
     /14.?day|culture/i.test(sterilityResult)
     || summary.sterility_method === 'culture_14_day'
@@ -265,11 +313,23 @@ export function buildLabResultsFromCoa(
     .replace(/\s*\(LAL\)\s*$/i, '')
     .replace(/\s*EU\s*\/\s*mL\s*$/i, '')
     .trim()
-    || (typeof summary.endotoxin_eu_ml === 'string' ? summary.endotoxin_eu_ml : ENDOTOXIN_PASS_RESULT);
+    || (typeof summary.endotoxin_eu_ml === 'string' ? summary.endotoxin_eu_ml : '');
 
   const mwRaw = mwPanel?.result?.trim()
     || (coa.molecular_weight != null ? String(coa.molecular_weight) : '')
     || (typeof summary.molecular_weight === 'string' ? summary.molecular_weight : '');
+
+  const sterilityPass: AssayPassState = sterilityPanel
+    ? (!sterilityResult
+      ? parseAssayPassState(summary.sterility_pass, null)
+      : sterilityPanel.pass !== false && !/^detected\b/i.test(sterilityResult))
+    : parseAssayPassState(summary.sterility_pass, null);
+
+  const endotoxinPass: AssayPassState = endotoxinPanel
+    ? (!(endotoxinPanel.result || '').trim()
+      ? parseAssayPassState(summary.endotoxin_pass, null)
+      : endotoxinPanel.pass !== false)
+    : parseAssayPassState(summary.endotoxin_pass, null);
 
   return {
     ...base,
@@ -279,10 +339,10 @@ export function buildLabResultsFromCoa(
     molecularWeight: mwRaw,
     includeMolecularWeight: !!mwRaw || summary.include_molecular_weight === true,
     sterilityMethod,
-    sterilityPass: sterilityPanel ? sterilityPanel.pass !== false && !/^detected\b/i.test(sterilityResult) : true,
+    sterilityPass,
     includeSterility: !!sterilityPanel || base.includeSterility,
     endotoxinEuMl,
-    endotoxinPass: endotoxinPanel ? endotoxinPanel.pass !== false : true,
+    endotoxinPass,
     includeEndotoxin: !!endotoxinPanel || base.includeEndotoxin,
     includeHeavyMetals: includeHeavyMetals || base.includeHeavyMetals,
     heavyMetalsPass,
@@ -314,32 +374,51 @@ export function labResultsToPanelResults(results: LabCoaResults): PanelResult[] 
   }
 
   if (results.includeSterility !== false) {
-    rows.push({
-      panel_name: 'Sterility',
-      specification: 'Not Detected',
-      result: results.sterilityPass
-        ? `Not Detected (${STERILITY_METHOD_LABELS[results.sterilityMethod]})`
-        : `Detected (${STERILITY_METHOD_LABELS[results.sterilityMethod]})`,
-      pass: results.sterilityPass,
-    });
+    if (results.sterilityPass === null) {
+      rows.push({
+        panel_name: 'Sterility',
+        specification: 'Not Detected',
+        result: '',
+        pass: false,
+      });
+    } else {
+      rows.push({
+        panel_name: 'Sterility',
+        specification: 'Not Detected',
+        result: results.sterilityPass
+          ? `Not Detected (${STERILITY_METHOD_LABELS[results.sterilityMethod]})`
+          : `Detected (${STERILITY_METHOD_LABELS[results.sterilityMethod]})`,
+        pass: results.sterilityPass,
+      });
+    }
   }
 
   if (results.includeEndotoxin !== false) {
-    rows.push({
-      panel_name: 'Endotoxin',
-      specification: ENDOTOXIN_SPEC_EU_ML,
-      result: formatEndotoxinResult(results.endotoxinEuMl),
-      pass: results.endotoxinPass,
-    });
+    if (results.endotoxinPass === null) {
+      rows.push({
+        panel_name: 'Endotoxin',
+        specification: ENDOTOXIN_SPEC_EU_ML,
+        result: '',
+        pass: false,
+      });
+    } else {
+      rows.push({
+        panel_name: 'Endotoxin',
+        specification: ENDOTOXIN_SPEC_EU_ML,
+        result: formatEndotoxinResult(results.endotoxinEuMl),
+        pass: results.endotoxinPass,
+      });
+    }
   }
 
   if (results.includeHeavyMetals !== false) {
     for (const metal of HEAVY_METAL_NAMES) {
+      const filled = (results.heavyMetals[metal] ?? '').trim();
       rows.push({
         panel_name: metal,
         specification: HEAVY_METAL_USP_SPECS[metal],
-        result: (results.heavyMetals[metal] ?? '').trim(),
-        pass: results.heavyMetalsPass,
+        result: results.heavyMetalsPass === null ? '' : filled,
+        pass: results.heavyMetalsPass === true,
       });
     }
   }

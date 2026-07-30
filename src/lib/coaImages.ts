@@ -6,9 +6,12 @@ import {
   HEAVY_METAL_PASS_RESULT,
   HEAVY_METAL_USP_SPECS,
   HeavyMetalName,
+  AssayPassState,
   computeAssayAveragesFromPanels,
   formatEndotoxinResult,
+  heavyMetalsEmptyDefaults,
   heavyMetalsPassDefaults,
+  parseAssayPassState,
   SterilityMethod,
   STERILITY_METHOD_LABELS,
   sterilitySpecLabel,
@@ -29,10 +32,13 @@ export interface CoaPdfStats {
   include_molecular_weight: boolean;
   molecular_weight: string;
   sterility_method: SterilityMethod;
-  sterility_pass: boolean;
+  /** null = Pending. */
+  sterility_pass: AssayPassState;
   endotoxin_eu_ml: string;
-  endotoxin_pass: boolean;
-  heavy_metals_pass: boolean;
+  /** null = Pending. */
+  endotoxin_pass: AssayPassState;
+  /** null = Pending. */
+  heavy_metals_pass: AssayPassState;
   heavy_metals: Record<HeavyMetalName, string>;
 }
 
@@ -45,24 +51,40 @@ function findMetalPanel(panels: PanelResult[], metal: HeavyMetalName): PanelResu
 }
 
 export function readHeavyMetalsFromCoa(coa: COA): {
-  heavy_metals_pass: boolean;
+  heavy_metals_pass: AssayPassState;
   heavy_metals: Record<HeavyMetalName, string>;
 } {
   const panels = Array.isArray(coa.panel_results) ? coa.panel_results : [];
-  const heavy_metals = heavyMetalsPassDefaults();
+  const summary = (coa.result_summary ?? {}) as Record<string, unknown>;
+  const heavy_metals = heavyMetalsEmptyDefaults();
   let sawAny = false;
+  let sawFilled = false;
   let allPass = true;
   for (const metal of HEAVY_METAL_NAMES) {
     const panel = findMetalPanel(panels, metal);
     if (!panel) continue;
     sawAny = true;
     const result = (panel.result || '').trim();
-    heavy_metals[metal] = result || HEAVY_METAL_PASS_RESULT;
+    heavy_metals[metal] = result;
+    if (result) sawFilled = true;
     if (!panel.pass) allPass = false;
   }
+  if (!sawAny) {
+    return {
+      heavy_metals_pass: parseAssayPassState(summary.heavy_metals_pass, null),
+      heavy_metals,
+    };
+  }
+  if (!sawFilled) {
+    return { heavy_metals_pass: null, heavy_metals };
+  }
   return {
-    heavy_metals_pass: sawAny ? allPass : true,
-    heavy_metals,
+    heavy_metals_pass: allPass,
+    heavy_metals: allPass
+      ? { ...heavyMetalsPassDefaults(), ...Object.fromEntries(
+          HEAVY_METAL_NAMES.map(m => [m, heavy_metals[m] || HEAVY_METAL_PASS_RESULT]),
+        ) as Record<HeavyMetalName, string> }
+      : heavy_metals,
   };
 }
 
@@ -151,12 +173,13 @@ export function readCoaPdfStats(coa: COA): CoaPdfStats {
     includeFromSummary ?? (!!mwPanel || (coa.molecular_weight != null && !!molecular_weight));
 
   const sterility_method = parseSterilityMethod(summary.sterility_method, sterilityPanel);
-  const sterility_pass =
-    typeof summary.sterility_pass === 'boolean'
-      ? summary.sterility_pass
+  const sterilityResult = (sterilityPanel?.result || '').trim();
+  const sterility_pass: AssayPassState =
+    typeof summary.sterility_pass === 'boolean' || summary.sterility_pass === null
+      ? parseAssayPassState(summary.sterility_pass, null)
       : sterilityPanel
-        ? !!sterilityPanel.pass
-        : true;
+        ? (sterilityResult ? !!sterilityPanel.pass : null)
+        : null;
 
   const endotoxinFromSummary =
     typeof summary.endotoxin_eu_ml === 'string' ? summary.endotoxin_eu_ml : '';
@@ -164,12 +187,13 @@ export function readCoaPdfStats(coa: COA): CoaPdfStats {
     endotoxinFromSummary ||
     parseEndotoxinValue(endotoxinPanel?.result ?? '');
 
-  const endotoxin_pass =
-    typeof summary.endotoxin_pass === 'boolean'
-      ? summary.endotoxin_pass
+  const endotoxinResult = (endotoxinPanel?.result || '').trim();
+  const endotoxin_pass: AssayPassState =
+    typeof summary.endotoxin_pass === 'boolean' || summary.endotoxin_pass === null
+      ? parseAssayPassState(summary.endotoxin_pass, null)
       : endotoxinPanel
-        ? !!endotoxinPanel.pass
-        : true;
+        ? (endotoxinResult ? !!endotoxinPanel.pass : null)
+        : null;
 
   const metals = readHeavyMetalsFromCoa(coa);
 
@@ -414,10 +438,10 @@ export type CoaPdfPrepPayload = {
   include_molecular_weight: boolean;
   molecular_weight: string;
   sterility_method: SterilityMethod;
-  sterility_pass: boolean;
+  sterility_pass: AssayPassState;
   endotoxin_eu_ml: string;
-  endotoxin_pass: boolean;
-  heavy_metals_pass: boolean;
+  endotoxin_pass: AssayPassState;
+  heavy_metals_pass: AssayPassState;
   heavy_metals: Record<HeavyMetalName, string>;
 };
 
@@ -447,25 +471,39 @@ export function applyPrepToCoaPanels(coa: COA, prep: CoaPdfPrepPayload): {
   panels = upsertNamedPanel(
     panels,
     name => name.includes('steril'),
-    {
-      panel_name: 'Sterility',
-      specification: 'Not Detected',
-      result: prep.sterility_pass
-        ? `Not Detected (${STERILITY_METHOD_LABELS[prep.sterility_method]})`
-        : `Detected (${STERILITY_METHOD_LABELS[prep.sterility_method]})`,
-      pass: prep.sterility_pass,
-    },
+    prep.sterility_pass === null
+      ? {
+          panel_name: 'Sterility',
+          specification: 'Not Detected',
+          result: '',
+          pass: false,
+        }
+      : {
+          panel_name: 'Sterility',
+          specification: 'Not Detected',
+          result: prep.sterility_pass
+            ? `Not Detected (${STERILITY_METHOD_LABELS[prep.sterility_method]})`
+            : `Detected (${STERILITY_METHOD_LABELS[prep.sterility_method]})`,
+          pass: prep.sterility_pass,
+        },
   );
 
   panels = upsertNamedPanel(
     panels,
     name => name.includes('endotoxin') || name.includes('lal'),
-    {
-      panel_name: 'Endotoxin',
-      specification: ENDOTOXIN_SPEC_EU_ML,
-      result: formatEndotoxinResult(prep.endotoxin_eu_ml),
-      pass: prep.endotoxin_pass,
-    },
+    prep.endotoxin_pass === null
+      ? {
+          panel_name: 'Endotoxin',
+          specification: ENDOTOXIN_SPEC_EU_ML,
+          result: '',
+          pass: false,
+        }
+      : {
+          panel_name: 'Endotoxin',
+          specification: ENDOTOXIN_SPEC_EU_ML,
+          result: formatEndotoxinResult(prep.endotoxin_eu_ml),
+          pass: prep.endotoxin_pass,
+        },
   );
 
   const mwTrim = prep.molecular_weight.trim();
@@ -499,8 +537,11 @@ export function applyPrepToCoaPanels(coa: COA, prep: CoaPdfPrepPayload): {
   );
 
   for (const metal of HEAVY_METAL_NAMES) {
-    const result = (prep.heavy_metals[metal] ?? '').trim()
-      || (prep.heavy_metals_pass ? HEAVY_METAL_PASS_RESULT : '');
+    const pending = prep.heavy_metals_pass === null;
+    const result = pending
+      ? ''
+      : ((prep.heavy_metals[metal] ?? '').trim()
+        || (prep.heavy_metals_pass ? HEAVY_METAL_PASS_RESULT : ''));
     panels = upsertNamedPanel(
       panels,
       name => name.includes(metal.replace(/\s*\(.*\)\s*$/, '').trim().toLowerCase())
@@ -509,7 +550,7 @@ export function applyPrepToCoaPanels(coa: COA, prep: CoaPdfPrepPayload): {
         panel_name: metal,
         specification: HEAVY_METAL_USP_SPECS[metal],
         result,
-        pass: prep.heavy_metals_pass,
+        pass: prep.heavy_metals_pass === true,
       },
     );
   }

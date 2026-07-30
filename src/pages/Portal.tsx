@@ -33,7 +33,7 @@ import PortalHome from '../components/portal/PortalHome';
 import OrderShippingChecklist from '../components/order/OrderShippingChecklist';
 import AtlasDigitalCoaCard from '../components/order/AtlasDigitalCoaCard';
 import OrderNotesThread from '../components/order/OrderNotesThread';
-import { assayResultsFromPanels, partitionCoaPanels } from '../lib/coaDisplayPanels';
+import { assayResultsFromPanels, isHeavyMetalPanel, partitionCoaPanels } from '../lib/coaDisplayPanels';
 import { createEmptySample, TestMode, type SampleCategory, type SampleMatrix } from '../lib/orderCatalog';
 import { trackingStageFromStatuses } from '../lib/orderProjection';
 import { queueNotification } from '../lib/notifications';
@@ -88,16 +88,105 @@ type CoaResultLine = {
   label: string;
   value: string;
   pass: boolean | null;
+  pending?: boolean;
 };
 
-function coaResultLines(coa: COA): CoaResultLine[] {
+function sampleStillAnalyzing(sample: OrderSample, coa?: COA | null): boolean {
+  if (sample.status === 'analyzing' || sample.status === 'in_review' || sample.status === 'received') {
+    return true;
+  }
+  if (!coa) return false;
+  if (coa.overall_result === 'pending') return true;
+  const stage = coa.coa_workflow_stage;
+  return stage === 'testing_in_progress' || stage === 'awaiting_info';
+}
+
+function panelResultFilled(panel: PanelResult): boolean {
+  return !!panel.result?.trim();
+}
+
+/** Whether filled COA panels already cover an ordered catalog test name. */
+function panelsCoverOrderedTest(testName: string, panels: PanelResult[]): boolean {
+  const filled = panels.filter(panelResultFilled);
+  if (filled.length === 0) return false;
+  const t = testName.toLowerCase();
+
+  if (/heavy\s*metal/.test(t)) {
+    return filled.some(p => isHeavyMetalPanel(p.panel_name));
+  }
+  if (/identity,\s*purity|purity\s*&\s*quantity|identity.*quantity/.test(t)) {
+    const hasId = filled.some(p => /ident/i.test(p.panel_name));
+    const hasPurity = filled.some(p => /purit/i.test(p.panel_name));
+    const hasQty = filled.some(p => /content|quant/i.test(p.panel_name));
+    return hasId && hasPurity && hasQty;
+  }
+  if (/^purity\b/.test(t) || t.includes('hplc')) {
+    return filled.some(p => /purit/i.test(p.panel_name));
+  }
+  if (/sterility/.test(t)) return filled.some(p => /sterility/i.test(p.panel_name));
+  if (/endotoxin/.test(t)) return filled.some(p => /endotoxin/i.test(p.panel_name));
+  if (/fentanyl/.test(t)) return filled.some(p => /fentanyl/i.test(p.panel_name));
+  if (/conformity/.test(t)) {
+    // Conformity folds into content/purity lines on the COA.
+    return filled.some(p => /content|purit|conformity/i.test(p.panel_name));
+  }
+  if (/molecular|weight|\bmw\b/.test(t)) {
+    return filled.some(p => /molecular|weight/i.test(p.panel_name));
+  }
+
+  const short = shortPanelLabel(testName).toLowerCase();
+  return filled.some(p => {
+    const pl = shortPanelLabel(p.panel_name).toLowerCase();
+    const pn = p.panel_name.toLowerCase();
+    return pl === short || pn.includes(t) || t.includes(pl);
+  });
+}
+
+function analysisResultLines(sample: OrderSample): CoaResultLine[] {
+  const raw = sample.analysis_results;
+  if (!Array.isArray(raw) || raw.length === 0) return [];
+
+  const lines: CoaResultLine[] = [];
+  for (const [i, entry] of raw.entries()) {
+    if (!entry || typeof entry !== 'object') continue;
+    const row = entry as Record<string, unknown>;
+    if (row.ordered === false) continue;
+    const labelRaw = String(row.label || row.test || '').trim();
+    if (!labelRaw) continue;
+    const status = String(row.status || 'pending').toLowerCase();
+    const valueRaw = row.value != null ? String(row.value).trim() : '';
+
+    if (status === 'pass' || status === 'fail') {
+      lines.push({
+        key: `a-${i}`,
+        label: shortPanelLabel(labelRaw),
+        value: valueRaw || (status === 'pass' ? 'Pass' : 'Fail'),
+        pass: status === 'pass',
+      });
+    } else {
+      lines.push({
+        key: `a-${i}`,
+        label: shortPanelLabel(labelRaw),
+        value: 'Pending',
+        pass: null,
+        pending: true,
+      });
+    }
+  }
+  return lines;
+}
+
+function coaResultLines(coa: COA, opts?: { inProgress?: boolean }): CoaResultLine[] {
+  const inProgress = !!opts?.inProgress;
   const panels = Array.isArray(coa.panel_results) ? coa.panel_results : [];
   const { main, metals } = partitionCoaPanels(panels);
   const lines: CoaResultLine[] = [];
 
   for (const [i, panel] of main.entries()) {
+    const filled = panelResultFilled(panel);
+    if (inProgress && !filled) continue; // pending ordered tests added separately
     const status = panelPassStatus(panel);
-    const value = panel.result?.trim()
+    const value = filled
       ? `${panel.result}${panel.unit ? ` ${panel.unit}` : ''}`
       : '—';
     lines.push({
@@ -108,8 +197,10 @@ function coaResultLines(coa: COA): CoaResultLine[] {
     });
   }
   for (const [i, panel] of metals.entries()) {
+    const filled = panelResultFilled(panel);
+    if (inProgress && !filled) continue;
     const status = panelPassStatus(panel, { metal: true });
-    const value = panel.result?.trim()
+    const value = filled
       ? `${panel.result}${panel.unit ? ` ${panel.unit}` : ''}`
       : 'Not Detected';
     lines.push({
@@ -122,10 +213,77 @@ function coaResultLines(coa: COA): CoaResultLine[] {
   return lines;
 }
 
-/** Compact Accumark-style result stack: small green/red lines in the Results column. */
-function CoaTestResultsList({ coa, previewCount = 5 }: { coa: COA; previewCount?: number }) {
+function buildSampleResultLines(
+  sample: OrderSample,
+  coa: COA | undefined,
+  catalogPanels: TestPanel[],
+): CoaResultLine[] {
+  const fromAnalysis = analysisResultLines(sample);
+  if (fromAnalysis.length > 0) return fromAnalysis;
+
+  const inProgress = sampleStillAnalyzing(sample, coa);
+  const coaPanels = Array.isArray(coa?.panel_results) ? coa!.panel_results : [];
+  const expected = portalTestsForSample(sample, catalogPanels);
+
+  if (coa && !inProgress) {
+    return coaResultLines(coa, { inProgress: false });
+  }
+
+  if (!coa) {
+    // Finished samples without a certificate yet — don't invent a pending checklist.
+    if (sample.status === 'complete') return [];
+    return expected
+      .filter(test => !/conformity/i.test(test))
+      .map(test => ({
+        key: `p-${test}`,
+        label: shortPanelLabel(test),
+        value: 'Pending',
+        pass: null as boolean | null,
+        pending: true,
+      }));
+  }
+
+  const filledLines = coaResultLines(coa, { inProgress: true });
+  const pendingLines: CoaResultLine[] = [];
+
+  for (const test of expected) {
+    if (/conformity/i.test(test)) continue;
+    if (panelsCoverOrderedTest(test, coaPanels)) continue;
+    const label = shortPanelLabel(test);
+    if (filledLines.some(l => l.label.toLowerCase() === label.toLowerCase())) continue;
+    if (pendingLines.some(l => l.label.toLowerCase() === label.toLowerCase())) continue;
+    pendingLines.push({
+      key: `p-${test}`,
+      label,
+      value: 'Pending',
+      pass: null,
+      pending: true,
+    });
+  }
+
+  // Heavy metals: if any filled, also surface remaining empty metals as pending while analyzing.
+  if (coaPanels.some(p => isHeavyMetalPanel(p.panel_name) && panelResultFilled(p))) {
+    const { metals } = partitionCoaPanels(coaPanels);
+    for (const [i, panel] of metals.entries()) {
+      if (panelResultFilled(panel)) continue;
+      const label = shortPanelLabel(panel.panel_name);
+      if (filledLines.some(l => l.label.toLowerCase() === label.toLowerCase())) continue;
+      if (pendingLines.some(l => l.label.toLowerCase() === label.toLowerCase())) continue;
+      pendingLines.push({
+        key: `hm-p-${i}`,
+        label,
+        value: 'Pending',
+        pass: null,
+        pending: true,
+      });
+    }
+  }
+
+  return [...filledLines, ...pendingLines];
+}
+
+function ResultLinesList({ lines, previewCount = 5 }: { lines: CoaResultLine[]; previewCount?: number }) {
   const [expanded, setExpanded] = useState(false);
-  const lines = coaResultLines(coa);
 
   if (lines.length === 0) {
     return <span className="text-[11px] text-neutral-400">Results pending</span>;
@@ -137,15 +295,18 @@ function CoaTestResultsList({ coa, previewCount = 5 }: { coa: COA; previewCount?
   return (
     <div className="space-y-0.5 min-w-[10rem]">
       {visible.map(line => {
-        const tone =
-          line.pass === true
+        const tone = line.pending
+          ? 'text-neutral-400'
+          : line.pass === true
             ? 'text-emerald-700'
             : line.pass === false
               ? 'text-red-600'
               : 'text-neutral-500';
         return (
           <div key={line.key} className={`flex items-start gap-1 text-[11px] leading-snug ${tone}`}>
-            {line.pass === true ? (
+            {line.pending ? (
+              <Clock size={11} className="mt-0.5 flex-shrink-0 text-neutral-400" />
+            ) : line.pass === true ? (
               <CheckCircle size={11} className="mt-0.5 flex-shrink-0" />
             ) : line.pass === false ? (
               <XCircle size={11} className="mt-0.5 flex-shrink-0" />
@@ -154,7 +315,7 @@ function CoaTestResultsList({ coa, previewCount = 5 }: { coa: COA; previewCount?
             )}
             <span className="min-w-0">
               <span className="font-medium">{line.label}:</span>{' '}
-              <span className="tabular-nums">{line.value}</span>
+              <span className={line.pending ? 'italic' : 'tabular-nums'}>{line.value}</span>
             </span>
           </div>
         );
@@ -170,6 +331,50 @@ function CoaTestResultsList({ coa, previewCount = 5 }: { coa: COA; previewCount?
       )}
     </div>
   );
+}
+
+/** Compact Accumark-style result stack: small green/red lines in the Results column. */
+function CoaTestResultsList({ coa, previewCount = 5 }: { coa: COA; previewCount?: number }) {
+  const inProgress =
+    coa.overall_result === 'pending'
+    || coa.coa_workflow_stage === 'testing_in_progress'
+    || coa.coa_workflow_stage === 'awaiting_info';
+  const lines = inProgress
+    ? (() => {
+        const filled = coaResultLines(coa, { inProgress: true });
+        const panels = Array.isArray(coa.panel_results) ? coa.panel_results : [];
+        const pending = panels
+          .filter(p => !panelResultFilled(p) && !isHeavyMetalPanel(p.panel_name))
+          .map((p, i) => ({
+            key: `coa-p-${i}`,
+            label: shortPanelLabel(p.panel_name),
+            value: 'Pending',
+            pass: null as boolean | null,
+            pending: true,
+          }));
+        // Dedupe pending labels already shown as filled
+        const pendingUnique = pending.filter(
+          p => !filled.some(f => f.label.toLowerCase() === p.label.toLowerCase()),
+        );
+        return [...filled, ...pendingUnique];
+      })()
+    : coaResultLines(coa, { inProgress: false });
+  return <ResultLinesList lines={lines} previewCount={previewCount} />;
+}
+
+function SampleTestResultsList({
+  sample,
+  coa,
+  panels,
+  previewCount = 5,
+}: {
+  sample: OrderSample;
+  coa?: COA;
+  panels: TestPanel[];
+  previewCount?: number;
+}) {
+  const lines = buildSampleResultLines(sample, coa, panels);
+  return <ResultLinesList lines={lines} previewCount={previewCount} />;
 }
 
 function portalTestsForSample(sample: OrderSample, panels: TestPanel[]): string[] {
@@ -630,7 +835,9 @@ export default function Portal() {
               <div className="space-y-5">
                 <div>
                   <h2 className="text-2xl sm:text-3xl font-bold text-black">Your Samples</h2>
-                  <p className="text-sm text-neutral-500 mt-1">Track every sample submitted to Atlas Analytics through testing.</p>
+                  <p className="text-sm text-neutral-500 mt-1">
+                    Track every sample submitted to Atlas Analytics. Completed results show in green and red; tests still in progress show as Pending.
+                  </p>
                 </div>
                 <div className="card overflow-hidden">
                   {filteredSamples.length === 0 ? (
@@ -646,13 +853,12 @@ export default function Portal() {
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="coa-table-header">
-                            <th className="text-left px-5 py-3">Order</th>
-                            <th className="text-left px-5 py-3">Sample code</th>
-                            <th className="text-left px-5 py-3">Name</th>
-                            <th className="text-left px-5 py-3">Results</th>
-                            <th className="text-left px-5 py-3">Lot</th>
-                            <th className="text-left px-5 py-3">Date</th>
-                            <th className="px-5 py-3"></th>
+                            <th className="text-left px-4 py-2.5">Order</th>
+                            <th className="text-left px-4 py-2.5">Name</th>
+                            <th className="text-left px-4 py-2.5">Results</th>
+                            <th className="text-left px-4 py-2.5">Lot</th>
+                            <th className="text-left px-4 py-2.5">Date</th>
+                            <th className="px-4 py-2.5"></th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-atlas-border">
@@ -668,8 +874,8 @@ export default function Portal() {
                               || ''
                             );
                             return (
-                              <tr key={s.id} className="bg-white hover:bg-neutral-50 transition-colors">
-                                <td className="px-5 py-3">
+                              <tr key={s.id} className="bg-white hover:bg-neutral-50/80 transition-colors align-top">
+                                <td className="px-4 py-3">
                                   {order ? (
                                     <button
                                       type="button"
@@ -680,56 +886,48 @@ export default function Portal() {
                                       {order.order_number}
                                     </button>
                                   ) : <span className="text-neutral-400">—</span>}
-                                </td>
-                                <td className="px-5 py-3">
                                   {sampleCode ? (
                                     <button
                                       type="button"
                                       onClick={() => openSampleCoa(s, coa)}
-                                      className="font-mono text-xs font-semibold text-brand-700 hover:underline"
+                                      className="block mt-1 font-mono text-[11px] text-neutral-500 hover:text-brand-700 hover:underline"
                                       title={coa ? 'Open COA for this sample' : 'Open sample COA'}
                                     >
                                       {sampleCode}
                                     </button>
-                                  ) : (
-                                    <span className="text-xs text-neutral-400">Pending</span>
-                                  )}
+                                  ) : null}
                                 </td>
-                                <td className="px-5 py-3">
-                                  <p className="font-medium text-black">{s.display_name || s.sample_name}</p>
+                                <td className="px-4 py-3 min-w-[9rem]">
+                                  <p className="font-semibold text-black text-sm leading-snug">{s.display_name || s.sample_name}</p>
                                   {meta?.labeled_content && (
-                                    <p className="text-xs text-neutral-500">
+                                    <p className="text-[11px] text-neutral-500 mt-0.5">
                                       {meta.labeled_content}{meta.tests_label ? ` · ${meta.tests_label}` : ''}
                                     </p>
                                   )}
                                 </td>
-                                <td className="px-5 py-3">
-                                  {coa ? (
-                                    <ResultBadge result={coa.overall_result} />
-                                  ) : (
-                                    <span className="badge-pending"><Clock size={10} /> {SAMPLE_STATUS_LABELS[s.status]}</span>
-                                  )}
+                                <td className="px-4 py-3">
+                                  <SampleTestResultsList sample={s} coa={coa} panels={panels} />
                                 </td>
-                                <td className="px-5 py-3 text-neutral-600">{lot}</td>
-                                <td className="px-5 py-3 text-neutral-600">{formatDate(s.created_at)}</td>
-                                <td className="px-5 py-3 text-right">
+                                <td className="px-4 py-3 text-xs text-neutral-600 whitespace-nowrap">{lot}</td>
+                                <td className="px-4 py-3 text-xs text-neutral-600 whitespace-nowrap">{formatDate(s.created_at)}</td>
+                                <td className="px-4 py-3 text-right whitespace-nowrap">
                                   {coa ? (
                                     <button
                                       type="button"
                                       onClick={() => openSampleCoa(s, coa)}
-                                      className="btn-outline text-xs py-1.5 gap-1 inline-flex"
+                                      className="btn-outline text-[11px] py-1 px-2 gap-1 inline-flex"
                                     >
-                                      <ExternalLink size={12} /> COA
+                                      <ExternalLink size={11} /> COA
                                     </button>
                                   ) : s.status === 'complete' ? (
-                                    <Link to={`/sample/${s.id}/coa`} className="btn-outline text-xs py-1.5 gap-1 inline-flex">
-                                      <ExternalLink size={12} /> COA
+                                    <Link to={`/sample/${s.id}/coa`} className="btn-outline text-[11px] py-1 px-2 gap-1 inline-flex">
+                                      <ExternalLink size={11} /> COA
                                     </Link>
                                   ) : s.status === 'received' ? (
-                                    <span className="text-xs text-neutral-400">Awaiting testing</span>
+                                    <span className="text-[11px] text-neutral-400">Awaiting testing</span>
                                   ) : (
-                                    <Link to={`/sample/${s.id}/coa`} className="btn-outline text-xs py-1.5 gap-1 inline-flex whitespace-nowrap border-amber-300 text-amber-700 hover:bg-amber-50">
-                                      <Clock size={12} /> Partial COA
+                                    <Link to={`/sample/${s.id}/coa`} className="btn-outline text-[11px] py-1 px-2 gap-1 inline-flex whitespace-nowrap border-amber-300 text-amber-700 hover:bg-amber-50">
+                                      <Clock size={11} /> Partial
                                     </Link>
                                   )}
                                 </td>

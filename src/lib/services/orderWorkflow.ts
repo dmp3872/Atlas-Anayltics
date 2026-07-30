@@ -95,6 +95,21 @@ export async function markOrderPaid(
   return { error: null, order: data as Order };
 }
 
+/** YYYY-MM-DD for a date input, from an existing ETA or standard TAT from today. */
+export function defaultIntakeEtaDateValue(order: Pick<Order, 'estimated_ready_at' | 'due_at' | 'rush_processing'>): string {
+  const existing = order.estimated_ready_at || order.due_at;
+  if (existing) return existing.slice(0, 10);
+  return computeDueAt(new Date(), !!order.rush_processing).slice(0, 10);
+}
+
+/** Local calendar date → ISO timestamp used for client-visible ETA (end of local afternoon). */
+export function intakeEtaDateToIso(dateYmd: string): string | null {
+  const trimmed = dateYmd.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return null;
+  const iso = new Date(`${trimmed}T17:00:00`).toISOString();
+  return Number.isNaN(Date.parse(iso)) ? null : iso;
+}
+
 export async function markSampleReceived(
   sample: OrderSample,
   order: Order,
@@ -106,6 +121,11 @@ export async function markSampleReceived(
     note?: string;
     changedBy?: string | null;
     vialCountConfirmed?: number;
+    /**
+     * Client-visible estimated ready date (ISO). When set, writes estimated_ready_at + due_at.
+     * When omitted, falls back to standard/rush TAT only if the order has no due_at yet.
+     */
+    estimatedReadyAt?: string | null;
   },
 ): Promise<{ error: Error | null; sample?: OrderSample; order?: Order }> {
   if (!orderIsPayable(order.payment_status)) {
@@ -184,8 +204,14 @@ export async function markSampleReceived(
   });
 
   const orderPatch: Partial<Order> = { updated_at: now };
-  if (!order.due_at) {
-    orderPatch.due_at = computeDueAt(new Date(), !!order.rush_processing);
+  const customEta = typeof opts.estimatedReadyAt === 'string' ? opts.estimatedReadyAt.trim() : '';
+  if (customEta) {
+    orderPatch.estimated_ready_at = customEta;
+    orderPatch.due_at = customEta;
+  } else if (!order.due_at) {
+    const autoDue = computeDueAt(new Date(), !!order.rush_processing);
+    orderPatch.due_at = autoDue;
+    if (!order.estimated_ready_at) orderPatch.estimated_ready_at = autoDue;
   }
   if (order.status === 'awaiting_sample' || order.status === 'received') {
     orderPatch.status = 'processing';

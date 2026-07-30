@@ -14,7 +14,11 @@ import {
   HEAVY_METAL_NAMES,
   HEAVY_METAL_PASS_RESULT,
   HeavyMetalName,
+  AssayPassState,
+  assayPassFromSelect,
+  assayPassSelectValue,
   computeAssayAveragesFromPanels,
+  heavyMetalsEmptyDefaults,
   heavyMetalsPassDefaults,
   SterilityMethod,
   STERILITY_METHOD_LABELS,
@@ -44,7 +48,7 @@ function applyPrepDefaults(coa: COA) {
     avgNetPeptide: stats.avg_net_peptide_content || assay.avg_net_peptide_content,
     meanOfVials: stats.mean_of_vials_tested || assay.mean_of_vials_tested,
     avgPurity: stats.avg_purity || assay.avg_purity,
-    endotoxinEuMl: stats.endotoxin_eu_ml || (stats.endotoxin_pass ? ENDOTOXIN_PASS_RESULT : ''),
+    endotoxinEuMl: stats.endotoxin_eu_ml || (stats.endotoxin_pass === true ? ENDOTOXIN_PASS_RESULT : ''),
   };
 }
 
@@ -66,12 +70,12 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
   const [sterilityMethod, setSterilityMethod] = useState<SterilityMethod>(
     boot.stats.sterility_method,
   );
-  const [sterilityPass, setSterilityPass] = useState(boot.stats.sterility_pass);
+  const [sterilityPass, setSterilityPass] = useState<AssayPassState>(boot.stats.sterility_pass);
   const [endotoxinEuMl, setEndotoxinEuMl] = useState(boot.endotoxinEuMl);
-  const [endotoxinPass, setEndotoxinPass] = useState(boot.stats.endotoxin_pass);
-  const [heavyMetalsPass, setHeavyMetalsPass] = useState(boot.stats.heavy_metals_pass);
+  const [endotoxinPass, setEndotoxinPass] = useState<AssayPassState>(boot.stats.endotoxin_pass);
+  const [heavyMetalsPass, setHeavyMetalsPass] = useState<AssayPassState>(boot.stats.heavy_metals_pass);
   const [heavyMetals, setHeavyMetals] = useState<Record<HeavyMetalName, string>>(
-    boot.stats.heavy_metals || heavyMetalsPassDefaults(),
+    boot.stats.heavy_metals || heavyMetalsEmptyDefaults(),
   );
   const [showAssayEdits, setShowAssayEdits] = useState(false);
   const [loadingImages, setLoadingImages] = useState(true);
@@ -100,7 +104,7 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
     setEndotoxinEuMl(d.endotoxinEuMl);
     setEndotoxinPass(d.stats.endotoxin_pass);
     setHeavyMetalsPass(d.stats.heavy_metals_pass);
-    setHeavyMetals(d.stats.heavy_metals || heavyMetalsPassDefaults());
+    setHeavyMetals(d.stats.heavy_metals || heavyMetalsEmptyDefaults());
     setShowAssayEdits(false);
     setError(null);
     setLoadingImages(true);
@@ -406,10 +410,11 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
                       <label className="label" htmlFor="sterility-pass">Result</label>
                       <select
                         id="sterility-pass"
-                        value={sterilityPass ? 'pass' : 'fail'}
-                        onChange={e => setSterilityPass(e.target.value === 'pass')}
+                        value={assayPassSelectValue(sterilityPass)}
+                        onChange={e => setSterilityPass(assayPassFromSelect(e.target.value))}
                         className="input-field"
                       >
+                        <option value="pending">Pending</option>
                         <option value="pass">Not Detected — PASS</option>
                         <option value="fail">Detected — FAIL</option>
                       </select>
@@ -428,22 +433,25 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
                         type="text"
                         value={endotoxinEuMl}
                         onChange={e => setEndotoxinEuMl(e.target.value)}
-                        className="input-field"
-                        placeholder={ENDOTOXIN_PASS_RESULT}
+                        disabled={endotoxinPass === null}
+                        className="input-field disabled:opacity-50"
+                        placeholder={endotoxinPass === null ? 'Pending' : ENDOTOXIN_PASS_RESULT}
                       />
                     </div>
                     <div>
                       <label className="label" htmlFor="endotoxin-conformity">Conformity</label>
                       <select
                         id="endotoxin-conformity"
-                        value={endotoxinPass ? 'pass' : 'fail'}
+                        value={assayPassSelectValue(endotoxinPass)}
                         onChange={e => {
-                          const pass = e.target.value === 'pass';
-                          setEndotoxinPass(pass);
-                          if (pass) setEndotoxinEuMl(ENDOTOXIN_PASS_RESULT);
+                          const next = assayPassFromSelect(e.target.value);
+                          setEndotoxinPass(next);
+                          if (next === true) setEndotoxinEuMl(ENDOTOXIN_PASS_RESULT);
+                          if (next === null) setEndotoxinEuMl('');
                         }}
                         className="input-field"
                       >
+                        <option value="pending">Pending</option>
                         <option value="pass">PASS</option>
                         <option value="fail">FAIL</option>
                       </select>
@@ -461,14 +469,16 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
                       <label className="label" htmlFor="heavy-metals-conformity">Heavy metals conformity</label>
                       <select
                         id="heavy-metals-conformity"
-                        value={heavyMetalsPass ? 'pass' : 'fail'}
+                        value={assayPassSelectValue(heavyMetalsPass)}
                         onChange={e => {
-                          const pass = e.target.value === 'pass';
-                          setHeavyMetalsPass(pass);
-                          if (pass) setHeavyMetals(heavyMetalsPassDefaults());
+                          const next = assayPassFromSelect(e.target.value);
+                          setHeavyMetalsPass(next);
+                          if (next === true) setHeavyMetals(heavyMetalsPassDefaults());
+                          if (next === null) setHeavyMetals(heavyMetalsEmptyDefaults());
                         }}
                         className="input-field"
                       >
+                        <option value="pending">Pending</option>
                         <option value="pass">PASS — Not Detected</option>
                         <option value="fail">FAIL — enter measured values</option>
                       </select>
@@ -482,8 +492,9 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
                           type="text"
                           value={heavyMetals[metal]}
                           onChange={e => setHeavyMetals(prev => ({ ...prev, [metal]: e.target.value }))}
-                          className="input-field py-1.5 text-sm"
-                          placeholder={HEAVY_METAL_PASS_RESULT}
+                          disabled={heavyMetalsPass === null}
+                          className="input-field py-1.5 text-sm disabled:opacity-50"
+                          placeholder={heavyMetalsPass === null ? 'Pending' : HEAVY_METAL_PASS_RESULT}
                         />
                       </div>
                     ))}
