@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
   ArrowRight, ChevronDown, ChevronRight, Clock, FlaskConical, Zap,
-  UserPlus, UserMinus, UserCircle2, AlertTriangle,
+  FileText, UserPlus, UserMinus, UserCircle2, AlertTriangle,
 } from 'lucide-react';
 import { LabPriority, Order, OrderSample, SampleStatus } from '../../lib/types';
 import { SAMPLE_STATUS_LABELS } from '../../lib/utils';
@@ -11,6 +11,9 @@ import {
   QueueSampleItem, normalizeLabPriority, isFullyUnassigned,
 } from '../../lib/labQueue';
 import { etaHeat, etaHeatPercent, resolveEtaAt } from '../../lib/etaHeat';
+import {
+  OrderContextBadges, QueueSampleNotesActions, useOrderContextMeta,
+} from './QueueOrderContext';
 
 export interface ChemistOption {
   id: string;
@@ -31,6 +34,8 @@ interface Props {
   onAssignTest?: (sampleId: string, testName: string, userId: string | null) => void;
   /** Admin-only: set sample-level priority override (null = inherit from order). */
   onSetSamplePriority?: (sampleId: string, priority: LabPriority | null) => void;
+  /** Open chemist-safe order brief drawer. */
+  onOpenOrderBrief?: (orderId: string) => void;
 }
 
 type OrderGroup = {
@@ -57,6 +62,7 @@ function priorityRank(p: LabPriority): number {
 export default function TestingQueuePanel({
   items, loading, onIssueCoa, onUpdateStatus,
   chemists, currentUserId, onClaim, onAssign, onRelease, onAssignTest, onSetSamplePriority,
+  onOpenOrderBrief,
 }: Props) {
   /** Explicit expand/collapse overrides. Missing key = auto (open if 1 sample). */
   const [expandedByOrder, setExpandedByOrder] = useState<Record<string, boolean>>({});
@@ -84,6 +90,9 @@ export default function TestingQueuePanel({
     }
     return Array.from(byOrder.values());
   }, [items]);
+
+  const orderIds = useMemo(() => groups.map(g => g.order.id), [groups]);
+  const orderMeta = useOrderContextMeta(orderIds);
 
   const queueIndexBySample = useMemo(() => {
     const map = new Map<string, number>();
@@ -132,6 +141,7 @@ export default function TestingQueuePanel({
       sample, order, tests, testsLabel, priority, ageHours,
       assigned_to: assignedTo, testAssignments, overdue, dueAt, hasCoa,
     } = item;
+    const ctx = orderMeta[order.id];
     const meta = parseSampleMetadata(sample.metadata);
     const styles = LAB_PRIORITY_STYLES[priority];
     const isMine = !!currentUserId && assignedTo === currentUserId;
@@ -205,6 +215,11 @@ export default function TestingQueuePanel({
                     <span className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${heat.chip}`}>
                       {(heat.level === 'overdue' || heat.level === 'today') && <AlertTriangle size={10} />}
                       {heat.label}
+                    </span>
+                  )}
+                  {(ctx?.openActionCount ?? 0) > 0 && (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border border-amber-200 bg-amber-50 text-amber-900">
+                      <AlertTriangle size={10} /> {ctx!.openActionCount} open action{ctx!.openActionCount === 1 ? '' : 's'}
                     </span>
                   )}
                   {sample.accession_number && (
@@ -321,6 +336,13 @@ export default function TestingQueuePanel({
                   {sample.vial_count} vial{sample.vial_count === 1 ? '' : 's'} · {sample.sample_type}
                   {' · '}{SAMPLE_STATUS_LABELS[sample.status]}
                 </p>
+
+                <QueueSampleNotesActions
+                  orderId={order.id}
+                  sampleId={sample.id}
+                  noteCount={ctx?.noteCount}
+                  openActions={ctx?.openActionCount}
+                />
               </div>
             </div>
 
@@ -437,18 +459,26 @@ export default function TestingQueuePanel({
           const eta = resolveEtaAt(order);
           const heat = etaHeat(eta, { complete: false });
 
+          const ctx = orderMeta[order.id];
+
           return (
             <section key={order.id} className="card overflow-hidden">
-              <button
-                type="button"
-                onClick={() => toggleOrder(order.id, sampleCount)}
-                className="w-full text-left px-4 py-3 sm:px-5 sm:py-3.5 flex items-start gap-3 hover:bg-neutral-50/80 transition-colors"
-                aria-expanded={open}
-              >
-                <span className="mt-0.5 text-neutral-400 flex-shrink-0" aria-hidden>
+              <div className="px-4 py-3 sm:px-5 sm:py-3.5 flex items-start gap-3 hover:bg-neutral-50/80 transition-colors">
+                <button
+                  type="button"
+                  onClick={() => toggleOrder(order.id, sampleCount)}
+                  className="mt-0.5 text-neutral-400 flex-shrink-0"
+                  aria-expanded={open}
+                  aria-label={open ? 'Collapse order' : 'Expand order'}
+                >
                   {open ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
-                </span>
-                <div className="min-w-0 flex-1">
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleOrder(order.id, sampleCount)}
+                  className="min-w-0 flex-1 text-left"
+                  aria-expanded={open}
+                >
                   <div className="flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-1 sm:gap-3">
                     <p className="font-bold text-black truncate text-[15px]">{company}</p>
                     <p className="font-mono text-sm font-semibold text-neutral-800 flex-shrink-0">
@@ -462,8 +492,8 @@ export default function TestingQueuePanel({
                     {groupUnassigned > 0 ? ` · ${groupUnassigned} unassigned` : ''}
                     {heat.level !== 'none' ? ` · ${heat.label}` : ''}
                   </p>
-                </div>
-                <div className="flex flex-wrap gap-1.5 justify-end flex-shrink-0 pt-0.5">
+                </button>
+                <div className="flex flex-wrap gap-1.5 justify-end flex-shrink-0 pt-0.5 items-center">
                   <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border ${styles.badge}`}>
                     {LAB_PRIORITY_LABELS[topPriority]}
                   </span>
@@ -472,8 +502,24 @@ export default function TestingQueuePanel({
                       <Zap size={10} /> Rush
                     </span>
                   )}
+                  <OrderContextBadges
+                    noteCount={ctx?.noteCount}
+                    openActions={ctx?.openActionCount}
+                  />
+                  {onOpenOrderBrief && (
+                    <button
+                      type="button"
+                      onClick={e => {
+                        e.stopPropagation();
+                        onOpenOrderBrief(order.id);
+                      }}
+                      className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-md border border-brand-200 bg-brand-50 text-brand-800 hover:bg-brand-100"
+                    >
+                      <FileText size={11} /> Order brief
+                    </button>
+                  )}
                 </div>
-              </button>
+              </div>
 
               {open && (
                 <div className="border-t border-atlas-border px-3 py-3 sm:px-4 sm:py-4 space-y-3 bg-neutral-50/40">

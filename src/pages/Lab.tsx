@@ -22,6 +22,7 @@ import { COA_WORKFLOW_LABELS, canPrepareCoa, coaWorkflowStage, buildWorkflowStag
 import CoaWorkflowBoard from '../components/lab/CoaWorkflowBoard';
 import CompanyFilterSearch from '../components/lab/CompanyFilterSearch';
 import TestingQueuePanel from '../components/lab/TestingQueuePanel';
+import ChemistOrderBriefDrawer from '../components/lab/ChemistOrderBriefDrawer';
 import QueueFilters, { QueueFilterValues } from '../components/lab/QueueFilters';
 import ClaimVsResultStrip from '../components/lab/ClaimVsResultStrip';
 import { buildQueueItems, filterQueueItems, getTestAssignments, normalizeLabPriority } from '../lib/labQueue';
@@ -135,6 +136,7 @@ export default function Lab() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [etaSavingOrderId, setEtaSavingOrderId] = useState<string | null>(null);
+  const [briefOrderId, setBriefOrderId] = useState<string | null>(null);
   const [msg, setMsg] = useState<Message>(null);
   const [queueView, setQueueView] = useState<'pending' | 'all'>('pending');
   const [queueFilters, setQueueFilters] = useState<QueueFilterValues>({ ...QUEUE_FILTERS_BLANK });
@@ -1289,11 +1291,12 @@ export default function Lab() {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-sm text-neutral-600">
                 Work top-down: <span className="text-red-700 font-medium">urgent</span>, then{' '}
-                <span className="text-amber-700 font-medium">high</span>, then normal. Assign each ordered test to a chemist, or claim the whole sample.
+                <span className="text-amber-700 font-medium">high</span>, then normal. Assign a lead chemist or per-test owner, claim work, and open{' '}
+                <span className="font-medium text-neutral-800">Order brief</span> / Notes for client context.
                 {isAdmin ? (
                   <> Admins set order priority in <Link to="/admin" className="font-semibold text-brand-700 hover:underline">Admin → Orders</Link>.</>
                 ) : (
-                  <> Lab directors set priority in Admin.</>
+                  <> Priority overrides stay in Admin.</>
                 )}
               </p>
               <div className="flex gap-2">
@@ -1330,9 +1333,10 @@ export default function Lab() {
               currentUserId={user?.id}
               onClaim={claimSample}
               onRelease={releaseSample}
-              onAssign={isAdmin ? assignSample : undefined}
+              onAssign={assignSample}
               onAssignTest={assignSampleTest}
               onSetSamplePriority={isAdmin ? setSamplePriority : undefined}
+              onOpenOrderBrief={setBriefOrderId}
             />
           </div>
         )}
@@ -2274,6 +2278,16 @@ export default function Lab() {
           onClose={() => setPrepCoa(null)}
           onSaved={updated => {
             setCoas(prev => prev.map(c => (c.id === updated.id ? hydrateCoaImages(updated) : c)));
+          }}
+        />
+      )}
+
+      {briefOrderId && (
+        <ChemistOrderBriefDrawer
+          orderId={briefOrderId}
+          onClose={() => setBriefOrderId(null)}
+          onOrderUpdated={updated => {
+            setOrders(prev => prev.map(o => (o.id === updated.id ? { ...o, ...updated } : o)));
           }}
         />
       )}
