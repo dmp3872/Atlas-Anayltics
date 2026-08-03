@@ -454,20 +454,25 @@ async function bakeImagesToSafeDataUrls(root: HTMLElement): Promise<() => void> 
 /**
  * Re-paint live decoded images on top of the capture.
  * Skips any image that would taint the export canvas.
- * Always used after capture so HPLC chromatogram auto-position zoom matches the screen.
+ * Used on the Safari fallback path when html2canvas hid all <img> tags.
  */
-function paintLiveImagesOntoCanvas(canvas: HTMLCanvasElement, root: HTMLElement): void {
+function paintLiveImagesOntoCanvas(
+  canvas: HTMLCanvasElement,
+  root: HTMLElement,
+  layout?: { width: number; height: number },
+): void {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
   const rootRect = root.getBoundingClientRect();
   if (rootRect.width < 1 || rootRect.height < 1) return;
-  const scaleX = canvas.width / rootRect.width;
-  const scaleY = canvas.height / rootRect.height;
+  const layoutW = layout?.width && layout.width > 0 ? layout.width : rootRect.width;
+  const layoutH = layout?.height && layout.height > 0 ? layout.height : rootRect.height;
+  const scaleX = canvas.width / layoutW;
+  const scaleY = canvas.height / layoutH;
 
   root.querySelectorAll('img').forEach(img => {
     if (!(img instanceof HTMLImageElement)) return;
     if (img.closest('.no-print')) return;
-    // Watermarks / decorative marks use max-width sizing — leave html2canvas pixels.
     if (img.getAttribute('aria-hidden') === 'true') return;
     if (!img.complete || img.naturalWidth < 1) return;
     const style = window.getComputedStyle(img);
@@ -503,9 +508,9 @@ function paintLiveImagesOntoCanvas(canvas: HTMLCanvasElement, root: HTMLElement)
     const dy = (r.top - rootRect.top) * scaleY;
     const dw = r.width * scaleX;
     const dh = r.height * scaleY;
-    const isChromPhoto = Boolean(img.closest('.coa-chrom-photo'));
-    // HPLC chromatogram auto-position: always apply the shared mild contain-zoom.
-    // Vial CSS scale stays ignored so the size badge isn't covered.
+    const isChromPhoto = Boolean(
+      img.closest('.coa-chrom-photo') && img.getAttribute('aria-hidden') !== 'true',
+    );
     const cssZoom = isChromPhoto ? COA_CHROMATOGRAM_ZOOM : 1;
 
     ctx.save();
@@ -529,12 +534,84 @@ function paintLiveImagesOntoCanvas(canvas: HTMLCanvasElement, root: HTMLElement)
     }
 
     try {
-      // Clear prior html2canvas pixels (often un-zoomed) so contain+zoom matches screen.
       if (isChromPhoto) {
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(dx, dy, dw, dh);
       }
       drawImageObjectFit(ctx, img, dx, dy, dw, dh, style.objectFit, style.objectPosition, cssZoom);
+    } catch {
+      /* skip */
+    }
+    ctx.restore();
+  });
+}
+
+/**
+ * After a normal html2canvas capture, only re-stamp the HPLC chromatogram
+ * (auto-position zoom). Never re-paint vial/logo images on top of a good capture —
+ * that was covering the whole certificate with oversized photos.
+ */
+function paintChromatogramZoomOntoCanvas(
+  canvas: HTMLCanvasElement,
+  root: HTMLElement,
+  layout: { width: number; height: number },
+): void {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  const rootRect = root.getBoundingClientRect();
+  if (rootRect.width < 1 || rootRect.height < 1) return;
+  const scaleX = canvas.width / layout.width;
+  const scaleY = canvas.height / layout.height;
+
+  root.querySelectorAll('.coa-chrom-photo img').forEach(img => {
+    if (!(img instanceof HTMLImageElement)) return;
+    if (img.getAttribute('aria-hidden') === 'true') return;
+    if (!img.complete || img.naturalWidth < 1) return;
+    const style = window.getComputedStyle(img);
+    if (style.visibility === 'hidden' || style.display === 'none') return;
+
+    const frame = img.parentElement;
+    if (!frame) return;
+    const r = frame.getBoundingClientRect();
+    if (r.width < 2 || r.height < 2) return;
+
+    try {
+      const probe = document.createElement('canvas');
+      probe.width = 1;
+      probe.height = 1;
+      const pctx = probe.getContext('2d');
+      if (!pctx) return;
+      pctx.drawImage(img, 0, 0, 1, 1);
+      pctx.getImageData(0, 0, 1, 1);
+    } catch {
+      return;
+    }
+
+    const dx = (r.left - rootRect.left) * scaleX;
+    const dy = (r.top - rootRect.top) * scaleY;
+    const dw = r.width * scaleX;
+    const dh = r.height * scaleY;
+    // Guard against bad layout math painting over the whole page.
+    if (dw > canvas.width * 0.95 || dh > canvas.height * 0.5) return;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(dx, dy, dw, dh);
+    ctx.clip();
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(dx, dy, dw, dh);
+    try {
+      drawImageObjectFit(
+        ctx,
+        img,
+        dx,
+        dy,
+        dw,
+        dh,
+        'contain',
+        'center',
+        COA_CHROMATOGRAM_ZOOM,
+      );
     } catch {
       /* skip */
     }
@@ -681,15 +758,17 @@ async function captureCoaCertificateCanvas(root: HTMLElement): Promise<HTMLCanva
       }),
     ]);
 
+    const layout = { width: COA_EXPORT_WIDTH_PX, height: captureHeight };
+
     try {
       assertCanvasReadable(canvas);
-      // Always re-stamp photos so HPLC chromatogram auto-position matches the live COA
-      // (html2canvas frequently ignores CSS transform scale on images).
-      paintLiveImagesOntoCanvas(canvas, root);
+      // Only re-stamp the HPLC chromatogram zoom — do not re-paint vial/logo
+      // (that overlaid huge images across the whole certificate).
+      paintChromatogramZoomOntoCanvas(canvas, root, layout);
     } catch {
       // Retry without embedding <img>, then stamp safe live bitmaps (Safari).
       canvas = await runCapture(true);
-      paintLiveImagesOntoCanvas(canvas, root);
+      paintLiveImagesOntoCanvas(canvas, root, layout);
       assertCanvasReadable(canvas);
     }
 
