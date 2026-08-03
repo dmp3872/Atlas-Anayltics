@@ -72,16 +72,13 @@ function average(values: number[]): number {
 }
 
 function formatPurityPct(value: number): string {
-  const rounded = Math.round(value * 100) / 100;
-  return `${rounded % 1 === 0 ? rounded.toFixed(0) : rounded.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')}%`;
+  if (!Number.isFinite(value)) return '';
+  return `${(Math.round(value * 10) / 10).toFixed(1)}%`;
 }
 
 function formatQuantityAmt(value: number, unit: string): string {
-  const rounded = Math.round(value * 100) / 100;
-  const num =
-    rounded % 1 === 0
-      ? String(rounded)
-      : rounded.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
+  if (!Number.isFinite(value)) return '';
+  const num = (Math.round(value * 10) / 10).toFixed(1);
   return `${num} ${unit}`.trim();
 }
 

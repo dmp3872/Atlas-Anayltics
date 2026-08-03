@@ -1,7 +1,7 @@
 import { COA, PanelResult } from './types';
 import { formatDate } from './utils';
 import { readCoaPdfStats } from './coaImages';
-import { ENDOTOXIN_SPEC_EU_ML, STERILITY_METHOD_LABELS } from './labCoaForm';
+import { ENDOTOXIN_SPEC_EU_ML, STERILITY_METHOD_LABELS, formatCoaDecimal } from './labCoaForm';
 import { collapseConformityPanels } from './coaDisplayPanels';
 
 export type CoaPdfFieldValues = Record<string, string>;
@@ -20,6 +20,7 @@ function findPanel(panels: PanelResult[], ...keywords: string[]): PanelResult | 
 function conformityLabel(panel: PanelResult | undefined): string {
   if (!panel) return '';
   if (!panel.result?.trim() && panel.specification === undefined) return '';
+  if (panel.pass === null || /^pending$/i.test((panel.result || '').trim())) return 'PENDING';
   return panel.pass ? 'PASS' : 'FAIL';
 }
 
@@ -136,7 +137,7 @@ export function buildCoaPdfFieldValues(coa: COA): CoaPdfFieldValues {
   const avgPurity =
     (typeof summary.avg_purity === 'string' && summary.avg_purity) ||
     purity.result ||
-    (coa.purity_percent != null ? `${coa.purity_percent}%` : '');
+    (coa.purity_percent != null ? `${formatCoaDecimal(coa.purity_percent)}%` : '');
   const vialsTested = meanOfVials || (typeof chrom.vial_size === 'string' ? chrom.vial_size : '');
 
   const fields: CoaPdfFieldValues = {
@@ -168,7 +169,7 @@ export function buildCoaPdfFieldValues(coa: COA): CoaPdfFieldValues {
     'ConformityNet Peptide Content': netContent.conformity,
 
     'SpecificationPurity HPLC': purity.specification || (coa.purity_percent != null ? '≥98%' : ''),
-    'ResultPurity HPLC': purity.result || (coa.purity_percent != null ? `${coa.purity_percent}%` : ''),
+    'ResultPurity HPLC': purity.result || (coa.purity_percent != null ? `${formatCoaDecimal(coa.purity_percent)}%` : ''),
     'ConformityPurity HPLC': purity.conformity || (coa.overall_result === 'pass' ? 'PASS' : coa.overall_result === 'fail' ? 'FAIL' : ''),
 
     SpecificationSterility: sterility.specification,

@@ -3,9 +3,12 @@ import { PanelResult } from './types';
 function normalizeContent(raw: string): string {
   const t = raw.trim();
   if (!t) return '';
-  // "20.5mg" / "20 mg" / "20.5" → "20.5 mg"
+  // "20.5mg" / "20 mg" / "20.5" / "20" → "20.5 mg" / "20.0 mg"
   const m = t.match(/^(-?\d+(?:\.\d+)?)\s*(mg)?$/i);
-  if (m) return `${m[1]} mg`;
+  if (m) {
+    const n = Number(m[1]);
+    if (Number.isFinite(n)) return `${(Math.round(n * 10) / 10).toFixed(1)} mg`;
+  }
   return t.replace(/(\d)\s*mg\b/i, '$1 mg');
 }
 
@@ -13,7 +16,10 @@ function normalizePurity(raw: string): string {
   const t = raw.trim();
   if (!t) return '';
   const m = t.match(/^(-?\d+(?:\.\d+)?)\s*%?$/);
-  if (m) return `${m[1]}%`;
+  if (m) {
+    const n = Number(m[1]);
+    if (Number.isFinite(n)) return `${(Math.round(n * 10) / 10).toFixed(1)}%`;
+  }
   return t.endsWith('%') ? t : t;
 }
 
@@ -122,6 +128,67 @@ export function isHeavyMetalPanel(name: string): boolean {
   return HEAVY_METAL_MATCH.test(name);
 }
 
+/** Assays that may legitimately sit in Pending until lab results return. */
+export function isDeferredAssayPanel(name: string): boolean {
+  const n = name.toLowerCase();
+  return n.includes('sterility')
+    || n.includes('endotoxin')
+    || n.includes('lal')
+    || isHeavyMetalPanel(name);
+}
+
+/**
+ * Resolve Pass / Fail / Pending for a panel row.
+ * null = Pending. Also treats legacy empty biosafety/metal rows (pass:false) as pending.
+ */
+export function resolvePanelPass(panel: PanelResult): boolean | null {
+  if (panel.pass === null) return null;
+  const result = (panel.result || '').trim();
+  if (!result || /^pending$/i.test(result)) {
+    if (isDeferredAssayPanel(panel.panel_name) && panel.pass !== true) return null;
+  }
+  return panel.pass;
+}
+
+export function panelStatusLabel(pass: boolean | null): 'Pass' | 'Fail' | 'Pending' {
+  if (pass === true) return 'Pass';
+  if (pass === false) return 'Fail';
+  return 'Pending';
+}
+
+export function panelStatusToneClass(pass: boolean | null): string {
+  if (pass === true) return 'text-atlas-success';
+  if (pass === false) return 'text-red-600';
+  return 'text-neutral-500';
+}
+
+/** Ensure mg / % tokens on COA result strings include a decimal (10 mg → 10.0 mg). */
+export function formatCoaResultDisplay(raw: string): string {
+  if (!raw?.trim()) return raw;
+  return raw
+    .split(/\s*,\s*/)
+    .map(part => {
+      const t = part.trim();
+      const mg = t.match(/^(-?\d+(?:\.\d+)?)\s*mg$/i);
+      if (mg) {
+        const n = Number(mg[1]);
+        if (Number.isFinite(n)) return `${(Math.round(n * 10) / 10).toFixed(1)} mg`;
+      }
+      const pct = t.match(/^(-?\d+(?:\.\d+)?)\s*%$/);
+      if (pct) {
+        const n = Number(pct[1]);
+        if (Number.isFinite(n)) return `${(Math.round(n * 10) / 10).toFixed(1)}%`;
+      }
+      const bare = t.match(/^(-?\d+(?:\.\d+)?)$/);
+      if (bare) {
+        const n = Number(bare[1]);
+        if (Number.isFinite(n)) return (Math.round(n * 10) / 10).toFixed(1);
+      }
+      return t;
+    })
+    .join(', ');
+}
+
 /** Split main assay rows from heavy-metal rows for the two-table COA layout. */
 export function partitionCoaPanels(panels: PanelResult[]): {
   main: PanelResult[];
@@ -143,12 +210,17 @@ export function partitionCoaPanels(panels: PanelResult[]): {
 
   const orderedMetals = HEAVY_METAL_USP_LIMITS.map(({ match, name, limit }) => {
     const found = metals.find(m => match.test(m.panel_name));
+    const pass = found ? resolvePanelPass(found) : null;
+    const rawResult = (found?.result ?? '').trim();
+    const result = pass === null && (!rawResult || /^pending$/i.test(rawResult))
+      ? 'Pending'
+      : (found?.result ?? '');
     return {
       panel_name: found?.panel_name || name,
       specification: found?.specification?.includes('NMT') ? found.specification : limit,
-      result: found?.result ?? '',
+      result,
       unit: found?.unit,
-      pass: found ? found.pass : true,
+      pass,
     } satisfies PanelResult;
   });
 
@@ -159,7 +231,7 @@ export function partitionCoaPanels(panels: PanelResult[]): {
 function formatEndotoxinPanel(panel: PanelResult): PanelResult {
   if (!/endotoxin|lal/i.test(panel.panel_name)) return panel;
   const raw = (panel.result || '').trim();
-  if (!raw || /\(\s*lal\s*\)/i.test(raw)) return panel;
+  if (!raw || /^pending$/i.test(raw) || /\(\s*lal\s*\)/i.test(raw)) return panel;
   return { ...panel, result: `${raw} (LAL)` };
 }
 
