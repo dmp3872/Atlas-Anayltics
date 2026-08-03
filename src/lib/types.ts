@@ -164,7 +164,8 @@ export interface PanelResult {
   value?: string;
   unit?: string;
   specification?: string;
-  pass: boolean;
+  /** true = Pass, false = Fail, null = Pending (result not yet entered). */
+  pass: boolean | null;
 }
 
 export interface ChromatogramData {

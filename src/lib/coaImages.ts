@@ -15,8 +15,10 @@ import {
   SterilityMethod,
   STERILITY_METHOD_LABELS,
   sterilitySpecLabel,
+  formatCoaDecimal,
 } from './labCoaForm';
 import { compressImageDataUrl } from './imageCompress';
+import { resolvePanelPass } from './coaDisplayPanels';
 
 export type FentanylDetectionMark = '' | 'none_detected' | 'detected';
 
@@ -59,15 +61,21 @@ export function readHeavyMetalsFromCoa(coa: COA): {
   const heavy_metals = heavyMetalsEmptyDefaults();
   let sawAny = false;
   let sawFilled = false;
-  let allPass = true;
+  let sawFail = false;
+  let sawPending = false;
   for (const metal of HEAVY_METAL_NAMES) {
     const panel = findMetalPanel(panels, metal);
     if (!panel) continue;
     sawAny = true;
     const result = (panel.result || '').trim();
-    heavy_metals[metal] = result;
-    if (result) sawFilled = true;
-    if (!panel.pass) allPass = false;
+    const pendingText = !result || /^pending$/i.test(result);
+    heavy_metals[metal] = pendingText ? '' : result;
+    if (!pendingText) sawFilled = true;
+    if (panel.pass === null || pendingText) {
+      sawPending = true;
+    } else if (panel.pass === false) {
+      sawFail = true;
+    }
   }
   if (!sawAny) {
     return {
@@ -75,16 +83,20 @@ export function readHeavyMetalsFromCoa(coa: COA): {
       heavy_metals,
     };
   }
-  if (!sawFilled) {
+  if (sawFail) {
+    return { heavy_metals_pass: false, heavy_metals };
+  }
+  if (!sawFilled || sawPending) {
     return { heavy_metals_pass: null, heavy_metals };
   }
   return {
-    heavy_metals_pass: allPass,
-    heavy_metals: allPass
-      ? { ...heavyMetalsPassDefaults(), ...Object.fromEntries(
-          HEAVY_METAL_NAMES.map(m => [m, heavy_metals[m] || HEAVY_METAL_PASS_RESULT]),
-        ) as Record<HeavyMetalName, string> }
-      : heavy_metals,
+    heavy_metals_pass: true,
+    heavy_metals: {
+      ...heavyMetalsPassDefaults(),
+      ...Object.fromEntries(
+        HEAVY_METAL_NAMES.map(m => [m, heavy_metals[m] || HEAVY_METAL_PASS_RESULT]),
+      ) as Record<HeavyMetalName, string>,
+    },
   };
 }
 
@@ -145,7 +157,7 @@ export function readCoaPdfStats(coa: COA): CoaPdfStats {
   const purity =
     (typeof summary.avg_purity === 'string' && summary.avg_purity.trim())
     || fromAssay.avg_purity
-    || (coa.purity_percent != null ? `${coa.purity_percent}%` : '');
+    || (coa.purity_percent != null ? `${formatCoaDecimal(coa.purity_percent)}%` : '');
 
   const fenRaw = typeof summary.fentanyl_detection === 'string' ? summary.fentanyl_detection : '';
   const fentanyl_detection: FentanylDetectionMark =
@@ -173,12 +185,11 @@ export function readCoaPdfStats(coa: COA): CoaPdfStats {
     includeFromSummary ?? (!!mwPanel || (coa.molecular_weight != null && !!molecular_weight));
 
   const sterility_method = parseSterilityMethod(summary.sterility_method, sterilityPanel);
-  const sterilityResult = (sterilityPanel?.result || '').trim();
   const sterility_pass: AssayPassState =
     typeof summary.sterility_pass === 'boolean' || summary.sterility_pass === null
       ? parseAssayPassState(summary.sterility_pass, null)
       : sterilityPanel
-        ? (sterilityResult ? !!sterilityPanel.pass : null)
+        ? resolvePanelPass(sterilityPanel)
         : null;
 
   const endotoxinFromSummary =
@@ -187,12 +198,11 @@ export function readCoaPdfStats(coa: COA): CoaPdfStats {
     endotoxinFromSummary ||
     parseEndotoxinValue(endotoxinPanel?.result ?? '');
 
-  const endotoxinResult = (endotoxinPanel?.result || '').trim();
   const endotoxin_pass: AssayPassState =
     typeof summary.endotoxin_pass === 'boolean' || summary.endotoxin_pass === null
       ? parseAssayPassState(summary.endotoxin_pass, null)
       : endotoxinPanel
-        ? (endotoxinResult ? !!endotoxinPanel.pass : null)
+        ? resolvePanelPass(endotoxinPanel)
         : null;
 
   const metals = readHeavyMetalsFromCoa(coa);
@@ -475,8 +485,8 @@ export function applyPrepToCoaPanels(coa: COA, prep: CoaPdfPrepPayload): {
       ? {
           panel_name: 'Sterility',
           specification: 'Not Detected',
-          result: '',
-          pass: false,
+          result: 'Pending',
+          pass: null,
         }
       : {
           panel_name: 'Sterility',
@@ -495,8 +505,8 @@ export function applyPrepToCoaPanels(coa: COA, prep: CoaPdfPrepPayload): {
       ? {
           panel_name: 'Endotoxin',
           specification: ENDOTOXIN_SPEC_EU_ML,
-          result: '',
-          pass: false,
+          result: 'Pending',
+          pass: null,
         }
       : {
           panel_name: 'Endotoxin',
@@ -539,7 +549,7 @@ export function applyPrepToCoaPanels(coa: COA, prep: CoaPdfPrepPayload): {
   for (const metal of HEAVY_METAL_NAMES) {
     const pending = prep.heavy_metals_pass === null;
     const result = pending
-      ? ''
+      ? 'Pending'
       : ((prep.heavy_metals[metal] ?? '').trim()
         || (prep.heavy_metals_pass ? HEAVY_METAL_PASS_RESULT : ''));
     panels = upsertNamedPanel(
@@ -550,7 +560,7 @@ export function applyPrepToCoaPanels(coa: COA, prep: CoaPdfPrepPayload): {
         panel_name: metal,
         specification: HEAVY_METAL_USP_SPECS[metal],
         result,
-        pass: prep.heavy_metals_pass === true,
+        pass: pending ? null : prep.heavy_metals_pass === true,
       },
     );
   }
