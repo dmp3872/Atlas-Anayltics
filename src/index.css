@@ -482,9 +482,10 @@
 }
 
 .coa-png-export .coa-chrom-photo img {
-  /* Keep in sync with COA_CHROMATOGRAM_ZOOM in coaImages.ts */
-  transform: scale(1.08) !important;
+  /* No CSS scale during export — html2canvas spills scaled chrom over results. */
+  transform: none !important;
   object-fit: contain !important;
+  object-position: center !important;
 }
 
 .coa-png-export .coa-chrom-photo > div:first-child {
