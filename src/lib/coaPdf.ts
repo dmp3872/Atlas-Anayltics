@@ -356,10 +356,14 @@ function drawDataRow(
   });
 }
 
-function heavyMetalResult(panels: PanelResult[], match: string): { result: string; pass: boolean } {
+function heavyMetalResult(panels: PanelResult[], match: string): { result: string; pass: boolean | null } {
   const panel = panels.find(p => p.panel_name.toLowerCase().includes(match));
-  if (!panel) return { result: '', pass: true };
-  return { result: (panel.value ?? panel.result ?? '').trim(), pass: panel.pass };
+  if (!panel) return { result: 'Pending', pass: null };
+  const raw = (panel.value ?? panel.result ?? '').trim();
+  if (panel.pass === null || !raw || /^pending$/i.test(raw)) {
+    return { result: 'Pending', pass: null };
+  }
+  return { result: raw || 'Not Detected', pass: panel.pass };
 }
 
 /** Insert Fentanyl under Endotoxins and shift Heavy Metals down so the row is visible. */
@@ -416,7 +420,7 @@ function drawFentanylAndShiftedHeavyMetals(
   HEAVY_METAL_TEMPLATE_ROWS.forEach((metal, i) => {
     const bottom = hmHeaderBottom - rowH * (i + 1);
     const { result, pass } = heavyMetalResult(panels, metal.match);
-    const conformity = result ? (pass ? 'PASS' : 'FAIL') : '';
+    const conformity = pass === null ? 'PENDING' : pass ? 'PASS' : 'FAIL';
     drawDataRow(
       page,
       bottom,
@@ -424,7 +428,11 @@ function drawFentanylAndShiftedHeavyMetals(
       fonts,
       {
         boldFirst: false,
-        confColor: conformity === 'PASS' ? rgb(0.05, 0.45, 0.2) : conformity === 'FAIL' ? rgb(0.75, 0.08, 0.08) : undefined,
+        confColor: conformity === 'PASS'
+          ? rgb(0.05, 0.45, 0.2)
+          : conformity === 'FAIL'
+            ? rgb(0.75, 0.08, 0.08)
+            : rgb(0.35, 0.35, 0.35),
       },
     );
   });

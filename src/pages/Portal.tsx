@@ -33,7 +33,7 @@ import PortalHome from '../components/portal/PortalHome';
 import OrderShippingChecklist from '../components/order/OrderShippingChecklist';
 import AtlasDigitalCoaCard from '../components/order/AtlasDigitalCoaCard';
 import OrderNotesThread from '../components/order/OrderNotesThread';
-import { assayResultsFromPanels, isHeavyMetalPanel, partitionCoaPanels } from '../lib/coaDisplayPanels';
+import { assayResultsFromPanels, isHeavyMetalPanel, partitionCoaPanels, resolvePanelPass } from '../lib/coaDisplayPanels';
 import { createEmptySample, TestMode, type SampleCategory, type SampleMatrix } from '../lib/orderCatalog';
 import { trackingStageFromStatuses } from '../lib/orderProjection';
 import { queueNotification } from '../lib/notifications';
@@ -63,11 +63,12 @@ function panelPassStatus(panel: PanelResult, opts?: { metal?: boolean }): {
 } {
   const isNetContent = /net content|peptide content/i.test(panel.panel_name);
   if (isNetContent) return { pass: null, label: 'N/A' };
+  const resolved = resolvePanelPass(panel);
+  if (resolved === null) return { pass: null, label: 'Pending' };
   if (opts?.metal) {
-    const showPass = !panel.result?.trim() || panel.pass;
-    return { pass: showPass, label: showPass ? 'Pass' : 'Fail' };
+    return { pass: resolved, label: resolved ? 'Pass' : 'Fail' };
   }
-  return { pass: panel.pass, label: panel.pass ? 'Pass' : 'Fail' };
+  return { pass: resolved, label: resolved ? 'Pass' : 'Fail' };
 }
 
 function shortPanelLabel(name: string): string {
@@ -105,7 +106,8 @@ function sampleStillAnalyzing(sample: OrderSample, coa?: COA | null): boolean {
 }
 
 function panelResultFilled(panel: PanelResult): boolean {
-  return !!panel.result?.trim();
+  const result = (panel.result || '').trim();
+  return !!result && !/^pending$/i.test(result);
 }
 
 /** Whether filled COA panels already cover an ordered catalog test name. */
@@ -189,28 +191,36 @@ function coaResultLines(coa: COA, opts?: { inProgress?: boolean }): CoaResultLin
     const filled = panelResultFilled(panel);
     if (inProgress && !filled) continue; // pending ordered tests added separately
     const status = panelPassStatus(panel);
+    const pending = status.label === 'Pending';
     const value = filled
       ? `${panel.result}${panel.unit ? ` ${panel.unit}` : ''}`
-      : '—';
+      : pending
+        ? 'Pending'
+        : '—';
     lines.push({
       key: `m-${i}`,
       label: shortPanelLabel(panel.panel_name),
       value,
       pass: status.pass,
+      pending: pending || undefined,
     });
   }
   for (const [i, panel] of metals.entries()) {
     const filled = panelResultFilled(panel);
     if (inProgress && !filled) continue;
     const status = panelPassStatus(panel, { metal: true });
+    const pending = status.label === 'Pending';
     const value = filled
       ? `${panel.result}${panel.unit ? ` ${panel.unit}` : ''}`
-      : 'Not Detected';
+      : pending
+        ? 'Pending'
+        : 'Not Detected';
     lines.push({
       key: `h-${i}`,
       label: shortPanelLabel(panel.panel_name),
       value,
       pass: status.pass,
+      pending: pending || undefined,
     });
   }
   return lines;

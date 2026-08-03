@@ -9,9 +9,9 @@ import { COA, PanelResult } from '../lib/types';
 import { formatDate, formatDateTime } from '../lib/utils';
 import { verifyCoaIntegrity } from '../lib/coaVerify';
 import { hydrateCoaImages, readCoaPdfStats, resolveCoaHeaderLogo, resolveCoaWatermark, trimImageWhitespace } from '../lib/coaImages';
-import { partitionCoaPanels } from '../lib/coaDisplayPanels';
+import { partitionCoaPanels, panelStatusLabel, panelStatusToneClass, resolvePanelPass, formatCoaResultDisplay } from '../lib/coaDisplayPanels';
 import { COA_DETAIL_COLUMNS, fetchCoaImageRow } from '../lib/coaSelect';
-import { casForSampleName } from '../lib/labCoaForm';
+import { casForSampleName, formatCoaDecimal } from '../lib/labCoaForm';
 import { compressImageDataUrl } from '../lib/imageCompress';
 import { coaPngFilename, downloadCoaPngFromElement } from '../lib/coaPdf';
 import { coaHasDirectorSignature, coaSignatureProgress, coaWorkflowStage } from '../lib/coaWorkflow';
@@ -476,7 +476,7 @@ export default function COADetail() {
                 <div>
                   <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">Average Purity</p>
                   <p className="text-xl font-bold text-black mt-0.5 tabular-nums">
-                    {stats.avg_purity || (coa.purity_percent != null ? `${coa.purity_percent}%` : '—')}
+                    {stats.avg_purity || (coa.purity_percent != null ? `${formatCoaDecimal(coa.purity_percent)}%` : '—')}
                   </p>
                   <p className="text-[11px] text-neutral-500 mt-0.5">
                     Mean of {vialsTested !== '—' ? vialsTested : '—'} results
@@ -505,17 +505,22 @@ export default function COADetail() {
               <tbody>
                 {mainPanels.map((r, i) => {
                   const isNetContent = /net content|peptide content/i.test(r.panel_name);
+                  const pass = resolvePanelPass(r);
+                  const status = panelStatusLabel(pass);
                   return (
                     <tr key={`main-${i}`} className={i % 2 === 0 ? 'bg-white' : 'bg-neutral-50'}>
                       <td className="px-3 py-1 font-medium border-t border-atlas-border">{r.panel_name}</td>
                       <td className="px-3 py-1 text-neutral-600 border-t border-atlas-border">{r.specification || '—'}</td>
-                      <td className="px-3 py-1 font-medium border-t border-atlas-border">{r.result || '—'}{r.unit ? ` ${r.unit}` : ''}</td>
+                      <td className="px-3 py-1 font-medium border-t border-atlas-border">
+                        {formatCoaResultDisplay(r.result || (pass === null ? 'Pending' : '—'))}
+                        {r.unit && r.result ? ` ${r.unit}` : ''}
+                      </td>
                       <td className="px-3 py-1 border-t border-atlas-border">
                         {isNetContent ? (
                           <span className="font-bold uppercase text-xs text-neutral-500">N/A</span>
                         ) : (
-                          <span className={`font-bold uppercase text-xs ${r.pass ? 'text-atlas-success' : 'text-red-600'}`}>
-                            {r.pass ? 'Pass' : 'Fail'}
+                          <span className={`font-bold uppercase text-xs ${panelStatusToneClass(pass)}`}>
+                            {status}
                           </span>
                         )}
                       </td>
@@ -545,20 +550,23 @@ export default function COADetail() {
               </thead>
               <tbody>
                 {metalPanels.map((r, i) => {
-                  const resultText = r.result?.trim()
-                    ? `${r.result}${r.unit ? ` ${r.unit}` : ''}`
-                    : 'None Detected';
-                  const showPass = !r.result?.trim() || r.pass;
+                  const pass = resolvePanelPass(r);
+                  const status = panelStatusLabel(pass);
+                  const resultText = pass === null
+                    ? 'Pending'
+                    : r.result?.trim()
+                      ? `${r.result}${r.unit ? ` ${r.unit}` : ''}`
+                      : 'None Detected';
                   return (
                     <tr key={`metal-${i}`} className={i % 2 === 0 ? 'bg-white' : 'bg-neutral-50'}>
                       <td className="px-3 py-1 font-medium border-t border-atlas-border">{r.panel_name}</td>
                       <td className="px-3 py-1 text-neutral-600 border-t border-atlas-border">{r.specification || ''}</td>
-                      <td className={`px-3 py-1 border-t border-atlas-border ${r.result?.trim() ? 'font-medium' : 'italic text-neutral-500'}`}>
+                      <td className={`px-3 py-1 border-t border-atlas-border ${pass === null || !r.result?.trim() ? 'italic text-neutral-500' : 'font-medium text-black'}`}>
                         {resultText}
                       </td>
                       <td className="px-3 py-1 border-t border-atlas-border">
-                        <span className={`font-bold uppercase text-xs ${showPass ? 'text-atlas-success' : 'text-red-600'}`}>
-                          {showPass ? 'Pass' : 'Fail'}
+                        <span className={`font-bold uppercase text-xs ${panelStatusToneClass(pass)}`}>
+                          {status}
                         </span>
                       </td>
                     </tr>

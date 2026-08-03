@@ -266,16 +266,33 @@ export function casForSampleName(sampleName: string): string {
   return hit?.cas ?? '';
 }
 
-/** Normalizes a free-typed mg amount into "10 mg" (space before unit, trimmed). */
+/** Normalizes a free-typed mg amount into "10.0 mg" (always includes a decimal). */
 export function formatMgAmount(raw: string): string {
   const numeric = raw.trim().replace(/\s*mg\s*$/i, '').trim();
-  return numeric ? `${numeric} mg` : '';
+  if (!numeric) return '';
+  const formatted = formatCoaDecimal(numeric);
+  return formatted ? `${formatted} mg` : '';
 }
 
-/** Normalizes a free-typed percent amount into "9.8%" (no space before unit). */
+/** Normalizes a free-typed percent amount into "99.8%" (always includes a decimal). */
 export function formatPurityPercent(raw: string): string {
   const numeric = raw.trim().replace(/%\s*$/, '').trim();
-  return numeric ? `${numeric}%` : '';
+  if (!numeric) return '';
+  const formatted = formatCoaDecimal(numeric);
+  return formatted ? `${formatted}%` : '';
+}
+
+/**
+ * COA numeric display requirement: always include a decimal place.
+ * 10 → "10.0", 10.5 → "10.5", 99.87 → "99.9" (one decimal).
+ */
+export function formatCoaDecimal(raw: string | number): string {
+  if (raw === '' || raw == null) return '';
+  const n = typeof raw === 'number'
+    ? raw
+    : Number(String(raw).trim().replace(/,/g, '').match(/-?\d+(?:\.\d+)?/)?.[0] ?? NaN);
+  if (!Number.isFinite(n)) return '';
+  return (Math.round(n * 10) / 10).toFixed(1);
 }
 
 /** Joins conformity row net-content amounts into one comma-separated string, e.g. "10 mg, 10.1 mg". */
@@ -455,23 +472,26 @@ export function buildLabResultsFromCoa(
   let sawMetal = false;
   let sawFilledMetal = false;
   let anyMetalFail = false;
+  let anyMetalPending = false;
   for (const metal of HEAVY_METAL_NAMES) {
     const row = panels.find(p => p.panel_name === metal);
     if (row) {
       includeHeavyMetals = true;
       sawMetal = true;
       const result = (row.result || '').trim();
-      heavyMetals[metal] = result;
-      if (result) sawFilledMetal = true;
-      if (row.pass === false) anyMetalFail = true;
+      const pendingText = !result || /^pending$/i.test(result);
+      heavyMetals[metal] = pendingText ? '' : result;
+      if (!pendingText) sawFilledMetal = true;
+      if (row.pass === null || pendingText) anyMetalPending = true;
+      else if (row.pass === false) anyMetalFail = true;
     }
   }
   const heavyMetalsPass: AssayPassState = !sawMetal
     ? parseAssayPassState(summary.heavy_metals_pass, null)
-    : !sawFilledMetal
-      ? null
-      : anyMetalFail
-        ? false
+    : anyMetalFail
+      ? false
+      : (!sawFilledMetal || anyMetalPending)
+        ? null
         : true;
 
   const sterilityResult = (sterilityPanel?.result || '').trim();
@@ -493,13 +513,15 @@ export function buildLabResultsFromCoa(
     || (typeof summary.molecular_weight === 'string' ? summary.molecular_weight : '');
 
   const sterilityPass: AssayPassState = sterilityPanel
-    ? (!sterilityResult
+    ? (sterilityPanel.pass === null || !sterilityResult || /^pending$/i.test(sterilityResult)
       ? parseAssayPassState(summary.sterility_pass, null)
       : sterilityPanel.pass !== false && !/^detected\b/i.test(sterilityResult))
     : parseAssayPassState(summary.sterility_pass, null);
 
   const endotoxinPass: AssayPassState = endotoxinPanel
-    ? (!(endotoxinPanel.result || '').trim()
+    ? (endotoxinPanel.pass === null
+      || !(endotoxinPanel.result || '').trim()
+      || /^pending$/i.test((endotoxinPanel.result || '').trim())
       ? parseAssayPassState(summary.endotoxin_pass, null)
       : endotoxinPanel.pass !== false)
     : parseAssayPassState(summary.endotoxin_pass, null);
@@ -543,13 +565,13 @@ export function labResultsToPanelResults(results: LabCoaResults): PanelResult[] 
     {
       panel_name: 'Net Content',
       specification: isBlend ? 'Total peptide content' : 'Label claim',
-      result: results.netContent,
+      result: formatMgAmount(results.netContent) || results.netContent,
       pass: !!results.netContent.trim(),
     },
     {
       panel_name: 'Net Purity',
       specification: '≥98%',
-      result: results.netPurity ? `${results.netPurity}%` : '',
+      result: results.netPurity.trim() ? formatPurityPercent(results.netPurity) : '',
       pass: true,
     },
   ];
@@ -587,8 +609,8 @@ export function labResultsToPanelResults(results: LabCoaResults): PanelResult[] 
       rows.push({
         panel_name: 'Sterility',
         specification: 'Not Detected',
-        result: '',
-        pass: false,
+        result: 'Pending',
+        pass: null,
       });
     } else {
       rows.push({
@@ -607,8 +629,8 @@ export function labResultsToPanelResults(results: LabCoaResults): PanelResult[] 
       rows.push({
         panel_name: 'Endotoxin',
         specification: ENDOTOXIN_SPEC_EU_ML,
-        result: '',
-        pass: false,
+        result: 'Pending',
+        pass: null,
       });
     } else {
       rows.push({
@@ -623,11 +645,12 @@ export function labResultsToPanelResults(results: LabCoaResults): PanelResult[] 
   if (results.includeHeavyMetals !== false) {
     for (const metal of HEAVY_METAL_NAMES) {
       const filled = (results.heavyMetals[metal] ?? '').trim();
+      const pending = results.heavyMetalsPass === null;
       rows.push({
         panel_name: metal,
         specification: HEAVY_METAL_USP_SPECS[metal],
-        result: results.heavyMetalsPass === null ? '' : filled,
-        pass: results.heavyMetalsPass === true,
+        result: pending ? 'Pending' : filled,
+        pass: pending ? null : results.heavyMetalsPass === true,
       });
     }
   }
@@ -679,9 +702,7 @@ function parseNumericTokens(raw: string): number[] {
 function formatMeanNumber(values: number[]): string {
   if (values.length === 0) return '';
   const mean = values.reduce((a, b) => a + b, 0) / values.length;
-  const rounded = Math.round(mean * 100) / 100;
-  if (Number.isInteger(rounded)) return String(rounded);
-  return String(rounded);
+  return formatCoaDecimal(mean);
 }
 
 function collectContentPurityParts(results: LabCoaResults): {
@@ -690,18 +711,8 @@ function collectContentPurityParts(results: LabCoaResults): {
 } {
   const contentParts: string[] = [];
   const purityParts: string[] = [];
-  const asMg = (v: string) => {
-    const t = v.trim();
-    if (!t) return '';
-    const m = t.match(/^(-?\d+(?:\.\d+)?)\s*(mg)?$/i);
-    return m ? `${m[1]} mg` : t;
-  };
-  const asPct = (v: string) => {
-    const t = v.trim();
-    if (!t) return '';
-    const m = t.match(/^(-?\d+(?:\.\d+)?)\s*%?$/);
-    return m ? `${m[1]}%` : t;
-  };
+  const asMg = (v: string) => formatMgAmount(v);
+  const asPct = (v: string) => formatPurityPercent(v);
 
   // Primary assay fields = first vial tested. Conformity rows = additional measured vials
   // only (never seed them from label claim — that inflated averages for single-vial COAs).

@@ -108,7 +108,10 @@ function sampleFromCoa(coa: COA): WizardSample {
 }
 
 function overallPanelStatus(panels: PanelResult[]): 'pass' | 'fail' | 'pending' {
-  if (!panels.length || panels.some(panel => !stringValue(panel.result))) return 'pending';
+  if (!panels.length) return 'pending';
+  if (panels.some(panel => panel.pass === null || !stringValue(panel.result) || /^pending$/i.test(stringValue(panel.result)))) {
+    return 'pending';
+  }
   return panels.every(panel => panel.pass) ? 'pass' : 'fail';
 }
 
