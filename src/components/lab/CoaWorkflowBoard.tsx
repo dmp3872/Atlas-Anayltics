@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowLeft, ArrowRight, Building2, CalendarClock, CheckCircle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp,
@@ -133,6 +133,198 @@ function LotLine({ lot }: { lot: string }) {
   );
 }
 
+type OrderBundle = {
+  key: string;
+  order: Order | null;
+  orderNumber: string;
+  companyName: string;
+  coas: COA[];
+  pending: QueueSampleItem[];
+};
+
+function peptideLabelFromCoa(coa: COA): string {
+  return (coa.display_name || coa.sample_name || 'Sample').trim();
+}
+
+function peptideLabelFromSample(sample: OrderSample): string {
+  return (sample.display_name || sample.sample_name || 'Sample').trim();
+}
+
+function bundleItemCount(bundle: OrderBundle): number {
+  return bundle.coas.length + bundle.pending.length;
+}
+
+function isCollapsibleBundle(bundle: OrderBundle): boolean {
+  return Boolean(bundle.order) && bundleItemCount(bundle) >= 2;
+}
+
+function buildOrderBundles(
+  coas: COA[],
+  pending: QueueSampleItem[],
+  orders: Order[],
+): OrderBundle[] {
+  const map = new Map<string, OrderBundle>();
+
+  const ensure = (
+    orderId: string | null | undefined,
+    singletonKey: string,
+    orderHint?: Order | null,
+    companyFallback = '',
+  ): OrderBundle => {
+    const key = orderId || singletonKey;
+    let bundle = map.get(key);
+    if (!bundle) {
+      const order = (orderId ? orders.find(o => o.id === orderId) : null) || orderHint || null;
+      bundle = {
+        key,
+        order,
+        orderNumber: order?.order_number || 'No order #',
+        companyName: order?.company_name || companyFallback || '',
+        coas: [],
+        pending: [],
+      };
+      map.set(key, bundle);
+    } else if (!bundle.companyName && companyFallback) {
+      bundle.companyName = companyFallback;
+    }
+    return bundle;
+  };
+
+  for (const coa of coas) {
+    const order = coa.order_id ? orders.find(o => o.id === coa.order_id) : undefined;
+    ensure(coa.order_id, `__coa:${coa.id}`, order, coa.company_name || '').coas.push(coa);
+  }
+  for (const item of pending) {
+    ensure(item.order.id, `__pending:${item.sample.id}`, item.order, item.order.company_name || '')
+      .pending.push(item);
+  }
+
+  return Array.from(map.values());
+}
+
+function OrderGroupShell({
+  bundle,
+  expanded,
+  onToggle,
+  mine,
+  children,
+  tools,
+}: {
+  bundle: OrderBundle;
+  expanded: boolean;
+  onToggle: () => void;
+  mine: boolean;
+  children: ReactNode;
+  tools?: ReactNode;
+}) {
+  const peptides = [
+    ...bundle.pending.map(p => ({
+      key: `p-${p.sample.id}`,
+      name: peptideLabelFromSample(p.sample),
+      tone: 'pending' as const,
+    })),
+    ...bundle.coas.map(c => ({
+      key: `c-${c.id}`,
+      name: peptideLabelFromCoa(c),
+      tone: c.overall_result === 'fail' ? ('fail' as const)
+        : c.overall_result === 'pass' ? ('pass' as const)
+          : ('neutral' as const),
+    })),
+  ];
+  const preview = peptides.slice(0, 4);
+  const extra = peptides.length - preview.length;
+  const failCount = bundle.coas.filter(c => c.overall_result === 'fail').length;
+  const pendingCount = bundle.pending.length;
+  const coaCount = bundle.coas.length;
+
+  return (
+    <div
+      className={`rounded-xl border bg-white/90 shadow-sm overflow-hidden ${
+        mine ? 'ring-2 ring-sky-400 border-sky-300' : 'border-atlas-border'
+      }`}
+    >
+      <button
+        type="button"
+        onClick={onToggle}
+        className="w-full text-left px-2.5 py-2 hover:bg-neutral-50/80 transition-colors"
+        aria-expanded={expanded}
+      >
+        <div className="flex items-start gap-2">
+          <span className="mt-0.5 text-neutral-400 shrink-0">
+            {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </span>
+          <div className="min-w-0 flex-1 space-y-1">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-bold text-black truncate flex items-center gap-1">
+                <Hash size={11} className="text-neutral-400 shrink-0" />
+                {bundle.orderNumber}
+              </p>
+              <span className="text-[10px] font-semibold text-neutral-500 bg-neutral-100 px-1.5 py-0.5 rounded-full shrink-0">
+                {bundleItemCount(bundle)}
+              </span>
+            </div>
+            {bundle.companyName ? (
+              <p className="text-[11px] text-neutral-500 truncate flex items-center gap-1">
+                <Building2 size={10} className="text-neutral-400 shrink-0" />
+                {bundle.companyName}
+              </p>
+            ) : null}
+            <div className="flex flex-wrap gap-1">
+              {preview.map(p => (
+                <span
+                  key={p.key}
+                  className={`inline-flex max-w-full truncate text-[10px] font-medium px-1.5 py-0.5 rounded border ${
+                    p.tone === 'fail'
+                      ? 'border-red-200 bg-red-50 text-red-800'
+                      : p.tone === 'pass'
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                        : p.tone === 'pending'
+                          ? 'border-sky-200 bg-sky-50 text-sky-800'
+                          : 'border-neutral-200 bg-neutral-50 text-neutral-700'
+                  }`}
+                  title={p.name}
+                >
+                  {p.name}
+                </span>
+              ))}
+              {extra > 0 ? (
+                <span className="text-[10px] font-semibold text-neutral-500 px-1 py-0.5">+{extra}</span>
+              ) : null}
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+              {mine ? <AssignedToYouBadge /> : null}
+              {failCount > 0 ? (
+                <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full border border-red-300 bg-red-50 text-red-800">
+                  {failCount} fail
+                </span>
+              ) : null}
+              {pendingCount > 0 ? (
+                <span className="text-[10px] font-semibold text-sky-800">
+                  {pendingCount} awaiting COA
+                </span>
+              ) : null}
+              {coaCount > 0 ? (
+                <span className="text-[10px] font-semibold text-neutral-500">
+                  {coaCount} COA{coaCount === 1 ? '' : 's'}
+                </span>
+              ) : null}
+              <span className="text-[10px] text-neutral-400 ml-auto">
+                {expanded ? 'Hide' : 'Show cards'}
+              </span>
+            </div>
+          </div>
+        </div>
+      </button>
+      {tools ? <div className="px-2.5 pb-2">{tools}</div> : null}
+      {expanded ? (
+        <div className="px-1.5 pb-1.5 space-y-2 border-t border-atlas-border/70 bg-neutral-50/50">
+          {children}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 /** Compact ETA + notes drawer on a workflow card (stops drag when interacting). */
 function WorkflowOrderTools({
   order,
@@ -158,7 +350,7 @@ function WorkflowOrderTools({
 
   return (
     <div
-      className="mt-2 border-t border-atlas-border pt-2"
+      className="border-t border-atlas-border pt-2"
       onClick={e => e.stopPropagation()}
       onMouseDown={e => e.stopPropagation()}
       onDragStart={e => e.preventDefault()}
@@ -263,6 +455,8 @@ export default function CoaWorkflowBoard({
   const [reviewAssignee, setReviewAssignee] = useState('');
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
+  /** `${stage}:${bundle.key}` → expanded. Multi-COA orders start collapsed. */
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
   function updateBoardScrollHints() {
     const el = boardScrollRef.current;
@@ -414,6 +608,37 @@ export default function CoaWorkflowBoard({
     return list;
   }, [pendingSamples, currentUserId]);
 
+  const bundlesByStage = useMemo(() => {
+    const out = {} as Record<CoaWorkflowStage, OrderBundle[]>;
+    for (const stage of COA_WORKFLOW_BOARD_COLUMNS) {
+      const pending = stage === 'testing_in_progress' ? sortedPending : [];
+      const bundles = buildOrderBundles(grouped[stage], pending, orders);
+      bundles.sort((a, b) => {
+        const aMine = currentUserId && (
+          a.coas.some(c => c.review_assigned_to === currentUserId || assigneeForCoa(c) === currentUserId)
+          || a.pending.some(p => p.assigned_to === currentUserId)
+        ) ? 0 : 1;
+        const bMine = currentUserId && (
+          b.coas.some(c => c.review_assigned_to === currentUserId || assigneeForCoa(c) === currentUserId)
+          || b.pending.some(p => p.assigned_to === currentUserId)
+        ) ? 0 : 1;
+        if (aMine !== bMine) return aMine - bMine;
+        return a.orderNumber.localeCompare(b.orderNumber);
+      });
+      out[stage] = bundles;
+    }
+    return out;
+  }, [grouped, sortedPending, orders, samples, currentUserId]);
+
+  function isGroupExpanded(stage: CoaWorkflowStage, bundleKey: string): boolean {
+    return expandedGroups[`${stage}:${bundleKey}`] === true;
+  }
+
+  function toggleGroup(stage: CoaWorkflowStage, bundleKey: string) {
+    const key = `${stage}:${bundleKey}`;
+    setExpandedGroups(prev => ({ ...prev, [key]: !prev[key] }));
+  }
+
   function handleDragStart(e: React.DragEvent, coaId: string) {
     const target = e.target as HTMLElement | null;
     // Let buttons/inputs/selects work normally; don't start a card drag from them.
@@ -479,7 +704,8 @@ export default function CoaWorkflowBoard({
       <p className="text-xs text-neutral-500">
         After issue, send the certificate to <strong className="text-violet-800">Pending Review</strong> and assign a
         lab director or chemist for the second signature (shows <strong>1/2</strong>). After they sign off it becomes
-        Verified (2/2), then Published. Open <strong>ETA / Notes</strong> on any card to update the client-visible ready
+        Verified (2/2), then Published. Multi-peptide orders collapse by order number — expand to work cards.
+        Open <strong>ETA / Notes</strong> on any card (or order group) to update the client-visible ready
         date or leave staff/client notes. Drag or use <strong>Back to testing</strong> to rework an issued COA, then
         <strong> Restart COA</strong> to edit results and re-issue. Cards marked <strong className="text-sky-800">Assigned to you</strong> are yours.
         Chemists can <strong>Publish now</strong> from any stage to override stopping points when needed.
@@ -561,8 +787,8 @@ export default function CoaWorkflowBoard({
           const styles = COLUMN_STYLES[stage];
           const isTestingCol = stage === 'testing_in_progress';
           const isOver = overStage === stage && draggingId !== null;
-          const cards = grouped[stage];
-          const columnCount = isTestingCol ? sortedPending.length + cards.length : cards.length;
+          const bundles = bundlesByStage[stage] || [];
+          const columnCount = bundles.reduce((n, b) => n + bundleItemCount(b), 0);
 
           return (
             <div
@@ -613,15 +839,25 @@ export default function CoaWorkflowBoard({
                 data-coa-column-scroll
                 className={`flex-1 min-h-0 p-2 space-y-2 overflow-y-auto overscroll-contain scroll-smooth ${styles.body}`}
               >
-                {isTestingCol && (
-                  <>
-                    {sortedPending.length === 0 && cards.length === 0 ? (
-                      <div className="rounded-lg border-2 border-dashed border-neutral-200 p-6 text-center text-xs text-neutral-400">
-                        No samples in testing
-                      </div>
-                    ) : null}
+                {bundles.length === 0 ? (
+                  <div className={`rounded-lg border-2 border-dashed p-6 text-center text-xs text-neutral-400 ${
+                    isOver ? 'border-current bg-white/60' : 'border-neutral-200'
+                  }`}>
+                    {isOver ? 'Drop here' : (isTestingCol ? 'No samples in testing' : 'No cards')}
+                  </div>
+                ) : (
+                  bundles.map(bundle => {
+                    const collapsible = isCollapsibleBundle(bundle);
+                    const bundleMine = !!currentUserId && (
+                      bundle.coas.some(c => (
+                        c.review_assigned_to === currentUserId || assigneeForCoa(c) === currentUserId
+                      ))
+                      || bundle.pending.some(p => p.assigned_to === currentUserId)
+                    );
+                    const expanded = !collapsible || isGroupExpanded(stage, bundle.key);
+                    const showOrderToolsOnCards = !collapsible;
 
-                    {sortedPending.map(item => {
+                    const pendingNodes = bundle.pending.map(item => {
                       const { sample, order, priority, assigned_to: assignedTo } = item;
                       const mine = !!currentUserId && assignedTo === currentUserId;
                       const pStyles = LAB_PRIORITY_STYLES[priority];
@@ -644,9 +880,11 @@ export default function CoaWorkflowBoard({
                             {sample.display_name || sample.sample_name}
                           </p>
                           <LotLine lot={lot} />
-                          <p className="text-xs text-neutral-500 mt-0.5 truncate">
-                            {order.company_name || '—'} · {order.order_number}
-                          </p>
+                          {showOrderToolsOnCards ? (
+                            <p className="text-xs text-neutral-500 mt-0.5 truncate">
+                              {order.company_name || '—'} · {order.order_number}
+                            </p>
+                          ) : null}
                           <p className={`text-xs mt-1 flex items-center gap-1 ${mine ? 'text-sky-800 font-semibold' : 'text-neutral-400'}`}>
                             <UserCircle2 size={11} /> {chemistLabel(assignedTo)}
                           </p>
@@ -659,29 +897,20 @@ export default function CoaWorkflowBoard({
                               Issue COA <ArrowRight size={11} />
                             </button>
                           )}
-                          <WorkflowOrderTools
-                            order={order}
-                            sampleId={sample.id}
-                            isAdmin={isAdmin}
-                            saving={etaSavingOrderId === order.id}
-                            onSaveEta={onSaveOrderEta}
-                          />
+                          {showOrderToolsOnCards ? (
+                            <WorkflowOrderTools
+                              order={order}
+                              sampleId={sample.id}
+                              isAdmin={isAdmin}
+                              saving={etaSavingOrderId === order.id}
+                              onSaveEta={onSaveOrderEta}
+                            />
+                          ) : null}
                         </article>
                       );
-                    })}
-                  </>
-                )}
+                    });
 
-                {cards.length === 0 && !(isTestingCol && sortedPending.length > 0) ? (
-                  isTestingCol ? null : (
-                  <div className={`rounded-lg border-2 border-dashed p-6 text-center text-xs text-neutral-400 ${
-                    isOver ? 'border-current bg-white/60' : 'border-neutral-200'
-                  }`}>
-                    {isOver ? 'Drop here' : 'No cards'}
-                  </div>
-                  )
-                ) : (
-                  cards.map(coa => {
+                    const coaNodes = bundle.coas.map(coa => {
                     const currentStage = coaWorkflowStage(coa);
                     const isDragging = draggingId === coa.id;
                     const isMoving = movingId === coa.id;
@@ -728,7 +957,7 @@ export default function CoaWorkflowBoard({
 
                             <LotLine lot={lot} />
 
-                            {order && (
+                            {order && showOrderToolsOnCards && (
                               <WorkflowOrderTools
                                 order={order}
                                 sampleId={coa.sample_id}
@@ -769,7 +998,7 @@ export default function CoaWorkflowBoard({
                               </div>
                             )}
 
-                            {!isAwaitingInfo && (
+                            {!isAwaitingInfo && showOrderToolsOnCards && (
                               <>
                                 <p className="text-xs text-neutral-500 truncate flex items-center gap-1">
                                   <Building2 size={11} className="text-neutral-400 flex-shrink-0" /> {companyName || '—'}
@@ -795,7 +1024,7 @@ export default function CoaWorkflowBoard({
                             )}
 
                             <div className="flex flex-wrap gap-x-2.5 gap-y-0.5 text-[11px] text-neutral-500">
-                              {order && (
+                              {order && showOrderToolsOnCards && (
                                 <span className="flex items-center gap-1">
                                   <Hash size={10} className="text-neutral-400" /> {order.order_number}
                                 </span>
@@ -996,10 +1225,42 @@ export default function CoaWorkflowBoard({
                         </div>
                       </article>
                     );
+                    });
+
+                    if (!collapsible) {
+                      return (
+                        <div key={bundle.key} className="space-y-2">
+                          {pendingNodes}
+                          {coaNodes}
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <OrderGroupShell
+                        key={bundle.key}
+                        bundle={bundle}
+                        expanded={expanded}
+                        onToggle={() => toggleGroup(stage, bundle.key)}
+                        mine={bundleMine}
+                        tools={bundle.order ? (
+                          <WorkflowOrderTools
+                            order={bundle.order}
+                            sampleId={bundle.coas[0]?.sample_id || bundle.pending[0]?.sample.id || null}
+                            isAdmin={isAdmin}
+                            saving={etaSavingOrderId === bundle.order.id}
+                            onSaveEta={onSaveOrderEta}
+                          />
+                        ) : null}
+                      >
+                        {pendingNodes}
+                        {coaNodes}
+                      </OrderGroupShell>
+                    );
                   })
                 )}
 
-                {cards.length > 0 && isOver && (
+                {columnCount > 0 && isOver && (
                   <div className="rounded-lg border-2 border-dashed border-current p-3 text-center text-xs text-neutral-500 bg-white/60">
                     Drop to move here
                   </div>
