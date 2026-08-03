@@ -259,6 +259,8 @@
     object-position: center !important;
     width: 100% !important;
     height: 100% !important;
+    /* Keep in sync with COA_CHROMATOGRAM_ZOOM in coaImages.ts */
+    transform: scale(1.08) !important;
   }
 
   .coa-chrom-svg {
@@ -472,11 +474,17 @@
 
 .coa-png-export .coa-print-chromatogram {
   overflow: visible !important;
-  min-height: 11rem !important;
+  min-height: 12rem !important;
 }
 
 .coa-png-export .coa-chrom-photo {
   overflow: hidden !important;
+}
+
+.coa-png-export .coa-chrom-photo img {
+  /* Keep in sync with COA_CHROMATOGRAM_ZOOM in coaImages.ts */
+  transform: scale(1.08) !important;
+  object-fit: contain !important;
 }
 
 .coa-png-export .coa-chrom-photo > div:first-child {

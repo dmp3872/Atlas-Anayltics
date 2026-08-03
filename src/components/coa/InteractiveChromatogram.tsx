@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { AtlasWatermark } from '../brand/AtlasLogo';
+import { COA_CHROMATOGRAM_ZOOM } from '../../lib/coaImages';
 import { COA } from '../../lib/types';
 
 const GOLD = '#C5A059';
@@ -87,7 +88,7 @@ export default function InteractiveChromatogram({
   if (photo) {
     return (
       <div className="coa-chrom-photo relative border border-atlas-border bg-white overflow-hidden flex flex-col h-full min-h-[9.5rem]">
-        <div className="relative px-3 pt-2.5 pb-1.5 flex items-center justify-center shrink-0 z-[2] bg-white">
+        <div className="relative px-3 pt-1.5 pb-1 flex items-center justify-center shrink-0 z-[2] bg-white">
           <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-700 text-center leading-normal">
             HPLC Chromatogram Report
           </p>
@@ -97,6 +98,7 @@ export default function InteractiveChromatogram({
             src={photo}
             alt="HPLC chromatograph"
             className="absolute inset-0 m-auto w-full h-full object-contain object-center bg-white"
+            style={{ transform: `scale(${COA_CHROMATOGRAM_ZOOM})` }}
           />
           <WatermarkLayer logoWatermark={logoWatermark} />
         </div>

@@ -1,0 +1,27 @@
+---
+description: HPLC chromatogram auto-positioning on digital COA and PDF export
+globs: src/components/coa/InteractiveChromatogram.tsx,src/lib/coaPdf.ts,src/index.css,src/pages/COADetail.tsx,src/lib/coaImages.ts
+alwaysApply: false
+---
+
+# COA chromatogram auto-positioning
+
+Uploaded HPLC chromatograms must use the established **auto positioning** every time — mild contain zoom so the chart fills the report box while keeping axes/sides visible.
+
+## Source of truth
+
+- Constant: `COA_CHROMATOGRAM_ZOOM` (`1.08`) in `src/lib/coaImages.ts`
+- Display: `object-contain` + that zoom on `.coa-chrom-photo img` (`InteractiveChromatogram`)
+- Print / PNG CSS: same `scale(1.08)` with a sync comment in `index.css`
+- Digital PDF export: always apply `COA_CHROMATOGRAM_ZOOM` when re-painting `.coa-chrom-photo` images
+- Template PDF: `drawContainedImage(..., COA_CHROMATOGRAM_ZOOM)`
+
+## Do not
+
+- Do **not** reintroduce aggressive `prepareHplcImage` trim + cover-crop pipelines for chromatograms (that broke display)
+- Do **not** drop the zoom from PDF export
+- Do **not** zoom so hard that chart side axes disappear (stay near `COA_CHROMATOGRAM_ZOOM`, not ~1.22+)
+
+## Intent
+
+Auto-position once as the default for every COA chromatogram — screen and saved PDF must match.

@@ -828,10 +828,33 @@ export default function Lab() {
     if (targetStage === 'verified' && user?.id) {
       patch.verified_by = user.id;
     }
-    const { error } = await supabase.from('coas').update(patch).eq('id', coa.id);
+    const { data: updatedRow, error } = await supabase
+      .from('coas')
+      .update(patch)
+      .eq('id', coa.id)
+      .select(COA_LIST_COLUMNS)
+      .maybeSingle();
 
     if (error) {
       setMsg({ type: 'error', text: error.message });
+      setMovingCoaId(null);
+      return;
+    }
+    if (!updatedRow) {
+      setMsg({
+        type: 'error',
+        text: 'Could not move this COA — the update was blocked or no row changed. Try again or refresh.',
+      });
+      setMovingCoaId(null);
+      return;
+    }
+
+    const updatedCoa = hydrateCoaImages({ ...coa, ...(updatedRow as COA) });
+    if (coaWorkflowStage(updatedCoa) !== targetStage) {
+      setMsg({
+        type: 'error',
+        text: `Move failed to stick — still in ${COA_WORKFLOW_LABELS[coaWorkflowStage(updatedCoa)]}.`,
+      });
       setMovingCoaId(null);
       return;
     }
@@ -854,7 +877,9 @@ export default function Lab() {
         const allSamplesDone = orderSamples.length > 0 && orderSamples.every(s => {
           if (s.id === coa.sample_id) return true;
           if (s.status === 'complete') return true;
-          return coas.some(c => c.sample_id === s.id && coaWorkflowStage(c) === 'published');
+          return coas.some(c => c.sample_id === s.id && (
+            c.id === coa.id || coaWorkflowStage(c) === 'published'
+          ));
         });
         if (allSamplesDone) {
           await supabase.from('orders').update({ status: 'complete' }).eq('id', coa.order_id);
@@ -874,7 +899,7 @@ export default function Lab() {
       }
     }
 
-    setCoas(prev => prev.map(c => (c.id === coa.id ? { ...c, ...patch } as COA : c)));
+    setCoas(prev => prev.map(c => (c.id === coa.id ? { ...c, ...updatedCoa } : c)));
     setMsg({
       type: 'success',
       text: targetStage === 'testing_in_progress'

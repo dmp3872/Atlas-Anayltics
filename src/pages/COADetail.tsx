@@ -504,7 +504,7 @@ export default function COADetail() {
           </div>
 
           <div
-            className={`mb-3 grid gap-2 items-stretch coa-print-media flex-1 min-h-[11rem] ${
+            className={`mb-3 grid gap-2 items-stretch coa-print-media flex-1 min-h-[12.5rem] ${
               coa.vial_image ? 'grid-cols-1 sm:grid-cols-[104px_1fr]' : 'grid-cols-1'
             }`}
           >
@@ -526,7 +526,7 @@ export default function COADetail() {
                 ) : null}
               </div>
             ) : null}
-            <div className="min-w-0 w-full coa-print-chromatogram flex flex-col h-full min-h-[9.5rem] sm:min-h-[10.5rem]">
+            <div className="min-w-0 w-full coa-print-chromatogram flex flex-col h-full min-h-[11rem] sm:min-h-[12rem]">
               <InteractiveChromatogram
                 data={coa.chromatogram_data}
                 chromatographPhoto={hplcPhoto || coa.hplc_image || undefined}
