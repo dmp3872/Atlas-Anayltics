@@ -19,6 +19,7 @@ Uploaded HPLC chromatograms must use the established **auto positioning** every 
 ## Do not
 
 - Do **not** reintroduce aggressive `prepareHplcImage` trim + cover-crop pipelines for chromatograms (that broke display)
+- Do **not** call full `paintLiveImagesOntoCanvas` after a successful html2canvas capture (re-painting vial + chromatogram overlays huge images across the COA). Success path may only use `paintChromatogramZoomOntoCanvas`.
 - Do **not** drop the zoom from PDF export
 - Do **not** zoom so hard that chart side axes disappear (stay near `COA_CHROMATOGRAM_ZOOM`, not ~1.22+)
 
