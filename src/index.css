@@ -362,6 +362,13 @@
   height: 100% !important;
 }
 
+.coa-png-export .coa-chrom-photo img {
+  /* Keep in sync with COA_CHROMATOGRAM_ZOOM in coaImages.ts */
+  transform: scale(1.08) !important;
+  object-fit: contain !important;
+  object-position: center !important;
+}
+
 .coa-png-export .coa-cert-footer {
   flex: 0 0 auto !important;
   margin-top: 0.5rem !important;

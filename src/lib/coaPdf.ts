@@ -2,6 +2,7 @@ import { PDFDocument, PDFFont, PDFImage, PDFPage, StandardFonts, rgb, RGB } from
 import { COA, PanelResult } from './types';
 import { buildCoaPdfFieldValues } from './coaPdfFields';
 import {
+  COA_CHROMATOGRAM_ZOOM,
   fentanylDetectionLabel,
   hydrateCoaImages,
   readCoaPdfStats,
@@ -213,6 +214,15 @@ export async function downloadCoaPngFromElement(root: HTMLElement, filename: str
   clone.querySelectorAll('.no-print').forEach(el => {
     (el as HTMLElement).style.display = 'none';
   });
+  // Match live chromatogram auto-position zoom in the export clone.
+  clone.querySelectorAll('.coa-chrom-photo img').forEach(el => {
+    const node = el as HTMLElement;
+    if (node.getAttribute('aria-hidden') === 'true') return;
+    node.style.transform = `scale(${COA_CHROMATOGRAM_ZOOM})`;
+    node.style.transformOrigin = 'center center';
+    node.style.objectFit = 'contain';
+    node.style.objectPosition = 'center';
+  });
   // Fixed letter-width canvas — Tailwind `sm:` uses the viewport, not this node width.
   clone.style.cssText = [
     'position:fixed',
@@ -291,9 +301,11 @@ function drawContainedImage(
   image: PDFImage,
   rect: { x: number; y: number; width: number; height: number },
   opacity = 1,
+  zoom = 1,
 ) {
   const { width: iw, height: ih } = image;
-  const scale = Math.min(rect.width / iw, rect.height / ih);
+  const z = Number.isFinite(zoom) && zoom > 0 ? zoom : 1;
+  const scale = Math.min(rect.width / iw, rect.height / ih) * z;
   const drawW = iw * scale;
   const drawH = ih * scale;
   page.drawImage(image, {
@@ -504,7 +516,7 @@ export async function buildCoaPdfBytes(coa: COA): Promise<Uint8Array> {
         y: CHROMATOGRAM_RECT.y + 4,
         width: CHROMATOGRAM_RECT.width - 8,
         height: CHROMATOGRAM_RECT.height - 8,
-      });
+      }, 1, COA_CHROMATOGRAM_ZOOM);
     }
   }
   const watermark = await embedImageSource(pdf, watermarkSrc);
