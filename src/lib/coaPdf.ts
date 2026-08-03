@@ -214,14 +214,16 @@ export async function downloadCoaPngFromElement(root: HTMLElement, filename: str
   clone.querySelectorAll('.no-print').forEach(el => {
     (el as HTMLElement).style.display = 'none';
   });
-  // Match live chromatogram auto-position zoom in the export clone.
+  // Keep contain-fit only during export — CSS scale can spill chrom over results.
   clone.querySelectorAll('.coa-chrom-photo img').forEach(el => {
     const node = el as HTMLElement;
     if (node.getAttribute('aria-hidden') === 'true') return;
-    node.style.transform = `scale(${COA_CHROMATOGRAM_ZOOM})`;
-    node.style.transformOrigin = 'center center';
+    node.style.setProperty('transform', 'none', 'important');
     node.style.objectFit = 'contain';
     node.style.objectPosition = 'center';
+  });
+  clone.querySelectorAll('.coa-chrom-photo, .coa-chrom-photo > div').forEach(el => {
+    (el as HTMLElement).style.overflow = 'hidden';
   });
   // Fixed letter-width canvas — Tailwind `sm:` uses the viewport, not this node width.
   clone.style.cssText = [
