@@ -167,7 +167,9 @@ export function panelStatusToneClass(pass: boolean | null): string {
   return 'text-neutral-500';
 }
 
-/** Ensure mg / % tokens on COA result strings include a decimal (10 mg → 10.0 mg). */
+/** Ensure mg / % tokens on COA result strings include a decimal (10 mg → 10.0 mg).
+ *  Max reportable purity (99.8%) is shown as "99.8% + 0.18%" in Results.
+ */
 export function formatCoaResultDisplay(raw: string): string {
   if (!raw?.trim()) return raw;
   return raw
@@ -179,15 +181,33 @@ export function formatCoaResultDisplay(raw: string): string {
         const n = Number(mg[1]);
         if (Number.isFinite(n)) return `${(Math.round(n * 10) / 10).toFixed(1)} mg`;
       }
+      // Purity with optional uncertainty already attached.
+      const pctUnc = t.match(/^(-?\d+(?:\.\d+)?)\s*%\s*([+±]\s*0\.?18\s*%)$/i);
+      if (pctUnc) {
+        const n = Number(pctUnc[1]);
+        if (Number.isFinite(n) && Math.round(n * 10) / 10 === 99.8) {
+          return `${(Math.round(n * 10) / 10).toFixed(1)}% + 0.18%`;
+        }
+      }
       const pct = t.match(/^(-?\d+(?:\.\d+)?)\s*%$/);
       if (pct) {
         const n = Number(pct[1]);
-        if (Number.isFinite(n)) return `${(Math.round(n * 10) / 10).toFixed(1)}%`;
+        if (Number.isFinite(n)) {
+          const rounded = Math.round(n * 10) / 10;
+          const base = `${rounded.toFixed(1)}%`;
+          if (rounded === 99.8) return `${base} + 0.18%`;
+          return base;
+        }
       }
       const bare = t.match(/^(-?\d+(?:\.\d+)?)$/);
       if (bare) {
         const n = Number(bare[1]);
-        if (Number.isFinite(n)) return (Math.round(n * 10) / 10).toFixed(1);
+        if (Number.isFinite(n)) {
+          const rounded = Math.round(n * 10) / 10;
+          // Bare purity-looking values (≤100) at ceiling get uncertainty only when
+          // already in a purity context — leave bare numbers alone here.
+          return rounded.toFixed(1);
+        }
       }
       return t;
     })

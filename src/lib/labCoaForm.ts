@@ -370,6 +370,48 @@ export const MAX_PURITY_PERCENT = 99.8;
 export const PURITY_UNCERTAINTY_PERCENT = 0.18;
 export const PURITY_INPUT_HINT = `Max ${MAX_PURITY_PERCENT.toFixed(2)}% ± ${PURITY_UNCERTAINTY_PERCENT.toFixed(2)}%. 100% is not allowed.`;
 
+/** Strip " + 0.18%" / " ± 0.18%" uncertainty suffix before parsing. */
+export function stripPurityUncertainty(raw: string): string {
+  return (raw || '')
+    .replace(/\s*[+±]\s*0\.?18\s*%?\s*$/i, '')
+    .replace(/%\s*$/g, '')
+    .trim();
+}
+
+/** True when a purity value rounds to the reportable max (99.8). */
+export function isMaxReportablePurity(n: number): boolean {
+  if (!Number.isFinite(n)) return false;
+  return Math.round(n * 10) / 10 === MAX_PURITY_PERCENT;
+}
+
+/**
+ * COA Results display for purity at the method ceiling:
+ * 99.8% → "99.8% + 0.18%"
+ */
+export function formatPurityResultWithUncertainty(raw: string | number): string {
+  if (raw === '' || raw == null) return '';
+  const text = String(raw).trim();
+  if (!text) return '';
+  // Already decorated.
+  if (/\+\s*0\.?18\s*%/i.test(text) || /±\s*0\.?18\s*%/i.test(text)) {
+    const n = parseFloat(stripPurityUncertainty(text));
+    if (!Number.isFinite(n)) return text;
+    const base = formatCoaDecimal(clampPurityPercent(n));
+    return base ? `${base}% + ${PURITY_UNCERTAINTY_PERCENT.toFixed(2)}%` : text;
+  }
+  const n = typeof raw === 'number'
+    ? raw
+    : Number(stripPurityUncertainty(text).replace(/,/g, '').match(/-?\d+(?:\.\d+)?/)?.[0] ?? NaN);
+  if (!Number.isFinite(n)) return text.endsWith('%') ? text : `${text}%`;
+  const capped = clampPurityPercent(n);
+  const base = formatCoaDecimal(capped);
+  if (!base) return '';
+  if (isMaxReportablePurity(capped)) {
+    return `${base}% + ${PURITY_UNCERTAINTY_PERCENT.toFixed(2)}%`;
+  }
+  return `${base}%`;
+}
+
 /** Clamp a numeric purity to the allowed reportable range (never 100%). */
 export function clampPurityPercent(n: number): number {
   if (!Number.isFinite(n)) return n;
@@ -387,21 +429,19 @@ export function sanitizePurityInput(raw: string): string {
   if (!trimmed) return '';
   // Allow interim typing: trailing decimal / empty fraction.
   if (/^\d+\.$/.test(trimmed) || trimmed === '.') return trimmed;
-  const n = parseFloat(trimmed.replace(/%/g, ''));
+  const n = parseFloat(stripPurityUncertainty(trimmed));
   if (!Number.isFinite(n)) return raw;
   if (n > MAX_PURITY_PERCENT) return String(MAX_PURITY_PERCENT);
   return raw;
 }
 
-/** Normalizes a free-typed percent amount into "99.8%" (always includes a decimal). */
+/** Normalizes a free-typed percent amount into "99.8%" (or "99.8% + 0.18%" at max). */
 export function formatPurityPercent(raw: string): string {
-  const numeric = raw.trim().replace(/%\s*$/, '').trim();
+  const numeric = stripPurityUncertainty(raw.trim());
   if (!numeric) return '';
   const n = Number(numeric.replace(/,/g, '').match(/-?\d+(?:\.\d+)?/)?.[0] ?? NaN);
   if (!Number.isFinite(n)) return '';
-  const capped = clampPurityPercent(n);
-  const formatted = formatCoaDecimal(capped);
-  return formatted ? `${formatted}%` : '';
+  return formatPurityResultWithUncertainty(clampPurityPercent(n));
 }
 
 /**
@@ -503,16 +543,15 @@ export function buildLabResultsFromCoa(
     .filter(Boolean);
   const purityPartsFromPanel = (purityPanel?.result || '')
     .split(',')
-    .map(s => s.trim().replace(/%\s*$/, ''))
+    .map(s => stripPurityUncertainty(s))
     .filter(Boolean);
-
   // Prefer result_summary multi-vial lists when panels only stored the primary
   // (bug after assay-method rename broke the Net Content / Net Purity fold).
   const netParts = summaryContentValues.length > netPartsFromPanel.length
     ? summaryContentValues
     : netPartsFromPanel;
   const purityParts = summaryPurityValues.length > purityPartsFromPanel.length
-    ? summaryPurityValues.map(s => s.replace(/%\s*$/, '').trim())
+    ? summaryPurityValues.map(s => stripPurityUncertainty(s))
     : purityPartsFromPanel;
 
   const primaryNet = netParts[0] || '';
@@ -842,14 +881,14 @@ export function labResultsToPanelResults(
 }
 
 export function parsePurityPercent(netPurity: string): number | null {
-  const n = parseFloat(netPurity.replace(/%/g, '').trim());
+  const n = parseFloat(stripPurityUncertainty(netPurity));
   if (!Number.isFinite(n)) return null;
   return clampPurityPercent(n);
 }
 
 /** Raw parse without clamping — used to detect over-max entry before save. */
 export function parsePurityPercentRaw(netPurity: string): number | null {
-  const n = parseFloat(netPurity.replace(/%/g, '').trim());
+  const n = parseFloat(stripPurityUncertainty(netPurity));
   return Number.isFinite(n) ? n : null;
 }
 
