@@ -173,7 +173,7 @@ export async function markSampleReceived(
   sample: OrderSample,
   order: Order,
   opts: {
-    /** Optional override. When omitted/blank, a YY-XXXXXX code is auto-assigned. */
+    /** Optional override. When omitted/blank, a YY-MM-XXXXXX LIMS ID is auto-assigned. */
     accessionNumber?: string;
     /** Required — name of the person who physically received the sample. */
     receivedBy: string;
@@ -202,7 +202,7 @@ export async function markSampleReceived(
       accession = await allocateUniqueAccessionNumber(sample.created_at || new Date());
     } catch (err) {
       return {
-        error: err instanceof Error ? err : new Error('Could not generate accession number.'),
+        error: err instanceof Error ? err : new Error('Could not generate LIMS ID.'),
       };
     }
   }
@@ -258,7 +258,7 @@ export async function markSampleReceived(
     sampleId: sample.id,
     note: opts.note
       ? `${opts.note} · Received by ${receivedBy}`
-      : `Accessioned as ${accession} · Received by ${receivedBy}`,
+      : `LIMS ID ${accession} · Received by ${receivedBy}`,
     changedBy: opts.changedBy,
   });
 

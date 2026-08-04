@@ -275,7 +275,7 @@ export default function AdminOrderDetail() {
       setMsg({
         type: 'success',
         text: code
-          ? `${sample.display_name || sample.sample_name} received as ${code} (by ${receivedBy}) — ETA ${etaYmd}.`
+          ? `${sample.display_name || sample.sample_name} received · LIMS ID ${code} (by ${receivedBy}) — ETA ${etaYmd}.`
           : `${sample.display_name || sample.sample_name} received (by ${receivedBy}) — ETA ${etaYmd}.`,
       });
       await reload();
@@ -409,7 +409,7 @@ export default function AdminOrderDetail() {
             <Printer size={15} className="text-brand-600" /> Labels & print pack
           </h2>
           <p className="text-xs text-neutral-500 mb-3">
-            Reprint the prepaid shipping label or accession / vial print pack for any sample on this order.
+            Reprint the prepaid shipping label or LIMS / vial print pack for any sample on this order.
           </p>
           <div className="flex flex-wrap gap-2">
             <button
@@ -563,7 +563,7 @@ export default function AdminOrderDetail() {
                       </p>
                       <p className="text-xs text-neutral-500 mt-0.5">
                         {sample.vial_count} vial{sample.vial_count === 1 ? '' : 's'}
-                        {sample.accession_number && <> · Accession {sample.accession_number}</>}
+                        {sample.accession_number && <> · LIMS ID {sample.accession_number}</>}
                         {receivedByName && <> · Received by {receivedByName}</>}
                       </p>
                     </div>
@@ -603,7 +603,7 @@ export default function AdminOrderDetail() {
                         <p className="text-xs text-amber-700">Order must be paid or waived before this sample can be received.</p>
                       )}
                       <p className="text-[11px] text-brand-900/80">
-                        Accession # is auto-generated (YY-XXXXXX) and becomes the COA sample code.
+                        LIMS ID is auto-generated (YY-MM-XXXXXX) and used on the COA.
                       </p>
                       <div>
                         <label className="text-[11px] font-semibold text-brand-900">

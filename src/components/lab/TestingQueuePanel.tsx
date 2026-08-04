@@ -215,7 +215,7 @@ export default function TestingQueuePanel({
                   )}
                   {sample.accession_number && (
                     <span className="text-[10px] font-mono text-neutral-500 border border-atlas-border px-2 py-0.5 rounded-full">
-                      Acc {sample.accession_number}
+                      LIMS {sample.accession_number}
                     </span>
                   )}
                 </div>

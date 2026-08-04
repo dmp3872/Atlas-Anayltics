@@ -395,12 +395,12 @@ export default function LabSampleIntake({ clients, chemists, onCreated }: Props)
 
         {form.alreadyOnBench && (
           <div>
-            <label className="label">Accession #</label>
+            <label className="label">LIMS ID</label>
             <input
               value={form.accessionNumber}
               onChange={e => update({ accessionNumber: e.target.value })}
               className="input-field font-mono"
-              placeholder="Optional bench accession"
+              placeholder="Optional LIMS ID"
             />
           </div>
         )}

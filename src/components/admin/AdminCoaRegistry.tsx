@@ -138,7 +138,7 @@ export default function AdminCoaRegistry({ coas, onSave }: Props) {
       <input
         value={search}
         onChange={e => setSearch(e.target.value)}
-        placeholder="Search sample, company, slug, accession, or batch…"
+        placeholder="Search sample, company, slug, LIMS ID, or batch…"
         className="input-field max-w-md"
       />
 
@@ -149,7 +149,7 @@ export default function AdminCoaRegistry({ coas, onSave }: Props) {
               <tr className="coa-table-header">
                 <th className="text-left px-5 py-3">Sample</th>
                 <th className="text-left px-5 py-3">Company</th>
-                <th className="text-left px-5 py-3">Accession</th>
+                <th className="text-left px-5 py-3">LIMS ID</th>
                 <th className="text-left px-5 py-3">Batch</th>
                 <th className="text-left px-5 py-3">Workflow</th>
                 <th className="text-left px-5 py-3">Result</th>
@@ -233,12 +233,12 @@ export default function AdminCoaRegistry({ coas, onSave }: Props) {
                       <tr className="bg-brand-50/30">
                         <td colSpan={8} className="px-5 py-4">
                           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                            <Field label="Accession / Seal #">
+                            <Field label="LIMS ID">
                               <input
                                 value={editForm.accession_number}
                                 onChange={e => updateField('accession_number', e.target.value)}
                                 className="input-field py-1.5 text-sm"
-                                placeholder="Accession number"
+                                placeholder="LIMS ID"
                               />
                             </Field>
                             <Field label="Seal serial">

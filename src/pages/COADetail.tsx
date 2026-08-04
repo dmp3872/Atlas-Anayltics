@@ -399,7 +399,7 @@ export default function COADetail() {
 
   const infoRows = [
     [
-      { label: 'Sample Code', value: coa.slug },
+      { label: 'LIMS ID', value: coa.accession_number || coa.slug },
       { label: 'Sample Name', value: coa.display_name || coa.sample_name || '—' },
     ],
     [

@@ -583,9 +583,10 @@ export default function AtlasDigitalCoaCard({
   const showHeavyMetals = methodKeys.has('heavy_metals_icpms');
   const fentanyl = sample ? sampleIncludesFentanyl(sample) : false;
   const yy = String(new Date().getFullYear()).slice(-2);
+  const mm = String(new Date().getMonth() + 1).padStart(2, '0');
   const signature = previewSignature([name, lot, client, sample?.primary_test_id ?? '', stage].join('|'));
   const accessionDisplay = accession?.trim() || null;
-  const accessionGhost = `${yy}-\u25CF\u25CF\u25CF\u25CF\u25CF\u25CF`;
+  const accessionGhost = `${yy}-${mm}-\u25CF\u25CF\u25CF\u25CF\u25CF\u25CF`;
   const chipSt = chipStatus(stage, trackingStage, overallResult);
   const showConformityChart = conformityOn && chartVials > 0;
   const identityChipStatus: 'pending' | 'queued' | 'pass' | 'fail' = showConformityChart
@@ -703,7 +704,7 @@ export default function AtlasDigitalCoaCard({
 
         {CARD_FEATURES.accessionHero ? (
           <div className="rounded-lg border border-atlas-gold/25 bg-atlas-gold/[0.06] px-3 py-2 text-center">
-            <p className="text-[7px] font-bold uppercase tracking-[0.24em] text-neutral-400">Accession</p>
+            <p className="text-[7px] font-bold uppercase tracking-[0.24em] text-neutral-400">LIMS ID</p>
             <p className="mt-0.5 font-mono text-xl font-extrabold tracking-[0.18em] text-atlas-gold">
               {accessionDisplay ?? accessionGhost}
             </p>
@@ -713,7 +714,7 @@ export default function AtlasDigitalCoaCard({
           </div>
         ) : (
           <div className="flex items-baseline justify-between gap-3 text-[9px] font-mono uppercase tracking-wider text-neutral-400">
-            <span className="shrink-0">Accession</span>
+            <span className="shrink-0">LIMS ID</span>
             <span className="font-bold text-atlas-gold">{accessionDisplay ?? 'Assigned at intake'}</span>
           </div>
         )}
