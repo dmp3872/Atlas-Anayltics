@@ -19,6 +19,7 @@ import {
 } from './labCoaForm';
 import { compressImageDataUrl } from './imageCompress';
 import { resolvePanelPass } from './coaDisplayPanels';
+import { formatLabelClaim } from './orderCatalog';
 
 export type FentanylDetectionMark = '' | 'none_detected' | 'detected';
 
@@ -447,6 +448,9 @@ export type CoaPdfPrepPayload = {
   avg_net_peptide_content: string;
   mean_of_vials_tested: string;
   avg_purity?: string;
+  /** Chemist can set/correct label claim if missing from the order. */
+  labeled_content?: string;
+  label_claim_unit?: string;
   fentanyl_detection: FentanylDetectionMark;
   include_molecular_weight: boolean;
   molecular_weight: string;
@@ -480,6 +484,18 @@ export function applyPrepToCoaPanels(coa: COA, prep: CoaPdfPrepPayload): {
   molecular_weight: number | null;
 } {
   let panels = Array.isArray(coa.panel_results) ? [...coa.panel_results] : [];
+
+  const claimAmount = (prep.labeled_content || '').trim();
+  if (claimAmount) {
+    const claimLabel = formatLabelClaim(claimAmount, (prep.label_claim_unit || 'mg').trim() || 'mg');
+    panels = panels.map(p => {
+      const n = p.panel_name.toLowerCase();
+      if ((n.includes('net content') || n.includes('peptide content')) && !n.startsWith('blend content')) {
+        return { ...p, specification: `Label claim: ${claimLabel}` };
+      }
+      return p;
+    });
+  }
 
   panels = upsertNamedPanel(
     panels,
@@ -616,6 +632,12 @@ export async function saveCoaPdfPrep(
     endotoxin_pass: prep.endotoxin_pass,
     sterility_method_label: STERILITY_METHOD_LABELS[prep.sterility_method],
     sterility_specification: 'Not Detected',
+    ...((prep.labeled_content || '').trim()
+      ? {
+          labeled_content: (prep.labeled_content || '').trim(),
+          label_claim_unit: (prep.label_claim_unit || 'mg').trim() || 'mg',
+        }
+      : {}),
   };
   // Never embed base64 images in result_summary — that freezes COA pages (multi‑MB JSON).
   const summaryRecord = baseSummary as Record<string, unknown>;
