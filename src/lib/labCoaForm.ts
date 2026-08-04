@@ -77,6 +77,52 @@ export const STERILITY_METHOD_LABELS: Record<SterilityMethod, string> = {
   culture_14_day: '14-day culture',
 };
 
+/** Analytical method for Identification / Net Content / Net Purity. */
+export type AssayMethod = 'hplc_uv_vis' | 'lcms';
+
+export const ASSAY_METHOD_LABELS: Record<AssayMethod, string> = {
+  hplc_uv_vis: 'HPLC-UV/VIS',
+  lcms: 'LCMS',
+};
+
+export function parseAssayMethod(value: unknown, fallback: AssayMethod = 'hplc_uv_vis'): AssayMethod {
+  if (value === 'lcms' || value === 'LCMS' || value === 'lc-ms' || value === 'LC-MS') return 'lcms';
+  if (
+    value === 'hplc_uv_vis'
+    || value === 'hplc-uv/vis'
+    || value === 'HPLC-UV/VIS'
+    || value === 'hplc'
+  ) {
+    return 'hplc_uv_vis';
+  }
+  if (typeof value === 'string') {
+    const n = value.toLowerCase();
+    if (/\blcms\b|\blc-ms\b|\blc\/ms\b/.test(n)) return 'lcms';
+    if (/hplc-uv\/vis|hplc.?uv|\bhplc\b/.test(n)) return 'hplc_uv_vis';
+  }
+  return fallback;
+}
+
+/** Append method label to a specification cell (digital COA + PDF AcroForm). */
+export function withAssayMethodSpec(specification: string, method: AssayMethod): string {
+  const label = ASSAY_METHOD_LABELS[method];
+  const base = (specification || '').trim();
+  if (!base) return label;
+  if (base.includes(label) || /\b(HPLC-UV\/VIS|LCMS|LC-MS)\b/i.test(base)) return base;
+  return `${base} · ${label}`;
+}
+
+export function assayMethodFromPanels(panels: PanelResult[]): AssayMethod | null {
+  for (const p of panels) {
+    const blob = `${p.panel_name} ${p.specification || ''} ${p.result || ''}`;
+    const parsed = parseAssayMethod(blob, 'hplc_uv_vis');
+    if (/\blcms\b|\blc-ms\b|\blc\/ms\b|hplc-uv\/vis|hplc.?uv|\bhplc\b/i.test(blob)) {
+      return parsed;
+    }
+  }
+  return null;
+}
+
 export const ENDOTOXIN_SPEC_EU_ML = '≤ 5.0 EU/mL';
 /** Default measured result when Endotoxin conformity is PASS. */
 export const ENDOTOXIN_PASS_RESULT = '≤ 5.0 EU/mL';
@@ -181,6 +227,8 @@ export interface LabCoaResults {
   identification: string;
   netContent: string;
   netPurity: string;
+  /** HPLC-UV/VIS or LCMS — applied to Identification, Net Content, and Net Purity. */
+  assayMethod: AssayMethod;
   molecularWeight: string;
   /** When false, Molecular Weight is omitted from the COA. */
   includeMolecularWeight: boolean;
@@ -212,6 +260,7 @@ export const EMPTY_LAB_RESULTS: LabCoaResults = {
   identification: '',
   netContent: '',
   netPurity: '',
+  assayMethod: 'hplc_uv_vis',
   molecularWeight: '',
   includeMolecularWeight: false,
   sterilityMethod: 'pcr',
@@ -274,11 +323,45 @@ export function formatMgAmount(raw: string): string {
   return formatted ? `${formatted} mg` : '';
 }
 
+/**
+ * Max reportable HPLC purity. Method uncertainty is ±0.18%, so 100% is never reportable
+ * (99.80 + 0.18 = 99.98).
+ */
+export const MAX_PURITY_PERCENT = 99.8;
+export const PURITY_UNCERTAINTY_PERCENT = 0.18;
+export const PURITY_INPUT_HINT = `Max ${MAX_PURITY_PERCENT.toFixed(2)}% ± ${PURITY_UNCERTAINTY_PERCENT.toFixed(2)}%. 100% is not allowed.`;
+
+/** Clamp a numeric purity to the allowed reportable range (never 100%). */
+export function clampPurityPercent(n: number): number {
+  if (!Number.isFinite(n)) return n;
+  if (n > MAX_PURITY_PERCENT) return MAX_PURITY_PERCENT;
+  if (n < 0) return 0;
+  return n;
+}
+
+/**
+ * Sanitize a purity % text field while typing.
+ * Caps finished numbers at 99.80; leaves incomplete input (e.g. "99.") alone.
+ */
+export function sanitizePurityInput(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+  // Allow interim typing: trailing decimal / empty fraction.
+  if (/^\d+\.$/.test(trimmed) || trimmed === '.') return trimmed;
+  const n = parseFloat(trimmed.replace(/%/g, ''));
+  if (!Number.isFinite(n)) return raw;
+  if (n > MAX_PURITY_PERCENT) return String(MAX_PURITY_PERCENT);
+  return raw;
+}
+
 /** Normalizes a free-typed percent amount into "99.8%" (always includes a decimal). */
 export function formatPurityPercent(raw: string): string {
   const numeric = raw.trim().replace(/%\s*$/, '').trim();
   if (!numeric) return '';
-  const formatted = formatCoaDecimal(numeric);
+  const n = Number(numeric.replace(/,/g, '').match(/-?\d+(?:\.\d+)?/)?.[0] ?? NaN);
+  if (!Number.isFinite(n)) return '';
+  const capped = clampPurityPercent(n);
+  const formatted = formatCoaDecimal(capped);
   return formatted ? `${formatted}%` : '';
 }
 
@@ -531,6 +614,12 @@ export function buildLabResultsFromCoa(
     identification: idPanel?.result?.trim() || base.identification,
     netContent: primaryNet.replace(/\s*mg$/i, '').trim() || primaryNet,
     netPurity: primaryPurity,
+    assayMethod: parseAssayMethod(
+      summary.assay_method
+        ?? summary.assay_method_label
+        ?? assayMethodFromPanels(panels)
+        ?? base.assayMethod,
+    ),
     molecularWeight: mwRaw,
     includeMolecularWeight: !!mwRaw || summary.include_molecular_weight === true,
     sterilityMethod,
@@ -562,15 +651,17 @@ export function labResultsToPanelResults(
     (claim?.labeledContent || '').trim(),
     ((claim?.labelClaimUnit || 'mg').trim() || 'mg'),
   );
+  const method = results.assayMethod || 'hplc_uv_vis';
+  const methodLabel = ASSAY_METHOD_LABELS[method];
   const rows: PanelResult[] = [
     {
-      panel_name: 'Identification',
+      panel_name: `Identification (${methodLabel})`,
       specification: isBlend ? 'Blend peptide ID' : 'Peptide ID',
       result: results.identification,
       pass: !!results.identification.trim(),
     },
     {
-      panel_name: 'Net Content',
+      panel_name: `Net Content (${methodLabel})`,
       specification: isBlend
         ? 'Total peptide content'
         : (claimLabel ? `Label claim: ${claimLabel}` : 'Label claim'),
@@ -578,7 +669,7 @@ export function labResultsToPanelResults(
       pass: !!results.netContent.trim(),
     },
     {
-      panel_name: 'Net Purity',
+      panel_name: `Net Purity (${methodLabel})`,
       specification: '≥98%',
       result: results.netPurity.trim() ? formatPurityPercent(results.netPurity) : '',
       pass: true,
@@ -690,7 +781,19 @@ export function labResultsToPanelResults(
 
 export function parsePurityPercent(netPurity: string): number | null {
   const n = parseFloat(netPurity.replace(/%/g, '').trim());
+  if (!Number.isFinite(n)) return null;
+  return clampPurityPercent(n);
+}
+
+/** Raw parse without clamping — used to detect over-max entry before save. */
+export function parsePurityPercentRaw(netPurity: string): number | null {
+  const n = parseFloat(netPurity.replace(/%/g, '').trim());
   return Number.isFinite(n) ? n : null;
+}
+
+export function purityExceedsMax(raw: string): boolean {
+  const n = parsePurityPercentRaw(raw);
+  return n != null && n > MAX_PURITY_PERCENT;
 }
 
 export function parseMolecularWeight(mw: string): number | null {
@@ -762,7 +865,7 @@ export type AssayAverages = {
 export function computeLabAssayAverages(results: LabCoaResults): AssayAverages {
   const { contentParts, purityParts } = collectContentPurityParts(results);
   const contentNums = contentParts.flatMap(parseNumericTokens);
-  const purityNums = purityParts.flatMap(parseNumericTokens);
+  const purityNums = purityParts.flatMap(parseNumericTokens).map(clampPurityPercent);
   const meanMg = formatMeanNumber(contentNums);
   const meanPct = formatMeanNumber(purityNums);
   const vialCount = Math.max(contentParts.length, purityParts.length, contentNums.length ? 1 : 0);
@@ -792,7 +895,7 @@ export function computeAssayAveragesFromPanels(
     .map(s => s.trim())
     .filter(Boolean);
   const contentNums = contentParts.flatMap(parseNumericTokens);
-  const purityNums = purityParts.flatMap(parseNumericTokens);
+  const purityNums = purityParts.flatMap(parseNumericTokens).map(clampPurityPercent);
   const meanMg = formatMeanNumber(contentNums);
   const meanPct = formatMeanNumber(purityNums);
   const vialCount = Math.max(contentParts.length, purityParts.length, contentNums.length ? 1 : 0);
