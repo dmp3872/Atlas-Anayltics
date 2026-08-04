@@ -28,24 +28,33 @@ export const LAB_PRIORITY_STYLES: Record<LabPriority, {
   bg: string;
   badge: string;
   dot: string;
+  /** Full-width strip across the top of a card / group. */
+  banner: string;
+  bannerText: string;
 }> = {
   urgent: {
-    border: 'border-red-400',
+    border: 'border-red-500',
     bg: 'bg-red-50/80',
     badge: 'bg-red-100 text-red-800 border-red-200',
     dot: 'bg-red-500',
+    banner: 'bg-red-600',
+    bannerText: 'text-white',
   },
   high: {
-    border: 'border-amber-400',
+    border: 'border-amber-500',
     bg: 'bg-amber-50/70',
     badge: 'bg-amber-100 text-amber-900 border-amber-200',
     dot: 'bg-amber-500',
+    banner: 'bg-amber-500',
+    bannerText: 'text-amber-950',
   },
   normal: {
     border: 'border-atlas-border',
     bg: 'bg-white',
     badge: 'bg-neutral-100 text-neutral-600 border-neutral-200',
     dot: 'bg-neutral-300',
+    banner: 'bg-neutral-200',
+    bannerText: 'text-neutral-700',
   },
 };
 
@@ -54,13 +63,20 @@ export function normalizeLabPriority(value: unknown): LabPriority {
   return 'normal';
 }
 
+/**
+ * Effective order priority. Rush testing always floors to at least High
+ * (unless the order was explicitly set to Urgent).
+ */
 export function orderLabPriority(order: Pick<Order, 'lab_priority' | 'rush_processing'>): LabPriority {
-  return normalizeLabPriority(order.lab_priority);
+  const stored = normalizeLabPriority(order.lab_priority);
+  if (order.rush_processing && LAB_PRIORITY_RANK[stored] > LAB_PRIORITY_RANK.high) {
+    return 'high';
+  }
+  return stored;
 }
 
 export function prioritySortScore(order: Pick<Order, 'lab_priority' | 'rush_processing'>): number {
-  const base = LAB_PRIORITY_RANK[orderLabPriority(order)];
-  return order.rush_processing ? base - 0.25 : base;
+  return LAB_PRIORITY_RANK[orderLabPriority(order)];
 }
 
 /** Sample-level priority override wins over the parent order's priority. */
@@ -78,8 +94,12 @@ export function effectivePrioritySortScore(
   sample: Pick<OrderSample, 'lab_priority'>,
   order: Pick<Order, 'lab_priority' | 'rush_processing'>,
 ): number {
-  const base = LAB_PRIORITY_RANK[effectiveLabPriority(sample, order)];
-  return order.rush_processing ? base - 0.25 : base;
+  return LAB_PRIORITY_RANK[effectiveLabPriority(sample, order)];
+}
+
+/** Higher priority first (urgent → high → normal). Returns negative when `a` is higher. */
+export function compareLabPriority(a: LabPriority, b: LabPriority): number {
+  return LAB_PRIORITY_RANK[a] - LAB_PRIORITY_RANK[b];
 }
 
 /** Resolve ordered test names for a sample from wizard metadata. */
@@ -248,7 +268,9 @@ export function buildQueueItems(
   }
 
   return items.sort((a, b) => {
+    // Higher priority (lower score) first so urgent/high surface immediately.
     if (a.priorityScore !== b.priorityScore) return a.priorityScore - b.priorityScore;
+    if (a.overdue !== b.overdue) return a.overdue ? -1 : 1;
     return new Date(a.sample.created_at).getTime() - new Date(b.sample.created_at).getTime();
   });
 }

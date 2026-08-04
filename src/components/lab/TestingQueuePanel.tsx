@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import {
-  ArrowRight, ChevronDown, ChevronRight, Clock, FlaskConical, Zap,
+  ArrowRight, ChevronDown, ChevronRight, Clock, FlaskConical,
   FileText, UserPlus, UserMinus, UserCircle2, AlertTriangle,
 } from 'lucide-react';
 import { LabPriority, Order, OrderSample, SampleStatus } from '../../lib/types';
@@ -8,12 +8,13 @@ import { SAMPLE_STATUS_LABELS } from '../../lib/utils';
 import { parseSampleMetadata } from '../../lib/coaPanels';
 import {
   LAB_PRIORITIES, LAB_PRIORITY_LABELS, LAB_PRIORITY_STYLES,
-  QueueSampleItem, normalizeLabPriority, isFullyUnassigned,
+  QueueSampleItem, compareLabPriority, normalizeLabPriority, isFullyUnassigned,
 } from '../../lib/labQueue';
 import { etaHeat, etaHeatPercent, resolveEtaAt } from '../../lib/etaHeat';
 import {
   OrderContextBadges, QueueSampleNotesActions, useOrderContextMeta,
 } from './QueueOrderContext';
+import PriorityBanner from './PriorityBanner';
 
 export interface ChemistOption {
   id: string;
@@ -52,13 +53,6 @@ function formatAge(hours: number): string {
   return `${days}d ${Math.round(hours % 24)}h`;
 }
 
-function priorityRank(p: LabPriority): number {
-  if (p === 'urgent') return 0;
-  if (p === 'high') return 1;
-  if (p === 'normal') return 2;
-  return 3;
-}
-
 export default function TestingQueuePanel({
   items, loading, onIssueCoa, onUpdateStatus,
   chemists, currentUserId, onClaim, onAssign, onRelease, onAssignTest, onSetSamplePriority,
@@ -82,13 +76,18 @@ export default function TestingQueuePanel({
         byOrder.set(item.order.id, group);
       }
       group.items.push(item);
-      if (priorityRank(item.priority) < priorityRank(group.topPriority)) {
+      if (compareLabPriority(item.priority, group.topPriority) < 0) {
         group.topPriority = item.priority;
       }
       if (item.overdue) group.overdueCount += 1;
       if (isFullyUnassigned(item.sample, item.tests)) group.unassignedCount += 1;
     }
-    return Array.from(byOrder.values());
+    return Array.from(byOrder.values()).sort((a, b) => {
+      const byPriority = compareLabPriority(a.topPriority, b.topPriority);
+      if (byPriority !== 0) return byPriority;
+      if ((a.overdueCount > 0) !== (b.overdueCount > 0)) return a.overdueCount > 0 ? -1 : 1;
+      return new Date(a.order.created_at).getTime() - new Date(b.order.created_at).getTime();
+    });
   }, [items]);
 
   const orderIds = useMemo(() => groups.map(g => g.order.id), [groups]);
@@ -165,8 +164,9 @@ export default function TestingQueuePanel({
     return (
       <article
         key={sample.id}
-        className={`rounded-lg border overflow-hidden border-l-4 ${heat.level !== 'none' && heat.level !== 'ok' ? heat.border : overdue ? 'border-red-500' : styles.border} ${heat.level === 'overdue' || heat.level === 'today' ? heat.bg : overdue ? 'bg-red-50/40' : 'bg-white'}`}
+        className={`rounded-lg border overflow-hidden border-l-4 ${heat.level !== 'none' && heat.level !== 'ok' ? heat.border : overdue ? 'border-red-500' : styles.border} ${heat.level === 'overdue' || heat.level === 'today' ? heat.bg : overdue ? 'bg-red-50/40' : styles.bg}`}
       >
+        <PriorityBanner priority={priority} rush={order.rush_processing} />
         <div className="h-1.5 w-full bg-neutral-100">
           <div
             className={`h-full transition-[width] ${heat.bar}`}
@@ -185,15 +185,6 @@ export default function TestingQueuePanel({
               </span>
               <div className="min-w-0 flex-1 space-y-2">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className={`inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${styles.badge}`}>
-                    <span className={`w-1.5 h-1.5 rounded-full ${styles.dot}`} />
-                    {LAB_PRIORITY_LABELS[priority]}
-                  </span>
-                  {order.rush_processing && (
-                    <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 border border-purple-200">
-                      <Zap size={10} /> Rush
-                    </span>
-                  )}
                   <span className="text-xs text-neutral-500 flex items-center gap-1">
                     <Clock size={11} /> Waiting {formatAge(ageHours)}
                   </span>
@@ -462,7 +453,8 @@ export default function TestingQueuePanel({
           const ctx = orderMeta[order.id];
 
           return (
-            <section key={order.id} className="card overflow-hidden">
+            <section key={order.id} className={`card overflow-hidden border-l-4 ${styles.border}`}>
+              <PriorityBanner priority={topPriority} rush={order.rush_processing} />
               <div className="px-4 py-3 sm:px-5 sm:py-3.5 flex items-start gap-3 hover:bg-neutral-50/80 transition-colors">
                 <button
                   type="button"
@@ -487,21 +479,12 @@ export default function TestingQueuePanel({
                   </div>
                   <p className="text-xs text-neutral-500 mt-1">
                     {sampleCount} sample{sampleCount === 1 ? '' : 's'}
-                    {order.rush_processing ? ' · Rush' : ''}
                     {overdueCount > 0 ? ` · ${overdueCount} overdue` : ''}
                     {groupUnassigned > 0 ? ` · ${groupUnassigned} unassigned` : ''}
                     {heat.level !== 'none' ? ` · ${heat.label}` : ''}
                   </p>
                 </button>
                 <div className="flex flex-wrap gap-1.5 justify-end flex-shrink-0 pt-0.5 items-center">
-                  <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border ${styles.badge}`}>
-                    {LAB_PRIORITY_LABELS[topPriority]}
-                  </span>
-                  {order.rush_processing && (
-                    <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 border border-purple-200">
-                      <Zap size={10} /> Rush
-                    </span>
-                  )}
                   <OrderContextBadges
                     noteCount={ctx?.noteCount}
                     openActions={ctx?.openActionCount}
