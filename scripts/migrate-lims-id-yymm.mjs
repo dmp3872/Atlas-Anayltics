@@ -6,6 +6,9 @@
  *   26-K7M4Q9     →  2608-K7M4Q9  (month from received_at / created_at / issued_at)
  * Already YYMM-XXXXXX is left alone.
  *
+ * Each old code is mapped once, then applied to every sample/COA that uses it
+ * (so sample + COA sharing an ID do not collide).
+ *
  * Run:     node scripts/migrate-lims-id-yymm.mjs
  * Dry run: node scripts/migrate-lims-id-yymm.mjs --dry-run
  */
@@ -47,26 +50,21 @@ function convertLimsId(code, dateHint) {
   const raw = (code || '').trim().toUpperCase();
   if (!raw) return { next: null, reason: 'empty' };
 
-  // Already YYMM-XXXXXX
   if (new RegExp(`^\\d{4}-[${ALPHABET}]{6}$`).test(raw)) {
     return { next: null, reason: 'already-yymm' };
   }
 
-  // Intermediate YY-MM-XXXXXX → YYMM-XXXXXX
   const dashed = raw.match(new RegExp(`^(\\d{2})-(\\d{2})-([${ALPHABET}]{6})$`));
   if (dashed) {
     return { next: `${dashed[1]}${dashed[2]}-${dashed[3]}`, reason: 'from-yy-mm' };
   }
 
-  // Legacy YY-XXXXXX → YYMM-XXXXXX using date hint
   const legacy = raw.match(new RegExp(`^(\\d{2})-([${ALPHABET}]{6})$`));
   if (legacy) {
     const prefix = yymmFromDate(dateHint);
-    // Prefer date's year month; if date year doesn't match code year, still use date month with code year
     const codeYy = legacy[1];
-    const dateYy = prefix.slice(0, 2);
     const dateMm = prefix.slice(2, 4);
-    const yymm = codeYy === dateYy ? prefix : `${codeYy}${dateMm}`;
+    const yymm = codeYy === prefix.slice(0, 2) ? prefix : `${codeYy}${dateMm}`;
     return { next: `${yymm}-${legacy[2]}`, reason: 'from-yy' };
   }
 
@@ -89,146 +87,154 @@ const supabase = createClient(url, key, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
 
-const reserved = new Set();
+/** @type {Map<string, { next: string, reason: string, dateHint: string | null }>} */
+const plan = new Map();
+/** Codes that already exist and are NOT being migrated away from. */
+const stayPut = new Set();
 
-async function loadExistingCodes() {
-  const [{ data: samples }, { data: coas }] = await Promise.all([
-    supabase.from('order_samples').select('accession_number'),
-    supabase.from('coas').select('slug, accession_number'),
+function registerCode(code, dateHint) {
+  const from = (code || '').trim().toUpperCase();
+  if (!from) return;
+  if (plan.has(from)) {
+    // Prefer earlier / more specific date if missing
+    const prev = plan.get(from);
+    if (!prev.dateHint && dateHint) prev.dateHint = dateHint;
+    return;
+  }
+  const { next, reason } = convertLimsId(from, dateHint);
+  if (!next) {
+    stayPut.add(from);
+    return;
+  }
+  plan.set(from, { next, reason, dateHint: dateHint || null });
+}
+
+async function buildPlan() {
+  const [{ data: samples, error: sErr }, { data: coas, error: cErr }] = await Promise.all([
+    supabase.from('order_samples').select('id, accession_number, received_at, created_at, metadata'),
+    supabase.from('coas').select('id, slug, accession_number, issued_at, created_at, result_summary'),
   ]);
-  for (const s of samples || []) {
-    if (s.accession_number) reserved.add(String(s.accession_number).trim().toUpperCase());
+  if (sErr) throw new Error(`order_samples fetch: ${sErr.message}`);
+  if (cErr) throw new Error(`coas fetch: ${cErr.message}`);
+
+  for (const row of samples || []) {
+    registerCode(row.accession_number, row.received_at || row.created_at);
+    const meta = row.metadata;
+    if (meta && typeof meta.sample_code === 'string') {
+      registerCode(meta.sample_code, row.received_at || row.created_at);
+    }
   }
-  for (const c of coas || []) {
-    if (c.slug) reserved.add(String(c.slug).trim().toUpperCase());
-    if (c.accession_number) reserved.add(String(c.accession_number).trim().toUpperCase());
+  for (const row of coas || []) {
+    const hint = row.issued_at || row.created_at;
+    registerCode(row.accession_number, hint);
+    registerCode(row.slug, hint);
+    const summary = row.result_summary;
+    if (summary && typeof summary.sample_code === 'string') {
+      registerCode(summary.sample_code, hint);
+    }
   }
+
+  // Resolve collisions: two different old codes → same new code
+  /** @type {Map<string, string>} */
+  const nextOwners = new Map();
+  const blocked = new Set();
+  for (const [from, info] of plan) {
+    const owner = nextOwners.get(info.next);
+    if (owner && owner !== from) {
+      console.warn(`Collision plan: ${from} and ${owner} both → ${info.next} (skip ${from})`);
+      blocked.add(from);
+    } else {
+      nextOwners.set(info.next, from);
+    }
+  }
+  for (const from of blocked) plan.delete(from);
+
+  // Block if new code already exists as a stay-put ID
+  for (const [from, info] of [...plan.entries()]) {
+    if (stayPut.has(info.next)) {
+      console.warn(`Collision with existing ID: ${from} → ${info.next} (skip)`);
+      plan.delete(from);
+    }
+  }
+
+  return { samples: samples || [], coas: coas || [] };
 }
 
-function claimOrSkip(from, to) {
-  if (!to || from === to) return null;
-  // Free the old code first so re-using the same target across sample+coa of one ID works.
-  reserved.delete(from);
-  if (reserved.has(to)) {
-    reserved.add(from);
-    return null;
-  }
-  reserved.add(to);
-  return to;
-}
-
-async function migrateSamples() {
-  const { data, error } = await supabase
-    .from('order_samples')
-    .select('id, accession_number, received_at, created_at, metadata');
-  if (error) throw new Error(`order_samples fetch: ${error.message}`);
-
+async function applySamples(samples) {
   let updated = 0;
   let skipped = 0;
-  const rows = data || [];
-
-  for (const row of rows) {
+  for (const row of samples) {
     const from = (row.accession_number || '').trim().toUpperCase();
-    if (!from) {
-      skipped += 1;
-      continue;
-    }
-    const { next, reason } = convertLimsId(from, row.received_at || row.created_at);
-    if (!next) {
-      skipped += 1;
-      continue;
-    }
-    const claimed = claimOrSkip(from, next);
-    if (!claimed) {
-      console.warn(`  skip sample ${row.id}: ${from} → ${next} (collision)`);
-      skipped += 1;
-      continue;
-    }
-
+    const mapped = from ? plan.get(from) : null;
     const meta = row.metadata && typeof row.metadata === 'object' ? { ...row.metadata } : {};
-    if (typeof meta.sample_code === 'string' && meta.sample_code.trim()) {
-      meta.sample_code = claimed;
+    let metaChanged = false;
+    if (typeof meta.sample_code === 'string') {
+      const mFrom = meta.sample_code.trim().toUpperCase();
+      const mMap = plan.get(mFrom);
+      if (mMap) {
+        meta.sample_code = mMap.next;
+        metaChanged = true;
+      }
     }
 
-    console.log(`  sample ${row.id}: ${from} → ${claimed} (${reason})`);
+    if (!mapped && !metaChanged) {
+      skipped += 1;
+      continue;
+    }
+
+    const patch = {};
+    if (mapped) {
+      patch.accession_number = mapped.next;
+      console.log(`  sample ${row.id}: ${from} → ${mapped.next} (${mapped.reason})`);
+    }
+    if (metaChanged) patch.metadata = meta;
+
     if (!dryRun) {
-      const { error: upErr } = await supabase
-        .from('order_samples')
-        .update({ accession_number: claimed, metadata: meta })
-        .eq('id', row.id);
-      if (upErr) {
-        console.error(`  FAIL sample ${row.id}: ${upErr.message}`);
+      const { error } = await supabase.from('order_samples').update(patch).eq('id', row.id);
+      if (error) {
+        console.error(`  FAIL sample ${row.id}: ${error.message}`);
         continue;
       }
     }
     updated += 1;
   }
-
-  return { total: rows.length, updated, skipped };
+  return { total: samples.length, updated, skipped };
 }
 
-async function migrateCoas() {
-  const { data, error } = await supabase
-    .from('coas')
-    .select('id, slug, accession_number, issued_at, created_at, result_summary');
-  if (error) throw new Error(`coas fetch: ${error.message}`);
-
+async function applyCoas(coas) {
   let updated = 0;
   let skipped = 0;
-  const rows = data || [];
-
-  for (const row of rows) {
-    const dateHint = row.issued_at || row.created_at;
+  for (const row of coas) {
     const fromAcc = (row.accession_number || '').trim().toUpperCase();
     const fromSlug = (row.slug || '').trim().toUpperCase();
-
-    const accConv = convertLimsId(fromAcc, dateHint);
-    const slugConv = convertLimsId(fromSlug, dateHint);
+    const accMap = fromAcc ? plan.get(fromAcc) : null;
+    const slugMap = fromSlug ? plan.get(fromSlug) : null;
 
     const patch = {};
-    let reasonParts = [];
-
-    if (accConv.next) {
-      const claimed = claimOrSkip(fromAcc, accConv.next);
-      if (claimed) {
-        patch.accession_number = claimed;
-        reasonParts.push(`acc ${fromAcc}→${claimed}`);
-      } else if (accConv.next) {
-        console.warn(`  skip coa acc ${row.id}: ${fromAcc} → ${accConv.next} (collision)`);
-      }
+    const notes = [];
+    if (accMap) {
+      patch.accession_number = accMap.next;
+      notes.push(`acc ${fromAcc}→${accMap.next}`);
     }
-
-    if (slugConv.next) {
-      const claimed = claimOrSkip(fromSlug, slugConv.next);
-      if (claimed) {
-        patch.slug = claimed;
-        reasonParts.push(`slug ${fromSlug}→${claimed}`);
-      } else if (slugConv.next) {
-        console.warn(`  skip coa slug ${row.id}: ${fromSlug} → ${slugConv.next} (collision)`);
-      }
-    }
-
-    // Keep accession aligned with slug when both convert or one is blank
-    if (patch.slug && !patch.accession_number && (!fromAcc || fromAcc === fromSlug)) {
-      patch.accession_number = patch.slug;
-    }
-    if (patch.accession_number && !patch.slug && fromSlug && fromSlug === fromAcc) {
-      // slug already handled or same; if slug didn't need convert but matched old acc, update slug too
-      if (!slugConv.next && fromSlug === fromAcc) {
-        const claimed = claimOrSkip(fromSlug, patch.accession_number);
-        if (claimed) patch.slug = claimed;
-      }
+    if (slugMap) {
+      patch.slug = slugMap.next;
+      notes.push(`slug ${fromSlug}→${slugMap.next}`);
+    } else if (accMap && fromSlug && fromSlug === fromAcc) {
+      // Slug matched accession and wasn't separately planned (already yymm?) — keep in sync
+      patch.slug = accMap.next;
+      notes.push(`slug sync→${accMap.next}`);
     }
 
     const summary = row.result_summary && typeof row.result_summary === 'object'
       ? { ...row.result_summary }
       : null;
     if (summary && typeof summary.sample_code === 'string') {
-      const sc = convertLimsId(summary.sample_code, dateHint);
-      if (sc.next) {
-        summary.sample_code = sc.next;
+      const scFrom = summary.sample_code.trim().toUpperCase();
+      const scMap = plan.get(scFrom);
+      if (scMap) {
+        summary.sample_code = scMap.next;
         patch.result_summary = summary;
-        reasonParts.push(`summary.sample_code→${sc.next}`);
+        notes.push(`summary→${scMap.next}`);
       }
     }
 
@@ -237,32 +243,34 @@ async function migrateCoas() {
       continue;
     }
 
-    console.log(`  coa ${row.id}: ${reasonParts.join('; ')}`);
+    console.log(`  coa ${row.id}: ${notes.join('; ')}`);
     if (!dryRun) {
-      const { error: upErr } = await supabase.from('coas').update(patch).eq('id', row.id);
-      if (upErr) {
-        console.error(`  FAIL coa ${row.id}: ${upErr.message}`);
+      const { error } = await supabase.from('coas').update(patch).eq('id', row.id);
+      if (error) {
+        console.error(`  FAIL coa ${row.id}: ${error.message}`);
         continue;
       }
     }
     updated += 1;
   }
-
-  return { total: rows.length, updated, skipped };
+  return { total: coas.length, updated, skipped };
 }
 
 async function main() {
   console.log(dryRun ? '=== DRY RUN (no writes) ===' : '=== APPLYING LIMS ID MIGRATION ===');
-  await loadExistingCodes();
-  console.log(`Loaded ${reserved.size} existing codes for collision checks.`);
+  const { samples, coas } = await buildPlan();
+  console.log(`Plan: ${plan.size} code(s) to rewrite.`);
+  for (const [from, info] of plan) {
+    console.log(`  ${from} → ${info.next} (${info.reason})`);
+  }
 
   console.log('\norder_samples:');
-  const samples = await migrateSamples();
-  console.log(`  total=${samples.total} updated=${samples.updated} skipped=${samples.skipped}`);
+  const s = await applySamples(samples);
+  console.log(`  total=${s.total} updated=${s.updated} skipped=${s.skipped}`);
 
   console.log('\ncoas:');
-  const coas = await migrateCoas();
-  console.log(`  total=${coas.total} updated=${coas.updated} skipped=${coas.skipped}`);
+  const c = await applyCoas(coas);
+  console.log(`  total=${c.total} updated=${c.updated} skipped=${c.skipped}`);
 
   console.log(dryRun ? '\nDry run complete.' : '\nMigration complete.');
 }
