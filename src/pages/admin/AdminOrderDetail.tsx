@@ -603,7 +603,7 @@ export default function AdminOrderDetail() {
                         <p className="text-xs text-amber-700">Order must be paid or waived before this sample can be received.</p>
                       )}
                       <p className="text-[11px] text-brand-900/80">
-                        LIMS ID is auto-generated (YY-MM-XXXXXX) and used on the COA.
+                        LIMS ID is auto-generated (YYMM-XXXXXX) and used on the COA.
                       </p>
                       <div>
                         <label className="text-[11px] font-semibold text-brand-900">

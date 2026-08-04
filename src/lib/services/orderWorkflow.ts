@@ -173,7 +173,7 @@ export async function markSampleReceived(
   sample: OrderSample,
   order: Order,
   opts: {
-    /** Optional override. When omitted/blank, a YY-MM-XXXXXX LIMS ID is auto-assigned. */
+    /** Optional override. When omitted/blank, a YYMM-XXXXXX LIMS ID is auto-assigned. */
     accessionNumber?: string;
     /** Required — name of the person who physically received the sample. */
     receivedBy: string;

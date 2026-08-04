@@ -392,7 +392,7 @@ export default function ReceivingDesk({ orders, samples, clients, onChanged }: P
                                 <Fingerprint size={12} /> Receive into lab
                               </p>
                               <p className="text-[11px] text-brand-900/80">
-                                LIMS ID will be auto-generated (e.g. 26-08-K7M4Q9) and used on the COA.
+                                LIMS ID will be auto-generated (e.g. 2608-K7M4Q9) and used on the COA.
                                 {lot ? <> Confirm package lot matches <strong className="font-mono">{lot}</strong>.</> : null}
                               </p>
                               <div>
