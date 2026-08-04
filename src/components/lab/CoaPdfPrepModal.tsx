@@ -44,6 +44,9 @@ function applyPrepDefaults(coa: COA) {
   const assay = computeAssayAveragesFromPanels(
     Array.isArray(coa.panel_results) ? coa.panel_results : [],
     coa.purity_percent,
+    (coa.result_summary && typeof coa.result_summary === 'object')
+      ? (coa.result_summary as Record<string, unknown>)
+      : null,
   );
   return {
     next,
@@ -90,8 +93,11 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
     () => computeAssayAveragesFromPanels(
       Array.isArray(coa.panel_results) ? coa.panel_results : [],
       coa.purity_percent,
+      (coa.result_summary && typeof coa.result_summary === 'object')
+        ? (coa.result_summary as Record<string, unknown>)
+        : null,
     ),
-    [coa.id, coa.panel_results, coa.purity_percent],
+    [coa.id, coa.panel_results, coa.purity_percent, coa.result_summary],
   );
 
   useEffect(() => {

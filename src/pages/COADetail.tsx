@@ -11,7 +11,7 @@ import { verifyCoaIntegrity } from '../lib/coaVerify';
 import { hydrateCoaImages, readCoaPdfStats, resolveCoaHeaderLogo, resolveCoaWatermark, trimImageWhitespace } from '../lib/coaImages';
 import { partitionCoaPanels, panelStatusLabel, panelStatusToneClass, resolvePanelPass, formatCoaResultDisplay } from '../lib/coaDisplayPanels';
 import { COA_DETAIL_COLUMNS, fetchCoaImageRow } from '../lib/coaSelect';
-import { casForSampleName, formatCoaDecimal, parseAssayMethod, ASSAY_METHOD_LABELS, assayMethodFromPanels } from '../lib/labCoaForm';
+import { casForSampleName, formatCoaDecimal, parseAssayMethod, ASSAY_METHOD_LABELS, assayMethodFromPanels, hydrateMultiVialPanelResults } from '../lib/labCoaForm';
 import { labelClaimFromSummary, netContentSpecificationDisplay } from '../lib/orderCatalog';
 import { compressImageDataUrl } from '../lib/imageCompress';
 import { coaPngFilename, downloadCoaPngFromElement } from '../lib/coaPdf';
@@ -233,8 +233,14 @@ export default function COADetail() {
 
   if (!coa) return null;
 
+  const summaryEarly = (coa.result_summary && typeof coa.result_summary === 'object'
+    ? coa.result_summary
+    : {}) as Record<string, unknown>;
   const { main: mainPanels, metals: metalPanels } = partitionCoaPanels(
-    Array.isArray(coa.panel_results) ? coa.panel_results : [],
+    hydrateMultiVialPanelResults(
+      Array.isArray(coa.panel_results) ? coa.panel_results : [],
+      summaryEarly,
+    ),
   );
   const isOwner = !!user && user.id === coa.user_id;
   const backFallback = isStaff
@@ -260,9 +266,7 @@ export default function COADetail() {
 
   const integrity = verifyCoaIntegrity(coa);
   const stats = readCoaPdfStats(coa);
-  const summary = (coa.result_summary && typeof coa.result_summary === 'object'
-    ? coa.result_summary
-    : {}) as Record<string, unknown>;
+  const summary = summaryEarly;
   const chrom = (coa.chromatogram_data && typeof coa.chromatogram_data === 'object'
     ? coa.chromatogram_data
     : {}) as Record<string, unknown>;

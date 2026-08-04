@@ -38,6 +38,7 @@ import { createEmptySample, TestMode, type SampleCategory, type SampleMatrix } f
 import { trackingStageFromStatuses } from '../lib/orderProjection';
 import { queueNotification } from '../lib/notifications';
 import { hydrateCoaImages } from '../lib/coaImages';
+import { hydrateMultiVialPanelResults } from '../lib/labCoaForm';
 import { COA_LIST_COLUMNS } from '../lib/coaSelect';
 import CoaReadyCelebration from '../components/coa/CoaReadyCelebration';
 import { fetchSeenCoaCelebrations, markCoaCelebrationSeen } from '../lib/orderMessages';
@@ -1102,9 +1103,15 @@ export default function Portal() {
                                     }
                                     assayResults={
                                       coa
-                                        ? assayResultsFromPanels(coa.panel_results, {
+                                        ? assayResultsFromPanels(
+                                          hydrateMultiVialPanelResults(
+                                            coa.panel_results,
+                                            coa.result_summary as Record<string, unknown> | null,
+                                          ),
+                                          {
                                             quantityUnit: meta?.label_claim_unit || 'mg',
-                                          })
+                                          },
+                                        )
                                         : null
                                     }
                                   />
