@@ -1,17 +1,19 @@
 import { Link } from 'react-router-dom';
 import {
   Activity, BarChart3, ClipboardList, ExternalLink, FlaskConical,
-  LayoutGrid, LogOut, Shield, Users,
+  LayoutGrid, LogOut, Shield, UserPlus, Users, Building2,
 } from 'lucide-react';
 import AtlasLogo from '../brand/AtlasLogo';
 import { useAuth } from '../../context/AuthContext';
 
 export type AdminSection =
   | 'command'
+  | 'dispatch'
   | 'lab'
   | 'operations'
   | 'orders'
   | 'coas'
+  | 'clients'
   | 'users';
 
 interface NavItem {
@@ -22,11 +24,13 @@ interface NavItem {
 }
 
 const NAV: NavItem[] = [
-  { id: 'command', label: 'Command Center', desc: 'Live lab status', icon: LayoutGrid },
-  { id: 'lab', label: 'Lab Manager', desc: 'Chemist workload & COA control', icon: FlaskConical },
+  { id: 'command', label: 'Ops Bench', desc: 'Customers, ETAs, exceptions', icon: LayoutGrid },
+  { id: 'dispatch', label: 'Dispatch', desc: 'Assign unassigned samples', icon: UserPlus },
+  { id: 'lab', label: 'Staff load', desc: 'Who is behind on assigned work', icon: FlaskConical },
   { id: 'operations', label: 'Lab Analytics', desc: 'Intake & turnaround', icon: BarChart3 },
-  { id: 'orders', label: 'Orders & Priority', desc: 'Queue control', icon: ClipboardList },
-  { id: 'coas', label: 'COA Registry', desc: 'All certificates', icon: Shield },
+  { id: 'orders', label: 'Orders & money', desc: 'Priority, pay, refunds', icon: ClipboardList },
+  { id: 'coas', label: 'COA Registry', desc: 'Overrides & audit', icon: Shield },
+  { id: 'clients', label: 'Clients', desc: 'CRM & order history', icon: Building2 },
   { id: 'users', label: 'Users & Access', desc: 'Roles & accounts', icon: Users },
 ];
 

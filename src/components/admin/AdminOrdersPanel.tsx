@@ -6,10 +6,12 @@ import {
   formatDateTime, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS, normalizePaymentStatus,
 } from '../../lib/utils';
 import {
-  LAB_PRIORITIES, LAB_PRIORITY_LABELS, LAB_PRIORITY_STYLES, normalizeLabPriority,
+  LAB_PRIORITIES, LAB_PRIORITY_LABELS, LAB_PRIORITY_STYLES,
+  normalizeLabPriority, orderLabPriority, prioritySortScore,
 } from '../../lib/labQueue';
 import { hasIssuedCoaForSample } from '../../lib/coaPanels';
 import { etaHeat, etaHeatPercent, resolveEtaAt } from '../../lib/etaHeat';
+import PriorityBanner from '../lab/PriorityBanner';
 
 type OrdersFilter = 'active' | 'unpaid' | 'awaiting_sample' | 'overdue' | 'urgent' | 'rush' | 'all';
 
@@ -66,7 +68,7 @@ export default function AdminOrdersPanel({
     if (filter === 'unpaid') list = list.filter(o => normalizePaymentStatus(o.payment_status) === 'unpaid');
     if (filter === 'awaiting_sample') list = list.filter(o => o.status === 'awaiting_sample');
     if (filter === 'overdue') list = list.filter(o => isOverdue(o));
-    if (filter === 'urgent') list = list.filter(o => normalizeLabPriority(o.lab_priority) === 'urgent');
+    if (filter === 'urgent') list = list.filter(o => orderLabPriority(o) === 'urgent');
     if (filter === 'rush') list = list.filter(o => o.rush_processing);
     const q = search.trim().toLowerCase();
     if (q) {
@@ -75,7 +77,11 @@ export default function AdminOrdersPanel({
         || (o.company_name ?? '').toLowerCase().includes(q),
       );
     }
-    return list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    return list.sort((a, b) => {
+      const byPriority = prioritySortScore(a) - prioritySortScore(b);
+      if (byPriority !== 0) return byPriority;
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
   }, [orders, filter, search]);
 
   const agingOrders = useMemo(() => {
@@ -107,39 +113,41 @@ export default function AdminOrdersPanel({
           </div>
           <div className="space-y-2">
             {agingOrders.map(({ order, stats }) => {
-              const priority = normalizeLabPriority(order.lab_priority);
+              const priority = orderLabPriority(order);
               return (
                 <div
                   key={order.id}
-                  className="flex flex-wrap items-center justify-between gap-3 px-3 py-2.5 rounded-lg border border-atlas-border bg-neutral-50"
+                  className="overflow-hidden rounded-lg border border-atlas-border bg-neutral-50"
                 >
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-black">
-                      {order.order_number}
-                      <span className="text-neutral-500 font-normal"> · {order.company_name || '—'}</span>
-                    </p>
-                    <p className="text-xs text-neutral-500">
-                      {stats.pendingCount} sample{stats.pendingCount === 1 ? '' : 's'} pending · waiting {Math.round(stats.oldestPendingHours)}h
-                      {order.rush_processing && <span className="text-purple-700 font-semibold"> · Rush</span>}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <button
-                      type="button"
-                      disabled={savingOrderId === order.id || priority === 'urgent'}
-                      onClick={() => onSetPriority(order.id, 'urgent')}
-                      className="px-2.5 py-1 text-[11px] font-bold uppercase rounded-md border bg-red-50 text-red-800 border-red-200 hover:bg-red-100 disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      Urgent
-                    </button>
-                    <button
-                      type="button"
-                      disabled={savingOrderId === order.id || priority === 'high'}
-                      onClick={() => onSetPriority(order.id, 'high')}
-                      className="px-2.5 py-1 text-[11px] font-bold uppercase rounded-md border bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100 disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      High
-                    </button>
+                  <PriorityBanner priority={priority} rush={order.rush_processing} compact />
+                  <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-2.5">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-black">
+                        {order.order_number}
+                        <span className="text-neutral-500 font-normal"> · {order.company_name || '—'}</span>
+                      </p>
+                      <p className="text-xs text-neutral-500">
+                        {stats.pendingCount} sample{stats.pendingCount === 1 ? '' : 's'} pending · waiting {Math.round(stats.oldestPendingHours)}h
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <button
+                        type="button"
+                        disabled={savingOrderId === order.id || priority === 'urgent'}
+                        onClick={() => onSetPriority(order.id, 'urgent')}
+                        className="px-2.5 py-1 text-[11px] font-bold uppercase rounded-md border bg-red-50 text-red-800 border-red-200 hover:bg-red-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        Urgent
+                      </button>
+                      <button
+                        type="button"
+                        disabled={savingOrderId === order.id || priority === 'high'}
+                        onClick={() => onSetPriority(order.id, 'high')}
+                        className="px-2.5 py-1 text-[11px] font-bold uppercase rounded-md border bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        High
+                      </button>
+                    </div>
                   </div>
                 </div>
               );
@@ -180,6 +188,7 @@ export default function AdminOrdersPanel({
           <table className="w-full text-sm">
             <thead>
               <tr className="coa-table-header">
+                <th className="w-2 p-0" aria-hidden />
                 <th className="text-left px-5 py-3">Order</th>
                 <th className="text-left px-5 py-3">Company</th>
                 <th className="text-left px-5 py-3">Status</th>
@@ -195,9 +204,9 @@ export default function AdminOrdersPanel({
             </thead>
             <tbody className="divide-y divide-atlas-border">
               {filtered.length === 0 ? (
-                <tr><td colSpan={11} className="px-5 py-8 text-center text-neutral-500">No orders match this filter.</td></tr>
+                <tr><td colSpan={12} className="px-5 py-8 text-center text-neutral-500">No orders match this filter.</td></tr>
               ) : filtered.map(order => {
-                const priority = normalizeLabPriority(order.lab_priority);
+                const priority = orderLabPriority(order);
                 const styles = LAB_PRIORITY_STYLES[priority];
                 const stats = statsByOrder.get(order.id);
                 const payment = normalizePaymentStatus(order.payment_status);
@@ -208,10 +217,18 @@ export default function AdminOrdersPanel({
                 const heatPct = etaHeatPercent(heat.level);
                 return (
                   <tr key={order.id} className={`hover:bg-neutral-50 ${heat.level === 'overdue' || heat.level === 'today' ? heat.bg : styles.bg}`}>
+                    <td className="px-0 py-0 align-middle">
+                      <div className={`w-1.5 h-full min-h-[3.5rem] ${styles.banner}`} title={`${LAB_PRIORITY_LABELS[priority]} priority`} />
+                    </td>
                     <td className="px-5 py-3 font-semibold text-black">
                       <Link to={`/admin/orders/${order.id}`} className="hover:text-brand-600 hover:underline">
                         {order.order_number}
                       </Link>
+                      <p className={`text-[10px] font-bold uppercase tracking-wide mt-0.5 ${
+                        priority === 'urgent' ? 'text-red-700' : priority === 'high' ? 'text-amber-800' : 'text-neutral-400'
+                      }`}>
+                        {LAB_PRIORITY_LABELS[priority]}
+                      </p>
                     </td>
                     <td className="px-5 py-3 text-neutral-600">{order.company_name || '—'}</td>
                     <td className="px-5 py-3 text-neutral-600">{ORDER_STATUS_LABELS[order.status]}</td>
@@ -275,10 +292,13 @@ export default function AdminOrdersPanel({
                     </td>
                     <td className="px-5 py-3">
                       <select
-                        value={priority}
+                        value={normalizeLabPriority(order.lab_priority)}
                         disabled={savingOrderId === order.id}
                         onChange={e => onSetPriority(order.id, e.target.value as LabPriority)}
                         className={`input-field py-1.5 text-xs w-auto font-semibold ${styles.badge}`}
+                        title={order.rush_processing && normalizeLabPriority(order.lab_priority) === 'normal'
+                          ? 'Rush floors display/sort to High until you set High or Urgent'
+                          : undefined}
                       >
                         {LAB_PRIORITIES.map(p => (
                           <option key={p} value={p}>{LAB_PRIORITY_LABELS[p]}</option>

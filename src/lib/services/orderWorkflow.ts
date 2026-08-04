@@ -11,11 +11,11 @@ function isMissingReceivedAtColumnError(message: string | undefined): boolean {
 }
 
 export const ORDER_ADMIN_NEXT_STATUS: Partial<Record<OrderStatus, OrderStatus[]>> = {
-  received: ['awaiting_sample', 'processing'],
-  awaiting_sample: ['processing'],
-  processing: ['analyzing'],
-  analyzing: ['in_review'],
-  in_review: ['complete'],
+  received: ['awaiting_sample', 'processing', 'cancelled'],
+  awaiting_sample: ['processing', 'cancelled'],
+  processing: ['analyzing', 'cancelled'],
+  analyzing: ['in_review', 'cancelled'],
+  in_review: ['complete', 'cancelled'],
 };
 
 export async function logOrderStatusChange(
@@ -92,6 +92,65 @@ export async function markOrderPaid(
   }
 
   await notifyOrderUpdate(order.user_id, order.order_number, opts.waived ? 'payment_waived' : 'payment_confirmed');
+  return { error: null, order: data as Order };
+}
+
+export async function markOrderRefunded(
+  order: Order,
+  opts: { note?: string; changedBy?: string | null },
+): Promise<{ error: Error | null; order?: Order }> {
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from('orders')
+    .update({
+      payment_status: 'refunded' as PaymentStatus,
+      payment_note: opts.note ?? order.payment_note ?? '',
+      updated_at: now,
+    })
+    .eq('id', order.id)
+    .select('*')
+    .single();
+
+  if (error) return { error: new Error(error.message) };
+
+  await logOrderStatusChange(order.id, 'payment:refunded', {
+    fromStatus: order.payment_status ?? 'paid',
+    note: opts.note || 'Payment refunded',
+    changedBy: opts.changedBy,
+  });
+
+  await notifyOrderUpdate(order.user_id, order.order_number, 'payment_refunded');
+  return { error: null, order: data as Order };
+}
+
+export async function cancelOrder(
+  order: Order,
+  opts: { note?: string; changedBy?: string | null },
+): Promise<{ error: Error | null; order?: Order }> {
+  if (order.status === 'cancelled') {
+    return { error: null, order };
+  }
+  if (order.status === 'complete') {
+    return { error: new Error('Completed orders cannot be cancelled.') };
+  }
+
+  const now = new Date().toISOString();
+  const { data, error } = await supabase
+    .from('orders')
+    .update({ status: 'cancelled' as OrderStatus, updated_at: now })
+    .eq('id', order.id)
+    .select('*')
+    .single();
+
+  if (error) return { error: new Error(error.message) };
+
+  await logOrderStatusChange(order.id, 'cancelled', {
+    fromStatus: order.status,
+    note: opts.note || 'Order cancelled by admin',
+    changedBy: opts.changedBy,
+  });
+
+  await notifyOrderUpdate(order.user_id, order.order_number, 'cancelled');
   return { error: null, order: data as Order };
 }
 

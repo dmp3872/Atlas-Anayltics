@@ -92,7 +92,7 @@ export default function LabManagerDashboard({ samples, orders, coas, chemists, o
       <div className="flex items-center justify-between">
         <div>
           <h3 className="font-bold text-black">Chemist workload</h3>
-          <p className="text-xs text-neutral-500">Everything each chemist is working on, plus throughput.</p>
+          <p className="text-xs text-neutral-500">Staff oversight — who is loaded or lagging. Testing itself stays on the Chemist Console.</p>
         </div>
         <div className="flex items-center gap-3 flex-shrink-0">
           <button

@@ -101,6 +101,16 @@ function stageCopy(orderNumber: string, stage: OrderNotifyStage, extra?: string)
         subject: `${ref} — estimated ready date updated`,
         body: `The estimated ready date for order ${orderNumber} is now ${extra || 'updated'}. Check your portal for details.`,
       };
+    case 'payment_refunded':
+      return {
+        subject: `${ref} — payment refunded`,
+        body: `Payment for order ${orderNumber} has been refunded.${extra ? ` ${extra}` : ''}`,
+      };
+    case 'cancelled':
+      return {
+        subject: `${ref} — cancelled`,
+        body: `Order ${orderNumber} has been cancelled.${extra ? ` ${extra}` : ''}`,
+      };
     default:
       return {
         subject: `${ref} — ${stage}`,
