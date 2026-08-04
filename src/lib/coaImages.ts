@@ -143,7 +143,7 @@ export function readCoaPdfStats(coa: COA): CoaPdfStats {
   const endotoxinPanel = findPanel(panels, 'endotoxin', 'lal');
   const mwPanel = findPanel(panels, 'molecular weight', 'molecular');
 
-  const fromAssay = computeAssayAveragesFromPanels(panels, coa.purity_percent);
+  const fromAssay = computeAssayAveragesFromPanels(panels, coa.purity_percent, summary);
   const content =
     (typeof summary.avg_net_peptide_content === 'string' && summary.avg_net_peptide_content.trim())
     || fromAssay.avg_net_peptide_content

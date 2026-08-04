@@ -123,6 +123,45 @@ export function assayMethodFromPanels(panels: PanelResult[]): AssayMethod | null
   return null;
 }
 
+/**
+ * Restore multi-vial Net Content / Net Purity result strings from result_summary
+ * when panel cells only kept the primary vial (Issue fold miss).
+ */
+export function hydrateMultiVialPanelResults(
+  panels: PanelResult[] | null | undefined,
+  summary?: Record<string, unknown> | null,
+): PanelResult[] {
+  if (!Array.isArray(panels) || panels.length === 0) return panels || [];
+  if (!summary || typeof summary !== 'object') return panels;
+
+  const contentValues = Array.isArray(summary.content_values)
+    ? summary.content_values.map(v => String(v || '').trim()).filter(Boolean)
+    : [];
+  const purityValues = Array.isArray(summary.purity_values)
+    ? summary.purity_values.map(v => String(v || '').trim()).filter(Boolean)
+    : [];
+  if (contentValues.length <= 1 && purityValues.length <= 1) return panels;
+
+  return panels.map(p => {
+    const n = p.panel_name.toLowerCase();
+    const existing = (p.result || '').split(/\s*,\s*/).map(s => s.trim()).filter(Boolean);
+    if (
+      contentValues.length > existing.length
+      && (n.includes('net content') || n.includes('peptide content'))
+      && !n.startsWith('blend content')
+    ) {
+      return { ...p, result: contentValues.join(', ') };
+    }
+    if (
+      purityValues.length > existing.length
+      && (n.includes('net purity') || n.includes('purity (hplc)') || n.includes('purity (lcms)') || n.includes('purity (lc-ms)') || /^purity\b/.test(n))
+    ) {
+      return { ...p, result: purityValues.join(', ') };
+    }
+    return p;
+  });
+}
+
 export const ENDOTOXIN_SPEC_EU_ML = '≤ 5.0 EU/mL';
 /** Default measured result when Endotoxin conformity is PASS. */
 export const ENDOTOXIN_PASS_RESULT = '≤ 5.0 EU/mL';
@@ -451,14 +490,30 @@ export function buildLabResultsFromCoa(
   const endotoxinPanel = findPanel('endotoxin');
   const fentanylPanel = findPanel('fentanyl');
 
-  const netParts = (netPanel?.result || '')
+  const summaryContentValues = Array.isArray(summary.content_values)
+    ? summary.content_values.map(v => String(v || '').trim()).filter(Boolean)
+    : [];
+  const summaryPurityValues = Array.isArray(summary.purity_values)
+    ? summary.purity_values.map(v => String(v || '').trim()).filter(Boolean)
+    : [];
+
+  const netPartsFromPanel = (netPanel?.result || '')
     .split(',')
     .map(s => s.trim())
     .filter(Boolean);
-  const purityParts = (purityPanel?.result || '')
+  const purityPartsFromPanel = (purityPanel?.result || '')
     .split(',')
     .map(s => s.trim().replace(/%\s*$/, ''))
     .filter(Boolean);
+
+  // Prefer result_summary multi-vial lists when panels only stored the primary
+  // (bug after assay-method rename broke the Net Content / Net Purity fold).
+  const netParts = summaryContentValues.length > netPartsFromPanel.length
+    ? summaryContentValues
+    : netPartsFromPanel;
+  const purityParts = summaryPurityValues.length > purityPartsFromPanel.length
+    ? summaryPurityValues.map(s => s.replace(/%\s*$/, '').trim())
+    : purityPartsFromPanel;
 
   const primaryNet = netParts[0] || '';
   const primaryPurity = purityParts[0]
@@ -768,11 +823,18 @@ export function labResultsToPanelResults(
   const { contentParts, purityParts } = collectContentPurityParts(results);
 
   if (contentParts.length > 0) {
-    const net = rows.find(r => r.panel_name === 'Net Content');
+    const net = rows.find(r => {
+      const n = r.panel_name.toLowerCase();
+      return (n.includes('net content') || n.includes('peptide content'))
+        && !n.startsWith('blend content');
+    });
     if (net) net.result = contentParts.join(', ');
   }
   if (purityParts.length > 0) {
-    const pur = rows.find(r => r.panel_name === 'Net Purity');
+    const pur = rows.find(r => {
+      const n = r.panel_name.toLowerCase();
+      return n.includes('net purity') || /^purity\b/.test(n);
+    });
     if (pur) pur.result = purityParts.join(', ');
   }
 
@@ -883,9 +945,11 @@ export function computeLabAssayAverages(results: LabCoaResults): AssayAverages {
 export function computeAssayAveragesFromPanels(
   panels: PanelResult[],
   purityPercent?: number | null,
+  summary?: Record<string, unknown> | null,
 ): AssayAverages {
-  const net = panels.find(p => /net content|peptide content/i.test(p.panel_name) && !/^blend content\b/i.test(p.panel_name));
-  const pur = panels.find(p => /net purity|^purity\b/i.test(p.panel_name));
+  const hydrated = hydrateMultiVialPanelResults(panels, summary);
+  const net = hydrated.find(p => /net content|peptide content/i.test(p.panel_name) && !/^blend content\b/i.test(p.panel_name));
+  const pur = hydrated.find(p => /net purity|^purity\b/i.test(p.panel_name));
   const contentParts = (net?.result || '')
     .split(',')
     .map(s => s.trim())
