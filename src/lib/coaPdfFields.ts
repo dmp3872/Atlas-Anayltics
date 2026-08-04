@@ -1,7 +1,7 @@
 import { COA, PanelResult } from './types';
 import { formatDate } from './utils';
 import { readCoaPdfStats } from './coaImages';
-import { ENDOTOXIN_SPEC_EU_ML, STERILITY_METHOD_LABELS, formatCoaDecimal, parseAssayMethod, withAssayMethodSpec, ASSAY_METHOD_LABELS, assayMethodFromPanels, hydrateMultiVialPanelResults } from './labCoaForm';
+import { ENDOTOXIN_SPEC_EU_ML, STERILITY_METHOD_LABELS, formatCoaDecimal, parseAssayMethod, withAssayMethodSpec, ASSAY_METHOD_LABELS, assayMethodFromPanels, hydrateMultiVialPanelResults, formatPurityResultWithUncertainty } from './labCoaForm';
 import { collapseConformityPanels } from './coaDisplayPanels';
 import { labelClaimFromSummary, netContentSpecificationDisplay } from './orderCatalog';
 
@@ -25,15 +25,26 @@ function conformityLabel(panel: PanelResult | undefined): string {
   return panel.pass ? 'PASS' : 'FAIL';
 }
 
+function netContentConformityLabel(panel: PanelResult | undefined): string {
+  if (!panel) return '';
+  if (!panel.result?.trim() && panel.specification === undefined) return '';
+  if (panel.pass === null || /^pending$/i.test((panel.result || '').trim())) return 'PENDING';
+  return 'Reported Value';
+}
+
 function panelTriplet(
   panels: PanelResult[],
   keywords: string[],
 ): { specification: string; result: string; conformity: string } {
   const panel = findPanel(panels, ...keywords);
+  const lookingForContent = keywords.some(k => {
+    const n = k.toLowerCase();
+    return n.includes('net content') || n.includes('peptide content');
+  });
   return {
     specification: panel?.specification?.trim() ?? '',
     result: (panel?.value ?? panel?.result ?? '').trim(),
-    conformity: conformityLabel(panel),
+    conformity: lookingForContent ? netContentConformityLabel(panel) : conformityLabel(panel),
   };
 }
 
@@ -195,7 +206,16 @@ export function buildCoaPdfFieldValues(coa: COA): CoaPdfFieldValues {
       purity.specification || (coa.purity_percent != null ? '≥98%' : ''),
       assayMethod,
     ),
-    'ResultPurity HPLC': purity.result || (coa.purity_percent != null ? `${formatCoaDecimal(coa.purity_percent)}%` : ''),
+    'ResultPurity HPLC': (() => {
+      const raw = purity.result
+        || (coa.purity_percent != null ? `${formatCoaDecimal(coa.purity_percent)}%` : '');
+      if (!raw) return '';
+      return raw
+        .split(/\s*,\s*/)
+        .map(part => formatPurityResultWithUncertainty(part))
+        .filter(Boolean)
+        .join(', ');
+    })(),
     'ConformityPurity HPLC': purity.conformity || (coa.overall_result === 'pass' ? 'PASS' : coa.overall_result === 'fail' ? 'FAIL' : ''),
 
     SpecificationSterility: sterility.specification,

@@ -63,7 +63,7 @@ function panelPassStatus(panel: PanelResult, opts?: { metal?: boolean }): {
   label: string;
 } {
   const isNetContent = /net content|peptide content/i.test(panel.panel_name);
-  if (isNetContent) return { pass: null, label: 'N/A' };
+  if (isNetContent) return { pass: true, label: 'Reported Value' };
   const resolved = resolvePanelPass(panel);
   if (resolved === null) return { pass: null, label: 'Pending' };
   if (opts?.metal) {

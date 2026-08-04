@@ -617,7 +617,7 @@ export default function COADetail() {
                       </td>
                       <td className="px-3 py-1 border-t border-atlas-border">
                         {isNetContent ? (
-                          <span className="font-bold uppercase text-xs text-neutral-500">N/A</span>
+                          <span className="font-bold uppercase text-xs text-atlas-success">Reported Value</span>
                         ) : (
                           <span className={`font-bold uppercase text-xs ${panelStatusToneClass(pass)}`}>
                             {status}
