@@ -11,7 +11,8 @@ import {
   COA_WORKFLOW_BOARD_COLUMNS, COA_WORKFLOW_LABELS, COA_WORKFLOW_STEPS,
   CoaWorkflowStage, canPrepareCoa, canReturnCoaToTesting, coaSignatureProgress, coaWorkflowStage,
 } from '../../lib/coaWorkflow';
-import { LAB_PRIORITY_LABELS, LAB_PRIORITY_STYLES, QueueSampleItem, testsLabelForSample } from '../../lib/labQueue';
+import { LAB_PRIORITY_STYLES, QueueSampleItem, testsLabelForSample } from '../../lib/labQueue';
+import PriorityBanner from './PriorityBanner';
 import { parseSampleMetadata } from '../../lib/coaPanels';
 import { downloadCoaPdf } from '../../lib/coaPdf';
 import CoaPdfPrepModal from './CoaPdfPrepModal';
@@ -865,17 +866,17 @@ export default function CoaWorkflowBoard({
                       return (
                         <article
                           key={sample.id}
-                          className={`rounded-lg border bg-white p-3 shadow-sm ${pStyles.border} ${
+                          className={`rounded-lg border bg-white shadow-sm overflow-hidden ${pStyles.border} ${
                             mine ? 'ring-2 ring-sky-400 border-sky-300' : ''
                           }`}
                         >
-                          <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
-                            <span className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${pStyles.badge}`}>
-                              <span className={`w-1.5 h-1.5 rounded-full ${pStyles.dot}`} />
-                              {LAB_PRIORITY_LABELS[priority]}
-                            </span>
-                            {mine && <AssignedToYouBadge />}
-                          </div>
+                          <PriorityBanner priority={priority} rush={order.rush_processing} compact />
+                          <div className="p-3">
+                          {mine && (
+                            <div className="mb-1.5">
+                              <AssignedToYouBadge />
+                            </div>
+                          )}
                           <p className="font-medium text-sm text-black leading-snug truncate">
                             {sample.display_name || sample.sample_name}
                           </p>
@@ -906,6 +907,7 @@ export default function CoaWorkflowBoard({
                               onSaveEta={onSaveOrderEta}
                             />
                           ) : null}
+                          </div>
                         </article>
                       );
                     });

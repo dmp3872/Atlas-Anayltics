@@ -4,23 +4,27 @@ import { supabase } from '../lib/supabase';
 import { COA, Order, OrderSample, UserProfile, UserRole, LabPriority } from '../lib/types';
 import { normalizeLabPriority } from '../lib/labQueue';
 import { computeCoaContentHash } from '../lib/coaVerify';
-import { markOrderPaid } from '../lib/services/orderWorkflow';
+import { logOrderStatusChange, markOrderPaid } from '../lib/services/orderWorkflow';
 import { useAuth } from '../context/AuthContext';
 import AdminShell, { AdminSection } from '../components/admin/AdminShell';
 import AdminCommandCenter from '../components/admin/AdminCommandCenter';
 import AdminOrdersPanel from '../components/admin/AdminOrdersPanel';
 import AdminCoaRegistry from '../components/admin/AdminCoaRegistry';
 import AdminUsersPanel from '../components/admin/AdminUsersPanel';
+import AdminDispatchBoard from '../components/admin/AdminDispatchBoard';
+import AdminClientsPanel from '../components/admin/AdminClientsPanel';
 import OpsDashboard from '../components/admin/OpsDashboard';
 import LabManagerDashboard from '../components/admin/LabManagerDashboard';
 import { COA_LIST_COLUMNS } from '../lib/coaSelect';
 
 const SECTION_META: Record<AdminSection, { title: string; subtitle: string }> = {
-  command: { title: 'Command Center', subtitle: 'Live lab status, alerts, and recent intake.' },
-  lab: { title: 'Lab Manager', subtitle: 'Chemist workload, turnaround, and COA control.' },
+  command: { title: 'Ops Bench', subtitle: 'Customer workflow, money, ETAs, and who’s behind — not the chemist queue.' },
+  dispatch: { title: 'Dispatch Board', subtitle: 'Assign unassigned samples by chemist load.' },
+  lab: { title: 'Staff load', subtitle: 'Chemist workload and lagging assignments.' },
   operations: { title: 'Lab Analytics', subtitle: 'Intake trends, test volume, and turnaround.' },
-  orders: { title: 'Orders & Priority', subtitle: 'Queue control — set priority for chemists.' },
-  coas: { title: 'COA Registry', subtitle: 'All certificates across every workflow stage.' },
+  orders: { title: 'Orders & money', subtitle: 'Priority, payment, refunds, and order detail.' },
+  coas: { title: 'COA Registry', subtitle: 'Overrides, stage resets, and audit notes.' },
+  clients: { title: 'Clients', subtitle: 'Light CRM — accounts, spend, and order history.' },
   users: { title: 'Users & Access', subtitle: 'Manage roles and account access.' },
 };
 
@@ -143,7 +147,7 @@ export default function Admin() {
     }
   }
 
-  async function updateCoa(coaId: string, patch: Partial<COA>) {
+  async function updateCoa(coaId: string, patch: Partial<COA>, auditNote?: string) {
     setMsg(null);
     const current = coas.find(c => c.id === coaId);
     if (!current) return;
@@ -170,7 +174,19 @@ export default function Admin() {
     }
     const updated = { ...merged, ...fullPatch } as COA;
     setCoas(prev => prev.map(c => (c.id === coaId ? updated : c)));
-    setMsg({ type: 'success', text: 'Certificate updated.' });
+
+    if (current.order_id) {
+      const stageNote = typeof patch.coa_workflow_stage === 'string'
+        ? `coa:${patch.coa_workflow_stage}`
+        : 'coa:override';
+      await logOrderStatusChange(current.order_id, stageNote, {
+        sampleId: current.sample_id,
+        note: auditNote || 'Admin COA override',
+        changedBy: user?.id,
+      });
+    }
+
+    setMsg({ type: 'success', text: auditNote ? 'Certificate updated (audit logged).' : 'Certificate updated.' });
   }
 
   const normalizedOrders = useMemo(
@@ -214,6 +230,16 @@ export default function Admin() {
           />
         )}
 
+        {section === 'dispatch' && (
+          <AdminDispatchBoard
+            samples={samples}
+            orders={normalizedOrders}
+            coas={coas}
+            chemists={chemists}
+            onAssignSample={assignSample}
+          />
+        )}
+
         {section === 'lab' && (
           <LabManagerDashboard
             samples={samples}
@@ -243,6 +269,10 @@ export default function Admin() {
 
         {section === 'coas' && (
           <AdminCoaRegistry coas={coas} onSave={updateCoa} />
+        )}
+
+        {section === 'clients' && (
+          <AdminClientsPanel users={users} orders={normalizedOrders} />
         )}
 
         {section === 'users' && (
