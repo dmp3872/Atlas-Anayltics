@@ -1,6 +1,6 @@
 import { COA, OrderSample, PanelResult } from './types';
 import { OrderSampleMetadata, parseSampleMetadata, orderSampleIncludesFentanyl } from './coaPanels';
-import { ATLAS_PRO_INCLUDED_CONFORMITY_VIALS } from './orderCatalog';
+import { ATLAS_PRO_INCLUDED_CONFORMITY_VIALS, formatLabelClaim } from './orderCatalog';
 
 export const VIAL_SIZE_OPTIONS = ['3ml', '5ml', '10ml'] as const;
 export type VialSizeOption = (typeof VIAL_SIZE_OPTIONS)[number];
@@ -553,8 +553,15 @@ export function sterilitySpecLabel(_method?: SterilityMethod): string {
   return 'Not Detected';
 }
 
-export function labResultsToPanelResults(results: LabCoaResults): PanelResult[] {
+export function labResultsToPanelResults(
+  results: LabCoaResults,
+  claim?: { labeledContent?: string; labelClaimUnit?: string },
+): PanelResult[] {
   const isBlend = results.blendPeptides.some(r => r.name.trim());
+  const claimLabel = formatLabelClaim(
+    (claim?.labeledContent || '').trim(),
+    ((claim?.labelClaimUnit || 'mg').trim() || 'mg'),
+  );
   const rows: PanelResult[] = [
     {
       panel_name: 'Identification',
@@ -564,7 +571,9 @@ export function labResultsToPanelResults(results: LabCoaResults): PanelResult[] 
     },
     {
       panel_name: 'Net Content',
-      specification: isBlend ? 'Total peptide content' : 'Label claim',
+      specification: isBlend
+        ? 'Total peptide content'
+        : (claimLabel ? `Label claim: ${claimLabel}` : 'Label claim'),
       result: formatMgAmount(results.netContent) || results.netContent,
       pass: !!results.netContent.trim(),
     },
