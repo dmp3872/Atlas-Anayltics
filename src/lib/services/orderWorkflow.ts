@@ -185,6 +185,9 @@ export async function markSampleReceived(
      * When omitted, falls back to standard/rush TAT only if the order has no due_at yet.
      */
     estimatedReadyAt?: string | null;
+    /** Chemist-entered label claim when the customer left it blank. */
+    labeledContent?: string;
+    labelClaimUnit?: string;
   },
 ): Promise<{ error: Error | null; sample?: OrderSample; order?: Order }> {
   if (!orderIsPayable(order.payment_status)) {
@@ -211,6 +214,8 @@ export async function markSampleReceived(
   const receivedAt = sample.received_at || now;
   const prevMeta =
     sample.metadata && typeof sample.metadata === 'object' ? sample.metadata : {};
+  const labeledContent = (opts.labeledContent || '').trim();
+  const labelClaimUnit = (opts.labelClaimUnit || '').trim() || 'mg';
   const samplePatch: Partial<OrderSample> = {
     status: 'received',
     accession_number: accession,
@@ -221,6 +226,12 @@ export async function markSampleReceived(
       received_at: receivedAt,
       sample_code: accession,
       received_by: receivedBy,
+      ...(labeledContent
+        ? {
+            labeled_content: labeledContent,
+            label_claim_unit: labelClaimUnit,
+          }
+        : {}),
     },
   };
   if (opts.vialCountConfirmed != null && opts.vialCountConfirmed > 0) {
