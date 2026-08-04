@@ -17,6 +17,8 @@ import {
   ENDOTOXIN_SPEC_EU_ML, ENDOTOXIN_PASS_RESULT, STERILITY_METHOD_LABELS,
   HEAVY_METAL_PASS_RESULT, heavyMetalsPassDefaults, heavyMetalsEmptyDefaults, computeLabAssayAverages,
   assayPassSelectValue, assayPassFromSelect, blendConformityVialRows, isBlendTotalConformityRow,
+  MAX_PURITY_PERCENT, PURITY_INPUT_HINT, sanitizePurityInput, purityExceedsMax,
+  ASSAY_METHOD_LABELS, AssayMethod,
 } from '../lib/labCoaForm';
 import { COA_WORKFLOW_LABELS, canPrepareCoa, coaWorkflowStage, buildWorkflowStagePatch, CoaWorkflowStage } from '../lib/coaWorkflow';
 import CoaWorkflowBoard from '../components/lab/CoaWorkflowBoard';
@@ -494,7 +496,9 @@ export default function Lab() {
   }
 
   function updateResults(patch: Partial<LabCoaResults>) {
-    setLabResults(prev => ({ ...prev, ...patch }));
+    const next = { ...patch };
+    if (typeof next.netPurity === 'string') next.netPurity = sanitizePurityInput(next.netPurity);
+    setLabResults(prev => ({ ...prev, ...next }));
   }
 
   function updateHeavyMetal(metal: typeof HEAVY_METAL_NAMES[number], value: string) {
@@ -526,9 +530,11 @@ export default function Lab() {
   }
 
   function updateConformityPeptide(index: number, patch: Partial<{ name: string; netContent: string; netPurity: string }>) {
+    const next = { ...patch };
+    if (typeof next.netPurity === 'string') next.netPurity = sanitizePurityInput(next.netPurity);
     setLabResults(prev => ({
       ...prev,
-      conformityPeptides: prev.conformityPeptides.map((row, i) => (i === index ? { ...row, ...patch } : row)),
+      conformityPeptides: prev.conformityPeptides.map((row, i) => (i === index ? { ...row, ...next } : row)),
     }));
   }
 
@@ -900,6 +906,16 @@ export default function Lab() {
       setMsg({ type: 'error', text: 'Enter the received date.' });
       return;
     }
+    const overMaxPurity =
+      purityExceedsMax(labResults.netPurity)
+      || labResults.conformityPeptides.some(r => purityExceedsMax(r.netPurity));
+    if (overMaxPurity) {
+      setMsg({
+        type: 'error',
+        text: `Purity cannot exceed ${MAX_PURITY_PERCENT.toFixed(2)}% (±0.18%). 100% is not allowed.`,
+      });
+      return;
+    }
 
     setSaving(true);
     setMsg(null);
@@ -1036,6 +1052,8 @@ export default function Lab() {
           sterility_pass: labResults.sterilityPass,
           sterility_method_label: STERILITY_METHOD_LABELS[labResults.sterilityMethod],
           sterility_specification: 'Not Detected',
+          assay_method: labResults.assayMethod,
+          assay_method_label: ASSAY_METHOD_LABELS[labResults.assayMethod],
           endotoxin_eu_ml: labResults.endotoxinEuMl.trim(),
           endotoxin_pass: labResults.endotoxinPass,
           heavy_metals_pass: labResults.heavyMetalsPass,
@@ -1693,6 +1711,20 @@ export default function Lab() {
                 <label className="label mb-3 block">Test Results</label>
                 <div className="space-y-4 rounded-lg border border-atlas-border p-4 bg-neutral-50/50">
                   <div className="grid sm:grid-cols-2 gap-4">
+                    <div className="sm:col-span-2">
+                      <label className="label">Assay method (ID / Content / Purity)</label>
+                      <select
+                        value={labResults.assayMethod}
+                        onChange={e => updateResults({ assayMethod: e.target.value as AssayMethod })}
+                        className="input-field max-w-md"
+                      >
+                        <option value="hplc_uv_vis">{ASSAY_METHOD_LABELS.hplc_uv_vis}</option>
+                        <option value="lcms">{ASSAY_METHOD_LABELS.lcms}</option>
+                      </select>
+                      <p className="text-xs text-neutral-500 mt-1">
+                        Shown on the COA for Identification, Net Content, and Net Purity.
+                      </p>
+                    </div>
                     <div>
                       <label className="label">Identification</label>
                       <input
@@ -1720,7 +1752,17 @@ export default function Lab() {
                       <label className="label">
                         {labResults.blendPeptides.length > 0 ? 'Total purity (%)' : 'Net Purity (%)'}
                       </label>
-                      <input type="number" step="0.1" value={labResults.netPurity} onChange={e => updateResults({ netPurity: e.target.value })} className="input-field" placeholder="e.g. 99.2" />
+                      <input
+                        type="number"
+                        step="0.01"
+                        min={0}
+                        max={MAX_PURITY_PERCENT}
+                        value={labResults.netPurity}
+                        onChange={e => updateResults({ netPurity: e.target.value })}
+                        className="input-field"
+                        placeholder="e.g. 99.2"
+                      />
+                      <p className="text-xs text-neutral-500 mt-1">{PURITY_INPUT_HINT}</p>
                       {labResults.blendPeptides.length > 0 && (
                         <p className="text-xs text-neutral-500 mt-1">One purity for the whole blend — not per peptide.</p>
                       )}
@@ -1998,6 +2040,10 @@ export default function Lab() {
                                   <div className="col-span-3">
                                     <label className="text-[10px] font-semibold uppercase tracking-wide text-neutral-400">Total purity %</label>
                                     <input
+                                      type="number"
+                                      step="0.01"
+                                      min={0}
+                                      max={MAX_PURITY_PERCENT}
                                       value={labResults.conformityPeptides[group.totalIdx].netPurity}
                                       onChange={e => updateConformityPeptide(group.totalIdx!, { netPurity: e.target.value })}
                                       className="input-field py-1.5 text-sm mt-0.5"
@@ -2074,7 +2120,16 @@ export default function Lab() {
                           <div key={i} className="grid grid-cols-12 gap-2 items-center">
                             <input value={row.name} onChange={e => updateConformityPeptide(i, { name: e.target.value })} className="input-field col-span-4 py-1.5 text-sm" placeholder="Peptide" />
                             <input value={row.netContent} onChange={e => updateConformityPeptide(i, { netContent: e.target.value })} className="input-field col-span-3 py-1.5 text-sm" placeholder="Net content" />
-                            <input value={row.netPurity} onChange={e => updateConformityPeptide(i, { netPurity: e.target.value })} className="input-field col-span-3 py-1.5 text-sm" placeholder="Net purity %" />
+                            <input
+                              type="number"
+                              step="0.01"
+                              min={0}
+                              max={MAX_PURITY_PERCENT}
+                              value={row.netPurity}
+                              onChange={e => updateConformityPeptide(i, { netPurity: e.target.value })}
+                              className="input-field col-span-3 py-1.5 text-sm"
+                              placeholder="Net purity %"
+                            />
                             <button type="button" onClick={() => removeConformityPeptide(i)} className="col-span-2 text-neutral-400 hover:text-red-600 flex justify-center"><Trash2 size={15} /></button>
                           </div>
                         ))}

@@ -70,7 +70,12 @@ function isNetContentPanel(name: string): boolean {
 
 function isNetPurityPanel(name: string): boolean {
   const n = name.toLowerCase();
-  return n.includes('net purity') || n.includes('purity (hplc)') || n === 'purity' || n.includes('purity hplc');
+  return n.includes('net purity')
+    || n.includes('purity (hplc)')
+    || n.includes('purity (lcms)')
+    || n.includes('purity (lc-ms)')
+    || n === 'purity'
+    || n.includes('purity hplc');
 }
 
 /**

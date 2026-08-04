@@ -22,6 +22,10 @@ import {
   heavyMetalsPassDefaults,
   SterilityMethod,
   STERILITY_METHOD_LABELS,
+  MAX_PURITY_PERCENT,
+  PURITY_INPUT_HINT,
+  sanitizePurityInput,
+  purityExceedsMax,
 } from '../../lib/labCoaForm';
 import { downloadCoaPdf, openCoaPrintView } from '../../lib/coaPdf';
 import LogoDropzone from '../account/LogoDropzone';
@@ -139,6 +143,10 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
     }
     if (includeMolecularWeight && molecularWeight.trim() && Number.isNaN(Number(molecularWeight))) {
       setError('Molecular weight must be a number.');
+      return;
+    }
+    if (purityExceedsMax(avgPurity)) {
+      setError(`Average purity cannot exceed ${MAX_PURITY_PERCENT.toFixed(2)}% (±0.18%). 100% is not allowed.`);
       return;
     }
     setBusy(true);
@@ -336,10 +344,12 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
               <input
                 id="avg-purity"
                 value={avgPurity}
-                onChange={e => setAvgPurity(e.target.value)}
+                onChange={e => setAvgPurity(sanitizePurityInput(e.target.value))}
                 className="input-field"
                 placeholder="e.g. 99.1%"
+                max={MAX_PURITY_PERCENT}
               />
+              <p className="text-xs text-neutral-500 mt-1">{PURITY_INPUT_HINT}</p>
             </div>
           </div>
 
