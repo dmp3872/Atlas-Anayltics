@@ -10,8 +10,8 @@ export function shippingLabelTracking(labelId: string): string {
 
 export const ATLAS_SHIP_TO = {
   name: 'Atlas Analytics',
-  line1: '1234 Research Blvd',
-  city: 'Austin',
-  state: 'TX',
-  zip: '78701',
+  line1: '207 Pickens St, Suite 215',
+  city: 'Columbia',
+  state: 'SC',
+  zip: '29209',
 };

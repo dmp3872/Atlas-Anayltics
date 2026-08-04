@@ -18,7 +18,7 @@ export default function Footer() {
             <div className="mt-5 space-y-2 text-sm">
               <div className="flex items-center gap-2">
                 <MapPin size={14} className="text-brand-500 flex-shrink-0" />
-                <span>1234 Research Blvd, Austin, TX 78701</span>
+                <span>207 Pickens St, Suite 215, Columbia, SC 29209</span>
               </div>
               <div className="flex items-center gap-2">
                 <Mail size={14} className="text-brand-500 flex-shrink-0" />

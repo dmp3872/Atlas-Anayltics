@@ -106,7 +106,7 @@ export default function Trust() {
                 'Every COA cryptographically signed',
                 'Public verification requires no account',
                 'Named lab director on every report',
-                'Physical US address — 1234 Research Blvd, Austin TX',
+                'Physical US address — 207 Pickens St, Suite 215, Columbia SC',
                 'ISO 17025 accreditation in progress',
                 'Results are final — we do not revise passing COAs',
               ].map((item) => (

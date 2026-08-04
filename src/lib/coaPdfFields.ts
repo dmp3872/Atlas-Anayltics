@@ -3,6 +3,7 @@ import { formatDate } from './utils';
 import { readCoaPdfStats } from './coaImages';
 import { ENDOTOXIN_SPEC_EU_ML, STERILITY_METHOD_LABELS, formatCoaDecimal } from './labCoaForm';
 import { collapseConformityPanels } from './coaDisplayPanels';
+import { labelClaimFromSummary, netContentSpecificationDisplay } from './orderCatalog';
 
 export type CoaPdfFieldValues = Record<string, string>;
 
@@ -139,6 +140,9 @@ export function buildCoaPdfFieldValues(coa: COA): CoaPdfFieldValues {
     purity.result ||
     (coa.purity_percent != null ? `${formatCoaDecimal(coa.purity_percent)}%` : '');
   const vialsTested = meanOfVials || (typeof chrom.vial_size === 'string' ? chrom.vial_size : '');
+  const labelClaim = labelClaimFromSummary(summary);
+  const netContentSpecification = netContentSpecificationDisplay(netContent.specification, labelClaim)
+    || netContent.specification;
 
   const fields: CoaPdfFieldValues = {
     CLIENT: coa.company_name || '',
@@ -149,6 +153,7 @@ export function buildCoaPdfFieldValues(coa: COA): CoaPdfFieldValues {
     'PUBLISHED DATE': published,
     'LOT CODE': coa.batch_number || '',
     'VIALS TESTED': vialsTested,
+    'LABEL CLAIM': labelClaim,
 
     // Average Net Peptide Content card
     VIALS_33: avgNetPeptide,
@@ -164,7 +169,7 @@ export function buildCoaPdfFieldValues(coa: COA): CoaPdfFieldValues {
     ResultIdentity: identity.result,
     ConformityIdentity: identity.conformity,
 
-    'SpecificationNet Peptide Content': netContent.specification,
+    'SpecificationNet Peptide Content': netContentSpecification,
     'ResultNet Peptide Content': netContent.result,
     'ConformityNet Peptide Content': netContent.conformity,
 
