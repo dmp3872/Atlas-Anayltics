@@ -1,7 +1,7 @@
 import { COA, PanelResult } from './types';
 import { formatDate } from './utils';
 import { readCoaPdfStats } from './coaImages';
-import { ENDOTOXIN_SPEC_EU_ML, STERILITY_METHOD_LABELS, formatCoaDecimal } from './labCoaForm';
+import { ENDOTOXIN_SPEC_EU_ML, STERILITY_METHOD_LABELS, formatCoaDecimal, parseAssayMethod, withAssayMethodSpec, ASSAY_METHOD_LABELS, assayMethodFromPanels } from './labCoaForm';
 import { collapseConformityPanels } from './coaDisplayPanels';
 import { labelClaimFromSummary, netContentSpecificationDisplay } from './orderCatalog';
 
@@ -145,6 +145,12 @@ export function buildCoaPdfFieldValues(coa: COA): CoaPdfFieldValues {
   const labelClaim = labelClaimFromSummary(summary);
   const netContentSpecification = netContentSpecificationDisplay(netContent.specification, labelClaim)
     || netContent.specification;
+  const assayMethod = parseAssayMethod(
+    summary.assay_method
+      ?? summary.assay_method_label
+      ?? assayMethodFromPanels(panels),
+  );
+  const methodLabel = ASSAY_METHOD_LABELS[assayMethod];
 
   const fields: CoaPdfFieldValues = {
     CLIENT: coa.company_name || '',
@@ -157,6 +163,7 @@ export function buildCoaPdfFieldValues(coa: COA): CoaPdfFieldValues {
     'LOT CODE': coa.batch_number || '',
     'VIALS TESTED': vialsTested,
     'LABEL CLAIM': labelClaim,
+    'ASSAY METHOD': methodLabel,
 
     // Average Net Peptide Content card
     VIALS_33: avgNetPeptide,
@@ -168,15 +175,21 @@ export function buildCoaPdfFieldValues(coa: COA): CoaPdfFieldValues {
     VIALS_66: meanOfVials,
     VIALS_22: '',
 
-    SpecificationIdentity: identity.specification,
+    SpecificationIdentity: withAssayMethodSpec(identity.specification || 'Peptide ID', assayMethod),
     ResultIdentity: identity.result,
     ConformityIdentity: identity.conformity,
 
-    'SpecificationNet Peptide Content': netContentSpecification,
+    'SpecificationNet Peptide Content': withAssayMethodSpec(
+      netContentSpecification || 'Label claim',
+      assayMethod,
+    ),
     'ResultNet Peptide Content': netContent.result,
     'ConformityNet Peptide Content': netContent.conformity,
 
-    'SpecificationPurity HPLC': purity.specification || (coa.purity_percent != null ? '≥98%' : ''),
+    'SpecificationPurity HPLC': withAssayMethodSpec(
+      purity.specification || (coa.purity_percent != null ? '≥98%' : ''),
+      assayMethod,
+    ),
     'ResultPurity HPLC': purity.result || (coa.purity_percent != null ? `${formatCoaDecimal(coa.purity_percent)}%` : ''),
     'ConformityPurity HPLC': purity.conformity || (coa.overall_result === 'pass' ? 'PASS' : coa.overall_result === 'fail' ? 'FAIL' : ''),
 

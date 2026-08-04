@@ -12,7 +12,7 @@ import { hydrateCoaImages, prepareVialImage, readCoaPdfStats, resolveCoaHeaderLo
 import { matrixTypeFromSampleMetadata } from '../lib/coaPanels';
 import { partitionCoaPanels, panelStatusLabel, panelStatusToneClass, resolvePanelPass, formatCoaResultDisplay } from '../lib/coaDisplayPanels';
 import { COA_DETAIL_COLUMNS, fetchCoaImageRow } from '../lib/coaSelect';
-import { casForSampleName, formatCoaDecimal } from '../lib/labCoaForm';
+import { casForSampleName, formatCoaDecimal, parseAssayMethod, ASSAY_METHOD_LABELS, assayMethodFromPanels } from '../lib/labCoaForm';
 import { labelClaimFromSummary, netContentSpecificationDisplay } from '../lib/orderCatalog';
 import { compressImageDataUrl } from '../lib/imageCompress';
 import { coaDigitalPdfFilename, downloadCoaPdfFromElement } from '../lib/coaPdf';
@@ -347,6 +347,11 @@ export default function COADetail() {
   const chrom = (coa.chromatogram_data && typeof coa.chromatogram_data === 'object'
     ? coa.chromatogram_data
     : {}) as Record<string, unknown>;
+  const assayMethodLabel = ASSAY_METHOD_LABELS[parseAssayMethod(
+    summary.assay_method
+      ?? summary.assay_method_label
+      ?? assayMethodFromPanels(mainPanels),
+  )];
 
   const vialSize =
     (typeof chrom.vial_size === 'string' && chrom.vial_size.trim())
@@ -566,6 +571,7 @@ export default function COADetail() {
                   </p>
                   <p className="text-[11px] text-neutral-500 mt-0.5">
                     Mean of {vialsTested !== '—' ? vialsTested : '—'} results
+                    {assayMethodLabel ? ` · ${assayMethodLabel}` : ''}
                   </p>
                 </div>
               </div>
