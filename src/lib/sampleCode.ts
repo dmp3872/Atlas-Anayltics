@@ -14,11 +14,19 @@ function parseDate(createdAt: Date | string | number = new Date()): Date {
   return Number.isNaN(date.getTime()) ? new Date() : date;
 }
 
-/** YYMM prefix — year + month glued (e.g. Aug 2026 → 2608). */
+/**
+ * Lab-local YYMM (America/New_York). August = 08, never 07.
+ * e.g. Aug 2026 → 2608
+ */
 function yearMonthPrefix(createdAt: Date | string | number = new Date()): string {
   const d = parseDate(createdAt);
-  const yy = String(d.getFullYear()).slice(-2);
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    year: '2-digit',
+    month: '2-digit',
+  }).formatToParts(d);
+  const yy = parts.find(p => p.type === 'year')?.value ?? String(d.getFullYear()).slice(-2);
+  const mm = parts.find(p => p.type === 'month')?.value ?? String(d.getMonth() + 1).padStart(2, '0');
   return `${yy}${mm}`;
 }
 
