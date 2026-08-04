@@ -713,7 +713,7 @@ export default function Portal() {
                 onChange={e => setSearch(e.target.value)}
                 placeholder={
                   tab === 'coas' ? 'Search by peptide, code, lot, sample, or order #…' :
-                  tab === 'samples' ? 'Search by product, sample code, lot, order…' :
+                  tab === 'samples' ? 'Search by product, LIMS ID, lot, order…' :
                   tab === 'orders' ? 'Search orders…' : 'Search invoices…'
                 }
                 className="input-field pl-9 py-2 text-sm"
@@ -866,7 +866,7 @@ export default function Portal() {
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="coa-table-header">
-                            <th className="text-left px-4 py-2.5">Order</th>
+                            <th className="text-left px-4 py-2.5">Order / LIMS ID</th>
                             <th className="text-left px-4 py-2.5">Name</th>
                             <th className="text-left px-4 py-2.5">Results</th>
                             <th className="text-left px-4 py-2.5">Lot</th>

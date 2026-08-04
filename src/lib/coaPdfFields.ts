@@ -146,7 +146,8 @@ export function buildCoaPdfFieldValues(coa: COA): CoaPdfFieldValues {
 
   const fields: CoaPdfFieldValues = {
     CLIENT: coa.company_name || '',
-    'SAMPLE CODE': coa.slug || '',
+    'SAMPLE CODE': coa.accession_number || coa.slug || '',
+    'LIMS ID': coa.accession_number || coa.slug || '',
     'SAMPLE NAME': coa.display_name || coa.sample_name || '',
     'RECEIVED DATE': received,
     'MATRIX TYPE': matrix,

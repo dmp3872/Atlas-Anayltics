@@ -13,7 +13,7 @@ interface Props {
 }
 
 /**
- * One-click print pack: accession sticker, vial labels, receiving receipt.
+ * One-click print pack: LIMS ID sticker, vial labels, receiving receipt.
  * Gated by LAB_PRINT_PACK_ENABLED — flip that flag to hide without deleting.
  */
 export default function PrintPackButton({
@@ -74,9 +74,9 @@ export default function PrintPackButton({
   <p class="muted no-print">Print pack for ${escapeHtml(order.order_number)} — use Print → Save as PDF or a label printer.</p>
 
   <section class="sheet">
-    <h2>1 · Accession sticker</h2>
+    <h2>1 · LIMS ID sticker</h2>
     <div class="sticker">
-      <div class="tiny muted">ATLAS ANALYTICS · ACCESSION</div>
+      <div class="tiny muted">ATLAS ANALYTICS · LIMS ID</div>
       <div class="code">${escapeHtml(code || 'PENDING')}</div>
       <div class="name">${escapeHtml(name)}</div>
       <div class="muted">${escapeHtml(order.company_name || '—')} · ${escapeHtml(order.order_number)}</div>
@@ -95,7 +95,7 @@ export default function PrintPackButton({
     <table>
       <tr><td>Company</td><td>${escapeHtml(order.company_name || '—')}</td></tr>
       <tr><td>Sample</td><td>${escapeHtml(name)}</td></tr>
-      <tr><td>Accession</td><td>${escapeHtml(code || '—')}</td></tr>
+      <tr><td>LIMS ID</td><td>${escapeHtml(code || '—')}</td></tr>
       <tr><td>Vials</td><td>${vials}</td></tr>
       <tr><td>Ship to</td><td>${escapeHtml(ATLAS_SHIP_TO.name)}<br/>${escapeHtml(ATLAS_SHIP_TO.line1)}<br/>${escapeHtml(`${ATLAS_SHIP_TO.city}, ${ATLAS_SHIP_TO.state} ${ATLAS_SHIP_TO.zip}`)}</td></tr>
       ${order.shipping_label_id ? `<tr><td>Prepaid label</td><td>${escapeHtml(order.shipping_label_id)}</td></tr>` : ''}
@@ -121,7 +121,7 @@ export default function PrintPackButton({
       type="button"
       onClick={printPack}
       className={`btn-outline text-xs py-1.5 gap-1 ${className}`}
-      title="Print accession sticker, vial labels, and receiving receipt"
+      title="Print LIMS ID sticker, vial labels, and receiving receipt"
     >
       <Printer size={12} /> Print pack
     </button>
