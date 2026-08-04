@@ -28,6 +28,7 @@ import {
   purityExceedsMax,
 } from '../../lib/labCoaForm';
 import { downloadCoaPdf, openCoaPrintView } from '../../lib/coaPdf';
+import { LABEL_CLAIM_UNITS, labelClaimFromSummary } from '../../lib/orderCatalog';
 import LogoDropzone from '../account/LogoDropzone';
 
 const MAX_COA_IMAGE_BYTES = 1024 * 1024;
@@ -41,13 +42,18 @@ interface Props {
 function applyPrepDefaults(coa: COA) {
   const next = hydrateCoaImages(coa);
   const stats = readCoaPdfStats(coa);
+  const summary = (coa.result_summary && typeof coa.result_summary === 'object')
+    ? (coa.result_summary as Record<string, unknown>)
+    : {};
   const assay = computeAssayAveragesFromPanels(
     Array.isArray(coa.panel_results) ? coa.panel_results : [],
     coa.purity_percent,
-    (coa.result_summary && typeof coa.result_summary === 'object')
-      ? (coa.result_summary as Record<string, unknown>)
-      : null,
+    summary,
   );
+  const labeledContent = typeof summary.labeled_content === 'string' ? summary.labeled_content.trim() : '';
+  const labelClaimUnit = typeof summary.label_claim_unit === 'string' && summary.label_claim_unit.trim()
+    ? summary.label_claim_unit.trim()
+    : 'mg';
   return {
     next,
     stats,
@@ -56,6 +62,9 @@ function applyPrepDefaults(coa: COA) {
     meanOfVials: stats.mean_of_vials_tested || assay.mean_of_vials_tested,
     avgPurity: stats.avg_purity || assay.avg_purity,
     endotoxinEuMl: stats.endotoxin_eu_ml || (stats.endotoxin_pass === true ? ENDOTOXIN_PASS_RESULT : ''),
+    labeledContent,
+    labelClaimUnit,
+    claimDisplay: labelClaimFromSummary(summary),
   };
 }
 
@@ -67,6 +76,8 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
   const [avgNetPeptide, setAvgNetPeptide] = useState(boot.avgNetPeptide);
   const [meanOfVials, setMeanOfVials] = useState(boot.meanOfVials);
   const [avgPurity, setAvgPurity] = useState(boot.avgPurity);
+  const [labeledContent, setLabeledContent] = useState(boot.labeledContent);
+  const [labelClaimUnit, setLabelClaimUnit] = useState(boot.labelClaimUnit);
   const [fentanylDetection, setFentanylDetection] = useState<FentanylDetectionMark>(
     boot.stats.fentanyl_detection,
   );
@@ -106,6 +117,8 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
     setAvgNetPeptide(d.avgNetPeptide);
     setMeanOfVials(d.meanOfVials);
     setAvgPurity(d.avgPurity);
+    setLabeledContent(d.labeledContent);
+    setLabelClaimUnit(d.labelClaimUnit);
     setFentanylDetection(d.stats.fentanyl_detection);
     setIncludeMolecularWeight(d.stats.include_molecular_weight);
     setMolecularWeight(d.stats.molecular_weight);
@@ -166,6 +179,8 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
         avg_net_peptide_content: avgNetPeptide,
         mean_of_vials_tested: vials,
         avg_purity: avgPurity,
+        labeled_content: labeledContent,
+        label_claim_unit: labelClaimUnit,
         fentanyl_detection: fentanylDetection,
         include_molecular_weight: includeMolecularWeight,
         molecular_weight: molecularWeight,
@@ -318,6 +333,43 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
               >
                 Recalculate
               </button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="sm:col-span-2">
+                <label className="label" htmlFor="prep-label-claim">
+                  Label claim
+                  {!labeledContent.trim() && (
+                    <span className="ml-2 text-[11px] font-semibold uppercase tracking-wide text-amber-700">
+                      Missing — enter for COA
+                    </span>
+                  )}
+                </label>
+                <input
+                  id="prep-label-claim"
+                  value={labeledContent}
+                  onChange={e => setLabeledContent(e.target.value)}
+                  className={`input-field ${!labeledContent.trim() ? 'border-amber-300 bg-amber-50/40' : ''}`}
+                  placeholder="e.g. 10"
+                  inputMode="decimal"
+                />
+              </div>
+              <div>
+                <label className="label" htmlFor="prep-claim-unit">Claim unit</label>
+                <select
+                  id="prep-claim-unit"
+                  value={labelClaimUnit}
+                  onChange={e => setLabelClaimUnit(e.target.value)}
+                  className="input-field"
+                >
+                  {LABEL_CLAIM_UNITS.map(u => (
+                    <option key={u} value={u}>{u}</option>
+                  ))}
+                  {labelClaimUnit
+                    && !(LABEL_CLAIM_UNITS as readonly string[]).includes(labelClaimUnit) && (
+                    <option value={labelClaimUnit}>{labelClaimUnit}</option>
+                  )}
+                </select>
+              </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>

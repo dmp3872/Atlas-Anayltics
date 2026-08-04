@@ -13,6 +13,7 @@ import { useAuth } from '../../context/AuthContext';
 import PrintPackButton from './PrintPackButton';
 import { LAB_PRINT_PACK_ENABLED } from '../../lib/labFeatures';
 import { parseSampleMetadata } from '../../lib/coaPanels';
+import { LABEL_CLAIM_UNITS } from '../../lib/orderCatalog';
 
 interface Props {
   orders: Order[];
@@ -46,6 +47,8 @@ export default function ReceivingDesk({ orders, samples, clients, onChanged }: P
   const [receivedByBySample, setReceivedByBySample] = useState<Record<string, string>>({});
   const [noteBySample, setNoteBySample] = useState<Record<string, string>>({});
   const [etaBySample, setEtaBySample] = useState<Record<string, string>>({});
+  const [claimBySample, setClaimBySample] = useState<Record<string, string>>({});
+  const [claimUnitBySample, setClaimUnitBySample] = useState<Record<string, string>>({});
   const [payNoteByOrder, setPayNoteByOrder] = useState<Record<string, string>>({});
   /** Explicit expand/collapse overrides. Missing key = auto (open if 1 sample). */
   const [expandedByOrder, setExpandedByOrder] = useState<Record<string, boolean>>({});
@@ -166,6 +169,14 @@ export default function ReceivingDesk({ orders, samples, clients, onChanged }: P
       setMsg({ type: 'error', text: 'Enter a valid ETA date before receiving.' });
       return;
     }
+    const meta = parseSampleMetadata(sample.metadata);
+    const claimFromOrder = (meta.labeled_content || '').trim();
+    const labeledContent = (claimBySample[sample.id] ?? claimFromOrder).trim();
+    const labelClaimUnit = (
+      claimUnitBySample[sample.id]
+      ?? meta.label_claim_unit
+      ?? 'mg'
+    ).trim() || 'mg';
     setBusyId(sample.id);
     setMsg(null);
     const { error, sample: updated } = await markSampleReceived(sample, order, {
@@ -174,6 +185,9 @@ export default function ReceivingDesk({ orders, samples, clients, onChanged }: P
       changedBy: user?.id,
       vialCountConfirmed: sample.vial_count,
       estimatedReadyAt,
+      ...(labeledContent
+        ? { labeledContent, labelClaimUnit }
+        : {}),
     });
     if (error) setMsg({ type: 'error', text: error.message });
     else {
@@ -424,6 +438,35 @@ export default function ReceivingDesk({ orders, samples, clients, onChanged }: P
                                   {order.rush_processing
                                     ? 'Defaults to rush TAT (3 days). Change for a custom client-visible date.'
                                     : 'Defaults to standard TAT (7 days). Change for a custom client-visible date.'}
+                                </p>
+                              </div>
+                              <div>
+                                <label className="text-[11px] font-semibold text-brand-900">
+                                  Label claim {!claim ? <span className="text-amber-700 font-normal">(missing from order)</span> : null}
+                                </label>
+                                <div className="mt-1 flex gap-2">
+                                  <input
+                                    value={claimBySample[sample.id] ?? claim}
+                                    onChange={e => setClaimBySample(prev => ({ ...prev, [sample.id]: e.target.value }))}
+                                    placeholder="e.g. 10"
+                                    inputMode="decimal"
+                                    className="input-field text-sm flex-1"
+                                  />
+                                  <select
+                                    value={claimUnitBySample[sample.id] ?? claimUnit}
+                                    onChange={e => setClaimUnitBySample(prev => ({ ...prev, [sample.id]: e.target.value }))}
+                                    className="input-field text-sm w-24"
+                                  >
+                                    {LABEL_CLAIM_UNITS.map(u => (
+                                      <option key={u} value={u}>{u}</option>
+                                    ))}
+                                    {!(LABEL_CLAIM_UNITS as readonly string[]).includes(claimUnit) && claimUnit ? (
+                                      <option value={claimUnit}>{claimUnit}</option>
+                                    ) : null}
+                                  </select>
+                                </div>
+                                <p className="text-[10px] text-brand-900/70 mt-1">
+                                  Fill in if the client left claim blank — used on the COA Net Content specification.
                                 </p>
                               </div>
                               <input

@@ -1548,16 +1548,23 @@ export default function Lab() {
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="sm:col-span-2">
-                  <label className="label">Label claim</label>
+                  <label className="label">
+                    Label claim
+                    {!form.labeledContent.trim() && (
+                      <span className="ml-2 text-[11px] font-semibold uppercase tracking-wide text-amber-700">
+                        Not on order — enter for COA
+                      </span>
+                    )}
+                  </label>
                   <input
-                    className="input-field"
+                    className={`input-field ${!form.labeledContent.trim() ? 'border-amber-300 bg-amber-50/40' : ''}`}
                     value={form.labeledContent}
                     onChange={e => update({ labeledContent: e.target.value })}
                     placeholder="e.g. 10"
                     inputMode="decimal"
                   />
                   <p className="text-[11px] text-neutral-500 mt-1">
-                    Client / vial claim amount. Prefills from the order when available.
+                    Client / vial claim amount. Prefills from the order when available — chemists can enter or correct it here.
                   </p>
                 </div>
                 <div>
