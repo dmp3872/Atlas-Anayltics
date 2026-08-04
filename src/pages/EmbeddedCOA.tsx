@@ -4,6 +4,7 @@ import { Link, useParams } from 'react-router-dom';
 import AtlasDigitalCoaCard from '../components/order/AtlasDigitalCoaCard';
 import { assayResultsFromPanels } from '../lib/coaDisplayPanels';
 import { createEmptySample, type TestMode, type WizardSample, isOtherResearchMaterial } from '../lib/orderCatalog';
+import { hydrateMultiVialPanelResults } from '../lib/labCoaForm';
 import { supabase } from '../lib/supabase';
 import type { COA, PanelResult } from '../lib/types';
 
@@ -162,10 +163,16 @@ export default function EmbeddedCOA() {
     : 'pending';
   const assayResults = useMemo(() => {
     if (!coa || !sample) return null;
-    return assayResultsFromPanels(coa.panel_results, {
-      vialCount: Math.max(1, sample.conformity_extra + (sample.test_mode === 'atlas_pro' ? 3 : 1)),
-      quantityUnit: sample.label_claim_unit || 'mg',
-    });
+    const summary = (coa.result_summary && typeof coa.result_summary === 'object')
+      ? (coa.result_summary as Record<string, unknown>)
+      : null;
+    return assayResultsFromPanels(
+      hydrateMultiVialPanelResults(coa.panel_results, summary),
+      {
+        vialCount: Math.max(1, sample.conformity_extra + (sample.test_mode === 'atlas_pro' ? 3 : 1)),
+        quantityUnit: sample.label_claim_unit || 'mg',
+      },
+    );
   }, [coa, sample]);
 
   if (loading) {

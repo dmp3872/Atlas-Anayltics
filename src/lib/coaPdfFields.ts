@@ -1,7 +1,7 @@
 import { COA, PanelResult } from './types';
 import { formatDate } from './utils';
 import { readCoaPdfStats } from './coaImages';
-import { ENDOTOXIN_SPEC_EU_ML, STERILITY_METHOD_LABELS, formatCoaDecimal, parseAssayMethod, withAssayMethodSpec, ASSAY_METHOD_LABELS, assayMethodFromPanels } from './labCoaForm';
+import { ENDOTOXIN_SPEC_EU_ML, STERILITY_METHOD_LABELS, formatCoaDecimal, parseAssayMethod, withAssayMethodSpec, ASSAY_METHOD_LABELS, assayMethodFromPanels, hydrateMultiVialPanelResults } from './labCoaForm';
 import { collapseConformityPanels } from './coaDisplayPanels';
 import { labelClaimFromSummary, netContentSpecificationDisplay } from './orderCatalog';
 
@@ -103,7 +103,13 @@ function resolveEndotoxin(coa: COA, panels: PanelResult[]) {
 
 /** Map a COA row to AcroForm field names on the Certificate of Analysis template. */
 export function buildCoaPdfFieldValues(coa: COA): CoaPdfFieldValues {
-  const panels = collapseConformityPanels(Array.isArray(coa.panel_results) ? coa.panel_results : []);
+  const summary = (coa.result_summary ?? {}) as Record<string, unknown>;
+  const panels = collapseConformityPanels(
+    hydrateMultiVialPanelResults(
+      Array.isArray(coa.panel_results) ? coa.panel_results : [],
+      summary,
+    ),
+  );
   const identity = panelTriplet(panels, ['ident']);
   const netContent = panelTriplet(panels, ['net content', 'peptide content']);
   const purity = panelTriplet(panels, ['purity', 'hplc']);
@@ -111,7 +117,6 @@ export function buildCoaPdfFieldValues(coa: COA): CoaPdfFieldValues {
   const endotoxin = resolveEndotoxin(coa, panels);
   const stats = readCoaPdfStats(coa);
 
-  const summary = (coa.result_summary ?? {}) as Record<string, unknown>;
   const chrom = (coa.chromatogram_data ?? {}) as Record<string, unknown>;
 
   const received =
