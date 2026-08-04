@@ -14,13 +14,12 @@ function parseDate(createdAt: Date | string | number = new Date()): Date {
   return Number.isNaN(date.getTime()) ? new Date() : date;
 }
 
-function yearSuffix(createdAt: Date | string | number = new Date()): string {
-  return String(parseDate(createdAt).getFullYear()).slice(-2);
-}
-
-/** Two-digit month (01–12) for the intake / COA date. */
-function monthSuffix(createdAt: Date | string | number = new Date()): string {
-  return String(parseDate(createdAt).getMonth() + 1).padStart(2, '0');
+/** YYMM prefix — year + month glued (e.g. Aug 2026 → 2608). */
+function yearMonthPrefix(createdAt: Date | string | number = new Date()): string {
+  const d = parseDate(createdAt);
+  const yy = String(d.getFullYear()).slice(-2);
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  return `${yy}${mm}`;
 }
 
 function randomToken(length = RANDOM_LEN): string {
@@ -35,27 +34,31 @@ function randomToken(length = RANDOM_LEN): string {
 }
 
 /**
- * Current format: YY-MM-XXXXXX (e.g. 26-08-K7M4Q9 = Aug 2026).
+ * Current format: YYMM-XXXXXX (e.g. 2608-K7M4Q9 = Aug 2026).
  * Year and month come from intake / sample created date.
  */
 export function generateSampleCode(createdAt: Date | string | number = new Date()): string {
-  return `${yearSuffix(createdAt)}-${monthSuffix(createdAt)}-${randomToken(RANDOM_LEN)}`;
+  return `${yearMonthPrefix(createdAt)}-${randomToken(RANDOM_LEN)}`;
 }
 
 /** Human-readable example for placeholders / help text. */
 export function sampleCodeExample(createdAt: Date | string | number = new Date()): string {
-  return `${yearSuffix(createdAt)}-${monthSuffix(createdAt)}-K7M4Q9`;
+  return `${yearMonthPrefix(createdAt)}-K7M4Q9`;
 }
 
 /**
- * Accepts current YY-MM-XXXXXX and legacy YY-XXXXXX so older certificates stay valid.
+ * Accepts:
+ * - current YYMM-XXXXXX (2608-K7M4Q9)
+ * - brief YY-MM-XXXXXX (26-08-K7M4Q9) from the intermediate format
+ * - legacy YY-XXXXXX (26-K7M4Q9)
  */
 export function isValidSampleCode(code: string): boolean {
   const normalized = (code || '').trim().toUpperCase();
   const alpha = SAMPLE_CODE_ALPHABET;
-  const current = new RegExp(`^\\d{2}-\\d{2}-[${alpha}]{${RANDOM_LEN}}$`);
+  const current = new RegExp(`^\\d{4}-[${alpha}]{${RANDOM_LEN}}$`);
+  const dashedYm = new RegExp(`^\\d{2}-\\d{2}-[${alpha}]{${RANDOM_LEN}}$`);
   const legacy = new RegExp(`^\\d{2}-[${alpha}]{${RANDOM_LEN}}$`);
-  return current.test(normalized) || legacy.test(normalized);
+  return current.test(normalized) || dashedYm.test(normalized) || legacy.test(normalized);
 }
 
 async function codeIsTaken(code: string): Promise<boolean> {
@@ -85,5 +88,5 @@ export async function allocateUniqueSampleCode(
   throw new Error('Could not allocate a unique sample code. Try again.');
 }
 
-/** Alias — LIMS IDs use the same YY-MM-XXXXXX system as COA sample codes. */
+/** Alias — LIMS IDs use the same YYMM-XXXXXX system as COA sample codes. */
 export const allocateUniqueAccessionNumber = allocateUniqueSampleCode;
