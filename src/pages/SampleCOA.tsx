@@ -88,7 +88,7 @@ export default function SampleCOA() {
 
   const infoFields = [
     { label: 'Client', value: profile?.company_name || '—' },
-    { label: 'Sample Code', value: sample.id.slice(0, 12).toUpperCase() },
+    { label: 'LIMS ID', value: sample.id.slice(0, 12).toUpperCase() },
     { label: 'Sample Name', value: sample.display_name || sample.sample_name },
     { label: 'Batch Number', value: meta?.batch_number || '—' },
     { label: 'Order', value: order?.order_number || '—' },

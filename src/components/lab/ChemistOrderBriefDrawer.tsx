@@ -233,7 +233,7 @@ export default function ChemistOrderBriefDrawer({ orderId, onClose, onOrderUpdat
                           {sample.display_name || sample.sample_name}
                         </span>
                         {sample.accession_number ? (
-                          <span className="font-mono text-neutral-500"> · Acc {sample.accession_number}</span>
+                          <span className="font-mono text-neutral-500"> · LIMS {sample.accession_number}</span>
                         ) : null}
                         <span className="text-neutral-500">
                           {' · '}{SAMPLE_STATUS_LABELS[sample.status]}

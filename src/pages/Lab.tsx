@@ -973,7 +973,7 @@ export default function Lab() {
       const assayAverages = computeLabAssayAverages(labResults);
       const avgPurityNum = parsePurityPercent(assayAverages.avg_purity);
       const storedPurity = avgPurityNum ?? purityNum;
-      // Chemist-assigned accession wins; fall back to sample accession or allocate YY-XXXXXX.
+      // Chemist-assigned accession wins; fall back to sample accession or allocate YY-MM-XXXXXX.
       const sampleCreatedAt =
         (intakeSample && 'created_at' in intakeSample && typeof intakeSample.created_at === 'string'
           ? intakeSample.created_at
@@ -992,7 +992,7 @@ export default function Lab() {
       if (typedAccession && !isValidSampleCode(typedAccession)) {
         setMsg({
           type: 'error',
-          text: 'Accession must look like YY-XXXXXX (e.g. 26-K7M4Q9). Use Generate or leave blank to auto-assign.',
+          text: 'LIMS ID must look like YY-MM-XXXXXX (e.g. 26-08-K7M4Q9). Use Generate or leave blank to auto-assign.',
         });
         setSaving(false);
         return;
@@ -1365,7 +1365,7 @@ export default function Lab() {
               <p className="text-xs text-neutral-500 bg-neutral-50 border border-atlas-border rounded-md px-3 py-2">
                 {editingCoaId ? (
                   <>
-                    Restarting an existing COA — edits update the same certificate (accession stays the same), then return it to <strong>Issued</strong> for review.
+                    Restarting an existing COA — edits update the same certificate (LIMS ID stays the same), then return it to <strong>Issued</strong> for review.
                   </>
                 ) : (
                   <>
@@ -1561,13 +1561,13 @@ export default function Lab() {
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="label">Sample Code / Accession</label>
+                  <label className="label">LIMS ID</label>
                   <div className="flex gap-2">
                     <input
                       className="input-field font-mono flex-1"
                       value={form.accessionNumber}
                       onChange={e => update({ accessionNumber: e.target.value.toUpperCase() })}
-                      placeholder="YY-XXXXXX"
+                      placeholder="YY-MM-XXXXXX"
                       autoComplete="off"
                     />
                     <button
@@ -1582,7 +1582,7 @@ export default function Lab() {
                     </button>
                   </div>
                   <p className="text-[11px] text-neutral-500 mt-1">
-                    Assign here if not set at Receiving. Becomes the COA sample code.
+                    Assign here if not set at Receiving. This is the LIMS ID on the certificate.
                   </p>
                 </div>
                 <div>

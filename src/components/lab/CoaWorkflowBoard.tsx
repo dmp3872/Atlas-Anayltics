@@ -56,9 +56,9 @@ function ResultBadge({ result }: { result?: COA['overall_result'] }) {
 }
 
 function accessionForCoa(coa: COA): { label: string; value: string } | null {
-  if (coa.accession_number?.trim()) return { label: 'Accession', value: coa.accession_number.trim() };
+  if (coa.accession_number?.trim()) return { label: 'LIMS ID', value: coa.accession_number.trim() };
   if (coa.seal_serial?.trim()) return { label: 'Seal', value: coa.seal_serial.trim() };
-  if (coa.signature?.trim()) return { label: 'Accession', value: coa.signature.trim() };
+  if (coa.signature?.trim()) return { label: 'LIMS ID', value: coa.signature.trim() };
   return null;
 }
 

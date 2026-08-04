@@ -190,7 +190,7 @@ export default function ReceivingDesk({ orders, samples, clients, onChanged }: P
       setMsg({
         type: 'success',
         text: code
-          ? `Received ${sample.display_name || sample.sample_name} as ${code} (by ${receivedBy}) — ETA ${etaYmd}. Now in testing queue.`
+          ? `Received ${sample.display_name || sample.sample_name} · LIMS ID ${code} (by ${receivedBy}) — ETA ${etaYmd}. Now in testing queue.`
           : `Received ${sample.display_name || sample.sample_name} (by ${receivedBy}) — ETA ${etaYmd}. Now in testing queue.`,
       });
       onChanged();
@@ -212,7 +212,7 @@ export default function ReceivingDesk({ orders, samples, clients, onChanged }: P
           <Package size={20} className="text-brand-500" /> Receiving desk
         </h2>
         <p className="text-sm text-neutral-500 mt-1">
-          Confirm payment, then receive samples when the package arrives. Accession # is assigned automatically.
+          Confirm payment, then receive samples when the package arrives. LIMS ID is assigned automatically.
           Multi-sample orders start collapsed — expand to receive each sample.
         </p>
       </div>
@@ -392,7 +392,7 @@ export default function ReceivingDesk({ orders, samples, clients, onChanged }: P
                                 <Fingerprint size={12} /> Receive into lab
                               </p>
                               <p className="text-[11px] text-brand-900/80">
-                                Accession # will be auto-generated (e.g. 26-K7M4Q9) and used as the COA sample code.
+                                LIMS ID will be auto-generated (e.g. 26-08-K7M4Q9) and used on the COA.
                                 {lot ? <> Confirm package lot matches <strong className="font-mono">{lot}</strong>.</> : null}
                               </p>
                               <div>
