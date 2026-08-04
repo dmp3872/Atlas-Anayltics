@@ -582,7 +582,10 @@ export default function Lab() {
   ]);
 
   const issueAssayResults = useMemo((): DigitalCoaAssayResults | null => {
-    const panels = labResultsToPanelResults(labResults);
+    const panels = labResultsToPanelResults(labResults, {
+      labeledContent: form.labeledContent || linkedMeta?.labeled_content || '',
+      labelClaimUnit: form.labelClaimUnit || linkedMeta?.label_claim_unit || 'mg',
+    });
     const fromPanels = assayResultsFromPanels(panels, {
       quantityUnit: form.labelClaimUnit || linkedMeta?.label_claim_unit || 'mg',
     });
@@ -927,7 +930,10 @@ export default function Lab() {
     setMsg(null);
 
     try {
-      const cleanPanels = labResultsToPanelResults(labResults);
+      const cleanPanels = labResultsToPanelResults(labResults, {
+        labeledContent: form.labeledContent.trim() || linkedMeta?.labeled_content || '',
+        labelClaimUnit: form.labelClaimUnit.trim() || linkedMeta?.label_claim_unit || 'mg',
+      });
 
       const purityNum = parsePurityPercent(labResults.netPurity);
       const includeMw = labResults.includeMolecularWeight && !!labResults.molecularWeight.trim();

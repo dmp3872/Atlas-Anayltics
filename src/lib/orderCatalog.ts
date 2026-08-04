@@ -455,6 +455,29 @@ export function formatLabelClaim(content: string, unit: string): string {
   return endsWithUnit ? value : `${value} ${u}`;
 }
 
+/** Label claim amount from a COA result_summary snapshot (or empty). */
+export function labelClaimFromSummary(summary: Record<string, unknown> | null | undefined): string {
+  if (!summary || typeof summary !== 'object') return '';
+  const content = typeof summary.labeled_content === 'string' ? summary.labeled_content.trim() : '';
+  const unit = typeof summary.label_claim_unit === 'string' ? summary.label_claim_unit.trim() : 'mg';
+  return formatLabelClaim(content, unit || 'mg');
+}
+
+/**
+ * Net Content specification cell — prefer explicit claim amount over bare "Label claim".
+ */
+export function netContentSpecificationDisplay(
+  specification: string | undefined | null,
+  labelClaim: string,
+): string {
+  const spec = (specification || '').trim();
+  const claim = labelClaim.trim();
+  if (claim && (!spec || /^label claim$/i.test(spec))) {
+    return `Label claim: ${claim}`;
+  }
+  return spec;
+}
+
 export function normalizeWizardSample(sample: Partial<WizardSample> & Pick<WizardSample, 'id'>): WizardSample {
   const base = createEmptySample({ id: sample.id });
   const merged = { ...base, ...sample };

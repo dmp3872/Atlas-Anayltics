@@ -13,6 +13,7 @@ import { matrixTypeFromSampleMetadata } from '../lib/coaPanels';
 import { partitionCoaPanels, panelStatusLabel, panelStatusToneClass, resolvePanelPass, formatCoaResultDisplay } from '../lib/coaDisplayPanels';
 import { COA_DETAIL_COLUMNS, fetchCoaImageRow } from '../lib/coaSelect';
 import { casForSampleName, formatCoaDecimal } from '../lib/labCoaForm';
+import { labelClaimFromSummary, netContentSpecificationDisplay } from '../lib/orderCatalog';
 import { compressImageDataUrl } from '../lib/imageCompress';
 import { coaDigitalPdfFilename, downloadCoaPdfFromElement } from '../lib/coaPdf';
 import { coaHasDirectorSignature, coaSignatureProgress, coaWorkflowStage } from '../lib/coaWorkflow';
@@ -382,6 +383,7 @@ export default function COADetail() {
   const casNumber = /^\d+-\d+-\d+$/.test(casRaw)
     ? casRaw
     : (casForSampleName(coa.sample_name) || casForSampleName(coa.display_name || '') || casRaw || '—');
+  const labelClaim = labelClaimFromSummary(summary) || '—';
 
   const clientWebsite =
     (typeof summary.client_website === 'string' && summary.client_website.trim())
@@ -405,11 +407,14 @@ export default function COADetail() {
       { label: 'Lot Code', value: coa.batch_number || '—' },
     ],
     [
+      { label: 'Label Claim', value: labelClaim },
       { label: 'CAS Number', value: casNumber },
-      { label: 'Vials Tested', value: vialsTested },
     ],
     [
+      { label: 'Vials Tested', value: vialsTested },
       { label: 'Received Date', value: received },
+    ],
+    [
       { label: 'Published Date', value: published },
     ],
   ];
@@ -585,13 +590,17 @@ export default function COADetail() {
               </thead>
               <tbody>
                 {mainPanels.map((r, i) => {
-                  const isNetContent = /net content|peptide content/i.test(r.panel_name);
+                  const isNetContent = /net content|peptide content/i.test(r.panel_name)
+                    && !/^blend content\b/i.test(r.panel_name);
                   const pass = resolvePanelPass(r);
                   const status = panelStatusLabel(pass);
+                  const specification = isNetContent
+                    ? (netContentSpecificationDisplay(r.specification, labelClaim === '—' ? '' : labelClaim) || '—')
+                    : (r.specification || '—');
                   return (
                     <tr key={`main-${i}`} className={i % 2 === 0 ? 'bg-white' : 'bg-neutral-50'}>
                       <td className="px-3 py-1 font-medium border-t border-atlas-border">{r.panel_name}</td>
-                      <td className="px-3 py-1 text-neutral-600 border-t border-atlas-border">{r.specification || '—'}</td>
+                      <td className="px-3 py-1 text-neutral-600 border-t border-atlas-border">{specification}</td>
                       <td className="px-3 py-1 font-medium border-t border-atlas-border">
                         {formatCoaResultDisplay(r.result || (pass === null ? 'Pending' : '—'))}
                         {r.unit && r.result ? ` ${r.unit}` : ''}
