@@ -270,6 +270,20 @@
     flex: 1 1 auto !important;
   }
 
+  /* Keep static RT axis + peak labels crisp in print / PDF capture */
+  .coa-chrom-rt-label {
+    fill: #111 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .coa-chrom-rt-peak rect,
+  .coa-chrom-rt-peak circle,
+  .coa-chrom-rt-peak line {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
   .coa-print-table td,
   .coa-print-table th {
     padding-top: 0.14rem !important;

@@ -18,6 +18,41 @@ function generateDemoPoints() {
   return pts;
 }
 
+/** Local maxima for static RT annotations on print/PDF (not hover-only). */
+function findLabeledPeaks(
+  points: { x: number; y: number }[],
+  minY: number,
+  spanY: number,
+): { x: number; y: number }[] {
+  if (points.length < 3) return points.slice(0, 1);
+  const minRel = 0.12;
+  const minSep = Math.max(0.45, (points[points.length - 1].x - points[0].x) * 0.04);
+  const candidates: { x: number; y: number }[] = [];
+  for (let i = 1; i < points.length - 1; i += 1) {
+    const prev = points[i - 1];
+    const cur = points[i];
+    const next = points[i + 1];
+    if (cur.y < prev.y || cur.y < next.y) continue;
+    if ((cur.y - minY) / spanY < minRel) continue;
+    const last = candidates[candidates.length - 1];
+    if (last && Math.abs(cur.x - last.x) < minSep) {
+      if (cur.y > last.y) candidates[candidates.length - 1] = cur;
+      continue;
+    }
+    candidates.push(cur);
+  }
+  if (candidates.length === 0) {
+    const main = points.reduce((a, b) => (b.y > a.y ? b : a), points[0]);
+    return [main];
+  }
+  // Cap labels so dense traces stay readable in PDF.
+  return candidates
+    .slice()
+    .sort((a, b) => b.y - a.y)
+    .slice(0, 6)
+    .sort((a, b) => a.x - b.x);
+}
+
 function WatermarkLayer({ logoWatermark }: { logoWatermark?: string }) {
   if (logoWatermark) {
     return (
@@ -56,11 +91,11 @@ export default function InteractiveChromatogram({
   }, [data?.points]);
 
   const width = 720;
-  const height = 210;
-  const padL = 22;
-  const padR = 10;
-  const padB = 32;
-  const padT = 8;
+  const height = 230;
+  const padL = 28;
+  const padR = 12;
+  const padB = 40;
+  const padT = 22;
   const innerW = width - padL - padR;
   const innerH = height - padB - padT;
 
@@ -87,6 +122,11 @@ export default function InteractiveChromatogram({
 
   // Label every minute on typical HPLC runs; thin labels only on very long traces.
   const labelEvery = spanX > 45 ? 5 : spanX > 30 ? 2 : 1;
+
+  const labeledPeaks = useMemo(
+    () => findLabeledPeaks(points, minY, spanY),
+    [points, minY, spanY],
+  );
 
   const projectX = (x: number) => padL + ((x - minX) / spanX) * innerW;
   const projectY = (y: number) => padT + (1 - (y - minY) / spanY) * innerH;
@@ -181,7 +221,7 @@ export default function InteractiveChromatogram({
         ))}
         <line x1={padL} y1={padT} x2={padL} y2={height - padB} stroke="#999" strokeWidth="1" />
         <line x1={padL} y1={height - padB} x2={width - padR} y2={height - padB} stroke="#999" strokeWidth="1" />
-        {/* Vertical minute grid + tick marks for PDF print readability */}
+        {/* Vertical minute grid + static RT axis numbers (survive PDF rasterization) */}
         {minuteTicks.map(m => {
           const x = projectX(m);
           const showLabel = m % labelEvery === 0;
@@ -192,25 +232,27 @@ export default function InteractiveChromatogram({
                 y1={padT}
                 x2={x}
                 y2={height - padB}
-                stroke="#F0F0F0"
+                stroke="#ECECEC"
                 strokeWidth="1"
               />
               <line
                 x1={x}
                 y1={height - padB}
                 x2={x}
-                y2={height - padB + (showLabel ? 5 : 3)}
-                stroke="#666"
-                strokeWidth="1"
+                y2={height - padB + (showLabel ? 6 : 3)}
+                stroke="#555"
+                strokeWidth="1.25"
               />
               {showLabel && (
                 <text
                   x={x}
-                  y={height - 8}
-                  fill="#444"
-                  fontSize="8"
+                  y={height - 14}
+                  fill="#222"
+                  fontSize="10"
+                  fontWeight="600"
                   fontFamily="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
                   textAnchor="middle"
+                  className="coa-chrom-rt-label"
                 >
                   {m}
                 </text>
@@ -220,24 +262,67 @@ export default function InteractiveChromatogram({
         })}
         <text
           x={(padL + width - padR) / 2}
-          y={height - 1}
-          fill="#888"
-          fontSize="7"
+          y={height - 3}
+          fill="#666"
+          fontSize="8"
+          fontWeight="600"
           textAnchor="middle"
+          className="coa-chrom-rt-label"
         >
           Retention time (min)
         </text>
         <path d={pathD} stroke={GOLD} strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-        {mainPeak && (
-          <circle
-            cx={projectX(mainPeak.x)}
-            cy={projectY(mainPeak.y)}
-            r="4"
-            fill={GOLD}
-            stroke="#fff"
-            strokeWidth="1.5"
-          />
-        )}
+        {/* Static peak RT callouts — visible on screen and in downloaded PDF */}
+        {labeledPeaks.map(peak => {
+          const cx = projectX(peak.x);
+          const cy = projectY(peak.y);
+          const label = peak.x.toFixed(2);
+          const labelY = Math.max(padT + 2, cy - 10);
+          return (
+            <g key={`rt-${peak.x.toFixed(3)}-${peak.y.toFixed(4)}`} className="coa-chrom-rt-peak">
+              <line
+                x1={cx}
+                y1={cy - 5}
+                x2={cx}
+                y2={labelY + 2}
+                stroke={GOLD}
+                strokeWidth="1"
+                opacity="0.55"
+              />
+              <circle
+                cx={cx}
+                cy={cy}
+                r="3.5"
+                fill={GOLD}
+                stroke="#fff"
+                strokeWidth="1.25"
+              />
+              <rect
+                x={cx - 18}
+                y={labelY - 10}
+                width="36"
+                height="12"
+                rx="2"
+                fill="#fff"
+                stroke={GOLD}
+                strokeWidth="1"
+                opacity="0.95"
+              />
+              <text
+                x={cx}
+                y={labelY - 1}
+                fill="#1a1a1a"
+                fontSize="9"
+                fontWeight="700"
+                fontFamily="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
+                textAnchor="middle"
+                className="coa-chrom-rt-label"
+              >
+                {label}
+              </text>
+            </g>
+          );
+        })}
         {hover && (
           <>
             <line x1={hover.x} y1={padT} x2={hover.x} y2={height - padB} stroke={GOLD} strokeWidth="1" strokeDasharray="4 3" opacity="0.6" />
