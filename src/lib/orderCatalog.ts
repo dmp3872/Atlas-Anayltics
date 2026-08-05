@@ -511,11 +511,61 @@ export function normalizeWizardSample(sample: Partial<WizardSample> & Pick<Wizar
 }
 
 export function sampleIncludesFentanyl(sample: WizardSample): boolean {
-  if (sample.test_mode === 'atlas_pro') return sample.include_fentanyl;
+  if (sample.test_mode === 'atlas_pro') return !!sample.include_fentanyl;
   return (
-    sample.primary_test_id === FENTANYL_TEST_ID ||
-    sample.individual_tests.includes(FENTANYL_TEST_ID)
+    !!sample.include_fentanyl
+    || sample.primary_test_id === FENTANYL_TEST_ID
+    || sample.individual_tests.includes(FENTANYL_TEST_ID)
   );
+}
+
+/**
+ * Rebuild a wizard sample from persisted order_samples.metadata so digital COA cards
+ * show every ordered assay (sterility, fentanyl, etc.), not just the HPLC trio.
+ */
+export function wizardSampleFromOrderSample(input: {
+  sample_name?: string | null;
+  display_name?: string | null;
+  sample_type?: string | null;
+  metadata?: unknown;
+}, overrides?: Partial<WizardSample>): WizardSample {
+  const meta = (input.metadata && typeof input.metadata === 'object' && !Array.isArray(input.metadata))
+    ? (input.metadata as Record<string, unknown>)
+    : {};
+  const modeValue = meta.test_mode;
+  const mode: TestMode =
+    modeValue === 'atlas_pro' || modeValue === 'full_qc' ? modeValue : 'individual';
+  const individualTests = Array.isArray(meta.individual_tests)
+    ? meta.individual_tests.filter((value): value is string => typeof value === 'string')
+    : [];
+  if (mode === 'individual' && individualTests.length === 0) {
+    individualTests.push('identity_purity_quantity');
+  }
+  const primary =
+    (typeof meta.primary_test_id === 'string' && meta.primary_test_id.trim())
+    || (mode === 'individual' ? 'identity_purity_quantity' : mode);
+  const includeFentanyl = meta.include_fentanyl === true
+    || individualTests.includes(FENTANYL_TEST_ID)
+    || primary === FENTANYL_TEST_ID;
+
+  return createEmptySample({
+    sample_name: (input.sample_name || '').trim(),
+    display_name: (input.display_name || input.sample_name || '').trim(),
+    batch_number: typeof meta.batch_number === 'string' ? meta.batch_number : '',
+    labeled_content: typeof meta.labeled_content === 'string' ? meta.labeled_content : '',
+    label_claim_unit: typeof meta.label_claim_unit === 'string' && meta.label_claim_unit.trim()
+      ? meta.label_claim_unit
+      : 'mg',
+    primary_test_id: primary,
+    test_mode: mode,
+    individual_tests: individualTests.filter(id => id !== primary),
+    conformity_extra: Number(meta.conformity_extra) || 0,
+    include_fentanyl: includeFentanyl,
+    sample_type: (input.sample_type as WizardSample['sample_type'] | undefined) || undefined,
+    category: (typeof meta.category === 'string' ? meta.category : undefined) as WizardSample['category'] | undefined,
+    sample_matrix: (typeof meta.sample_matrix === 'string' ? meta.sample_matrix : undefined) as WizardSample['sample_matrix'] | undefined,
+    ...overrides,
+  });
 }
 
 export function sampleTestCount(sample: WizardSample): number {

@@ -358,8 +358,20 @@
 }
 
 .coa-png-export .coa-print-chromatogram {
+  overflow: visible !important;
   min-height: 10.5rem !important;
   height: 100% !important;
+}
+
+.coa-png-export .coa-hcg-chrom-note,
+.coa-print-root .coa-hcg-chrom-note {
+  font-size: 7.5px !important;
+  line-height: 1.25 !important;
+  margin-bottom: 0.2rem !important;
+  padding: 0.25rem 0.4rem !important;
+  overflow: visible !important;
+  white-space: normal !important;
+  page-break-inside: avoid;
 }
 
 .coa-png-export .coa-chrom-photo img {
