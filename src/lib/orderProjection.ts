@@ -265,7 +265,18 @@ export function orderedAssayIds(sample: WizardSample | { metadata?: unknown; tes
     return selectedServiceIds(sample as WizardSample);
   }
 
-  const ids = Array.isArray(meta.individual_tests) ? (meta.individual_tests as string[]) : [];
+  const ids = Array.isArray(meta.individual_tests)
+    ? (meta.individual_tests as unknown[]).filter((v): v is string => typeof v === 'string')
+    : [];
+  const primary = typeof meta.primary_test_id === 'string' ? meta.primary_test_id.trim() : '';
+  if (
+    primary
+    && primary !== 'atlas_pro'
+    && primary !== 'full_qc'
+    && !ids.includes(primary)
+  ) {
+    return [primary, ...ids];
+  }
   return ids;
 }
 

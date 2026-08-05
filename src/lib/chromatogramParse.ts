@@ -12,20 +12,26 @@ export interface ParsedChromatogram {
 
 const MAX_STORED_POINTS = 2500;
 
-const TIME_HEADER = /^(rt|retention[_\s-]?time|time|t|min|minutes|x)$/i;
-const INTENSITY_HEADER = /^(y|intensity|intensit(y|ies)|absorbance|abs|mau|au|signal|response|height|detector|uv|ric)$/i;
-
 function parseNumber(raw: string): number | null {
-  const cleaned = raw.trim().replace(/^\uFEFF/, '').replace(/,/g, '');
-  if (!cleaned || cleaned === '-' || cleaned === '--') return null;
-  const n = Number(cleaned);
+  let s = raw.trim().replace(/^\uFEFF/, '').replace(/["']/g, '');
+  if (!s || s === '-' || s === '--' || /^n\/?a$/i.test(s)) return null;
+  // Scientific notation stays as-is; European decimals: 1,23 or 1.234,56
+  if (/^\d{1,3}(\.\d{3})+,\d+$/.test(s) || (/^\d+,\d+$/.test(s) && !s.includes('.'))) {
+    s = s.replace(/\./g, '').replace(',', '.');
+  } else {
+    // Strip thousands separators: 1,234.56
+    if (/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(s)) s = s.replace(/,/g, '');
+  }
+  const n = Number(s);
   return Number.isFinite(n) ? n : null;
 }
 
 /** Split a line on commas / tabs / semicolons / multi-spaces while keeping quoted cells. */
 function splitRow(line: string): string[] {
   if (line.includes('\t')) return line.split('\t').map(c => c.trim());
-  if (line.includes(';') && !line.includes(',')) return line.split(';').map(c => c.trim());
+  if (line.includes(';') && (line.match(/;/g) || []).length >= (line.match(/,/g) || []).length) {
+    return line.split(';').map(c => c.trim());
+  }
   const cells: string[] = [];
   let cur = '';
   let inQuotes = false;
@@ -47,24 +53,37 @@ function splitRow(line: string): string[] {
   return line.trim().split(/\s+/).filter(Boolean);
 }
 
+function isTimeHeader(cell: string): boolean {
+  return /retention|\btime\b|\brt\b|\bmin\b|\bx\b/i.test(cell);
+}
+
+function isIntensityHeader(cell: string): boolean {
+  return /intens|absorb|\bmau\b|\bau\b|signal|response|height|detector|\buv\b|\bric\b|\by\b/i.test(cell);
+}
+
 function looksLikeHeader(cells: string[]): boolean {
-  const joined = cells.join(' ').toLowerCase();
-  return TIME_HEADER.test(cells[0] || '')
-    || INTENSITY_HEADER.test(cells[1] || '')
-    || /retention|time|intensity|absorb|mau|signal/.test(joined);
+  const joined = cells.join(' ');
+  return isTimeHeader(joined) || isIntensityHeader(joined);
 }
 
 function pickColumns(header: string[]): { x: number; y: number } | null {
   let x = -1;
   let y = -1;
   header.forEach((cell, i) => {
-    const t = cell.trim();
-    if (x < 0 && TIME_HEADER.test(t)) x = i;
-    if (y < 0 && INTENSITY_HEADER.test(t)) y = i;
+    if (x < 0 && isTimeHeader(cell)) x = i;
+    if (y < 0 && isIntensityHeader(cell)) y = i;
   });
   if (x >= 0 && y >= 0 && x !== y) return { x, y };
   if (header.length >= 2) return { x: 0, y: 1 };
   return null;
+}
+
+function rowAsPoint(cells: string[], col: { x: number; y: number }): ChromatogramPoint | null {
+  if (cells.length <= Math.max(col.x, col.y)) return null;
+  const x = parseNumber(cells[col.x] || '');
+  const y = parseNumber(cells[col.y] || '');
+  if (x == null || y == null) return null;
+  return { x, y };
 }
 
 /** Evenly downsample dense HPLC traces for SVG rendering / JSON size. */
@@ -94,7 +113,8 @@ export function downsampleChromatogramPoints(
 
 /**
  * Parse HPLC export text (CSV / TSV / whitespace) into chromatogram points.
- * Accepts common OpenLab / Chromeleon-style two-column time vs intensity dumps.
+ * Accepts common OpenLab / Chromeleon / Empower-style time vs intensity dumps,
+ * including preamble metadata lines and headers like "Time [min]".
  */
 export function parseChromatogramText(text: string, filename?: string): ParsedChromatogram {
   const lines = text
@@ -109,29 +129,46 @@ export function parseChromatogramText(text: string, filename?: string): ParsedCh
 
   let col = { x: 0, y: 1 };
   let start = 0;
-  const firstCells = splitRow(lines[0]);
-  if (looksLikeHeader(firstCells)) {
-    const picked = pickColumns(firstCells);
-    if (!picked) throw new Error('Could not find time and intensity columns in the header.');
-    col = picked;
-    start = 1;
+
+  // Find the first plausible header or numeric data block (skip instrument preamble).
+  for (let i = 0; i < Math.min(lines.length, 80); i += 1) {
+    const cells = splitRow(lines[i]);
+    if (cells.length < 2) continue;
+    if (looksLikeHeader(cells) && Number.isNaN(Number(cells[0].replace(/,/g, '')))) {
+      const picked = pickColumns(cells);
+      if (picked) {
+        col = picked;
+        start = i + 1;
+        break;
+      }
+    }
+    const probe = rowAsPoint(cells, col);
+    if (probe) {
+      // Confirm a short run of numeric pairs so we didn't catch a lone metadata number.
+      let ok = 0;
+      for (let j = i; j < Math.min(lines.length, i + 8); j += 1) {
+        if (rowAsPoint(splitRow(lines[j]), col)) ok += 1;
+      }
+      if (ok >= 3) {
+        start = i;
+        break;
+      }
+    }
   }
 
   const raw: ChromatogramPoint[] = [];
   for (let i = start; i < lines.length; i += 1) {
-    const cells = splitRow(lines[i]);
-    if (cells.length <= Math.max(col.x, col.y)) continue;
-    const x = parseNumber(cells[col.x] || '');
-    const y = parseNumber(cells[col.y] || '');
-    if (x == null || y == null) continue;
-    raw.push({ x, y });
+    const point = rowAsPoint(splitRow(lines[i]), col);
+    if (!point) continue;
+    raw.push(point);
   }
 
   if (raw.length < 2) {
-    throw new Error('Could not read enough numeric time/intensity pairs from this file.');
+    throw new Error(
+      'Could not read enough numeric time/intensity pairs. Export CSV/TSV with retention time and intensity columns.',
+    );
   }
 
-  // Sort by time and drop non-monotonic duplicates that confuse the SVG path.
   raw.sort((a, b) => a.x - b.x);
   const deduped: ChromatogramPoint[] = [];
   for (const p of raw) {
