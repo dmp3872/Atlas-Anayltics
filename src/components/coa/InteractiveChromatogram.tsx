@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { AtlasWatermark } from '../brand/AtlasLogo';
 import { COA_CHROMATOGRAM_ZOOM } from '../../lib/coaImages';
+import { hasMeasuredChromatogram } from '../../lib/chromatogramParse';
 import { COA } from '../../lib/types';
 
 const GOLD = '#C5A059';
@@ -46,6 +47,7 @@ export default function InteractiveChromatogram({
   logoWatermark?: string;
 }) {
   const photo = (chromatographPhoto || '').trim();
+  const measured = hasMeasuredChromatogram(data);
 
   const points = useMemo(() => {
     const raw = data?.points;
@@ -84,8 +86,9 @@ export default function InteractiveChromatogram({
 
   const mainPeak = points.reduce((a, b) => (b.y > a.y ? b : a), points[0]);
 
-  // Unique uploaded chromatograph takes priority over the interactive SVG demo.
-  if (photo) {
+  // Photo fills the certificate when we don't have measured HPLC points.
+  // Measured raw data always drives the interactive digital chromatogram.
+  if (photo && !measured) {
     return (
       <div className="coa-chrom-photo relative border border-atlas-border bg-white overflow-hidden flex flex-col h-full min-h-[9.5rem]">
         <div className="relative px-3 pt-1.5 pb-1 flex items-center justify-center shrink-0 z-[2] bg-white">
@@ -116,6 +119,11 @@ export default function InteractiveChromatogram({
         <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-700 text-center">
           HPLC Chromatogram Report
         </p>
+        {measured && (
+          <p className="absolute left-3 top-2 text-[8px] font-bold uppercase tracking-[0.14em] text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
+            Measured
+          </p>
+        )}
         {hover && (
           <p className="absolute right-3 top-2 text-[10px] font-mono text-brand-700 bg-brand-50 px-2 py-0.5 rounded border border-brand-200">
             RT {hover.rt.toFixed(2)} min · {((hover.intensity / maxY) * 100).toFixed(1)}% rel. intensity
@@ -155,13 +163,17 @@ export default function InteractiveChromatogram({
         <text x={padL + innerW} y={height - 6} fill="#666" fontSize="9" textAnchor="middle">
           {(points[points.length - 1]?.x ?? 20).toFixed(0)} min
         </text>
-        {data?.retention_time && (
+        {(data?.retention_time || (measured && mainPeak)) && (
           <text x={width / 2} y={height - 6} fill="#666" fontSize="9" textAnchor="middle">
-            Main RT: {data.retention_time} min
+            Main RT: {data?.retention_time ?? mainPeak.x} min
           </text>
         )}
       </svg>
-      <p className="text-[10px] text-neutral-400 px-3 pb-2 no-print shrink-0">Hover over the trace to inspect retention time and peak intensity.</p>
+      <p className="text-[10px] text-neutral-400 px-3 pb-2 no-print shrink-0">
+        {measured
+          ? 'Interactive trace from uploaded HPLC data — hover to inspect retention time and intensity.'
+          : 'Hover over the trace to inspect retention time and peak intensity.'}
+      </p>
     </div>
   );
 }

@@ -36,6 +36,11 @@ import ReceivingDesk from '../components/lab/ReceivingDesk';
 import MyBenchPanel from '../components/lab/MyBenchPanel';
 import StaffHeader from '../components/layout/StaffHeader';
 import LogoDropzone from '../components/account/LogoDropzone';
+import ChromatogramDataDropzone from '../components/lab/ChromatogramDataDropzone';
+import {
+  chromatogramDataFromParsed,
+  type ParsedChromatogram,
+} from '../lib/chromatogramParse';
 import {
   hydrateCoaImages,
   isMissingCoaImageColumnError,
@@ -152,6 +157,7 @@ export default function Lab() {
   const [labResults, setLabResults] = useState<LabCoaResults>({ ...EMPTY_LAB_RESULTS });
   const [vialImage, setVialImage] = useState('');
   const [chromatographImage, setChromatographImage] = useState('');
+  const [chromatogramParsed, setChromatogramParsed] = useState<ParsedChromatogram | null>(null);
   const [clientCompanies, setClientCompanies] = useState<Company[]>([]);
   const [selectedCompanyId, setSelectedCompanyId] = useState('');
   const [preferredBrandName, setPreferredBrandName] = useState('');
@@ -413,6 +419,9 @@ export default function Lab() {
     });
     setPreferredBrandName(brandHint);
     setLabResults(buildLabResultsFromSample(s.metadata, s.sample_name));
+    setVialImage('');
+    setChromatographImage('');
+    setChromatogramParsed(null);
     setCasSuggestions(cas ? lookupCas(cas) : []);
     setShowCasSuggestions(false);
     setMsg(null);
@@ -498,6 +507,22 @@ export default function Lab() {
     setLabResults(nextResults);
     setVialImage(coa.vial_image || '');
     setChromatographImage(coa.hplc_image || '');
+    {
+      const chrom = (coa.chromatogram_data && typeof coa.chromatogram_data === 'object')
+        ? coa.chromatogram_data
+        : null;
+      const pts = Array.isArray(chrom?.points) ? chrom.points : [];
+      if (pts.length >= 2) {
+        setChromatogramParsed({
+          points: pts,
+          retention_time: Number(chrom?.retention_time) || pts.reduce((a, b) => (b.y > a.y ? b : a), pts[0]).x,
+          source_filename: chrom?.source_filename || 'Saved chromatogram data',
+          original_count: Number(chrom?.point_count) || pts.length,
+        });
+      } else {
+        setChromatogramParsed(null);
+      }
+    }
     setCasSuggestions(cas ? lookupCas(cas) : []);
     setShowCasSuggestions(false);
     setMsg({
@@ -1073,6 +1098,16 @@ export default function Lab() {
         || ''
       ).trim();
 
+      const chromatogram_data = chromatogramParsed
+        ? chromatogramDataFromParsed(chromatogramParsed, {
+            vial_size: form.vialSize,
+            ...(resolvedSampleMatrix ? { sample_matrix: resolvedSampleMatrix } : {}),
+          })
+        : {
+            vial_size: form.vialSize,
+            ...(resolvedSampleMatrix ? { sample_matrix: resolvedSampleMatrix } : {}),
+          };
+
       const payload = {
         user_id: form.clientId,
         sample_id: form.sampleId || null,
@@ -1090,10 +1125,7 @@ export default function Lab() {
         purity_percent: storedPurity,
         molecular_weight: mwNum,
         panel_results: cleanPanels,
-        chromatogram_data: {
-          vial_size: form.vialSize,
-          ...(resolvedSampleMatrix ? { sample_matrix: resolvedSampleMatrix } : {}),
-        },
+        chromatogram_data,
         vial_image: vialForSave || '',
         chromatogram_image: watermarkImage,
         hplc_image: hplcImage || '',
@@ -1242,6 +1274,7 @@ export default function Lab() {
       setLabResults({ ...EMPTY_LAB_RESULTS });
       setVialImage('');
       setChromatographImage('');
+      setChromatogramParsed(null);
       setApplyHeaderLogo(true);
       setApplyWatermark(true);
       setCasSuggestions([]);
@@ -2317,6 +2350,17 @@ export default function Lab() {
                       No watermark on this profile — upload one on the client COA profile, or Atlas logo is used as fallback on the PDF.
                     </p>
                   )}
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="label mb-2 block">Raw chromatogram data</label>
+                  <p className="text-xs text-neutral-500 mb-2">
+                    Optional CSV/TSV from the HPLC (retention time + intensity). When attached, the digital COA plots this measured trace instead of the demo curve.
+                  </p>
+                  <ChromatogramDataDropzone
+                    parsed={chromatogramParsed}
+                    onParsed={setChromatogramParsed}
+                    onError={text => setMsg({ type: 'error', text })}
+                  />
                 </div>
               </div>
               <button type="submit" disabled={saving} className="btn-primary w-full gap-2">
