@@ -15,7 +15,12 @@ import {
   SterilityMethod,
   STERILITY_METHOD_LABELS,
   sterilitySpecLabel,
+  sterilityPanelName,
+  formatSterilityPendingResult,
+  parseSterilityProjectedCompletion,
   formatCoaDecimal,
+  resolveCasNumber,
+  looksLikeCasNumber,
 } from './labCoaForm';
 import { compressImageDataUrl } from './imageCompress';
 import { resolvePanelPass } from './coaDisplayPanels';
@@ -37,6 +42,8 @@ export interface CoaPdfStats {
   sterility_method: SterilityMethod;
   /** null = Pending. */
   sterility_pass: AssayPassState;
+  /** YYYY-MM-DD when 14-day culture is pending. */
+  sterility_projected_completion: string;
   endotoxin_eu_ml: string;
   /** null = Pending. */
   endotoxin_pass: AssayPassState;
@@ -69,7 +76,7 @@ export function readHeavyMetalsFromCoa(coa: COA): {
     if (!panel) continue;
     sawAny = true;
     const result = (panel.result || '').trim();
-    const pendingText = !result || /^pending$/i.test(result);
+    const pendingText = !result || /^pending\b/i.test(result);
     heavy_metals[metal] = pendingText ? '' : result;
     if (!pendingText) sawFilled = true;
     if (panel.pass === null || pendingText) {
@@ -121,7 +128,7 @@ function findPanel(panels: PanelResult[], ...keywords: string[]): PanelResult | 
 
 function parseSterilityMethod(raw: unknown, panel?: PanelResult): SterilityMethod {
   if (raw === 'pcr' || raw === 'culture_14_day') return raw;
-  const blob = `${panel?.specification ?? ''} ${panel?.result ?? ''}`.toLowerCase();
+  const blob = `${panel?.panel_name ?? ''} ${panel?.specification ?? ''} ${panel?.result ?? ''}`.toLowerCase();
   if (/14[- ]?day|culture|usp\s*<.?71/.test(blob)) return 'culture_14_day';
   return 'pcr';
 }
@@ -192,6 +199,13 @@ export function readCoaPdfStats(coa: COA): CoaPdfStats {
       : sterilityPanel
         ? resolvePanelPass(sterilityPanel)
         : null;
+  const sterility_projected_completion =
+    sterility_method === 'culture_14_day'
+      ? parseSterilityProjectedCompletion(
+        summary.sterility_projected_completion,
+        sterilityPanel?.result,
+      )
+      : '';
 
   const endotoxinFromSummary =
     typeof summary.endotoxin_eu_ml === 'string' ? summary.endotoxin_eu_ml : '';
@@ -217,6 +231,7 @@ export function readCoaPdfStats(coa: COA): CoaPdfStats {
     molecular_weight,
     sterility_method,
     sterility_pass,
+    sterility_projected_completion,
     endotoxin_eu_ml,
     endotoxin_pass,
     heavy_metals_pass: metals.heavy_metals_pass,
@@ -451,11 +466,17 @@ export type CoaPdfPrepPayload = {
   /** Chemist can set/correct label claim if missing from the order. */
   labeled_content?: string;
   label_claim_unit?: string;
+  /** When false, CAS Number is omitted from the digital certificate. */
+  include_cas_number?: boolean;
+  /** CAS registry number written to coa.peptide_sequence when included. */
+  cas_number?: string;
   fentanyl_detection: FentanylDetectionMark;
   include_molecular_weight: boolean;
   molecular_weight: string;
   sterility_method: SterilityMethod;
   sterility_pass: AssayPassState;
+  /** YYYY-MM-DD projected completion for pending 14-day culture. */
+  sterility_projected_completion?: string;
   endotoxin_eu_ml: string;
   endotoxin_pass: AssayPassState;
   heavy_metals_pass: AssayPassState;
@@ -500,21 +521,27 @@ export function applyPrepToCoaPanels(coa: COA, prep: CoaPdfPrepPayload): {
   panels = upsertNamedPanel(
     panels,
     name => name.includes('steril'),
-    prep.sterility_pass === null
-      ? {
-          panel_name: 'Sterility',
+    (() => {
+      const projected = prep.sterility_method === 'culture_14_day'
+        ? (prep.sterility_projected_completion || '').trim()
+        : '';
+      if (prep.sterility_pass === null) {
+        return {
+          panel_name: sterilityPanelName(prep.sterility_method),
           specification: 'Not Detected',
-          result: 'Pending',
+          result: formatSterilityPendingResult(projected),
           pass: null,
-        }
-      : {
-          panel_name: 'Sterility',
-          specification: 'Not Detected',
-          result: prep.sterility_pass
-            ? `Not Detected (${STERILITY_METHOD_LABELS[prep.sterility_method]})`
-            : `Detected (${STERILITY_METHOD_LABELS[prep.sterility_method]})`,
-          pass: prep.sterility_pass,
-        },
+        };
+      }
+      return {
+        panel_name: sterilityPanelName(prep.sterility_method),
+        specification: 'Not Detected',
+        result: prep.sterility_pass
+          ? `Not Detected (${STERILITY_METHOD_LABELS[prep.sterility_method]})`
+          : `Detected (${STERILITY_METHOD_LABELS[prep.sterility_method]})`,
+        pass: prep.sterility_pass,
+      };
+    })(),
   );
 
   panels = upsertNamedPanel(
@@ -628,17 +655,37 @@ export async function saveCoaPdfPrep(
     molecular_weight: prep.include_molecular_weight ? prep.molecular_weight.trim() : '',
     sterility_method: prep.sterility_method,
     sterility_pass: prep.sterility_pass,
-    endotoxin_eu_ml: prep.endotoxin_eu_ml.trim(),
-    endotoxin_pass: prep.endotoxin_pass,
     sterility_method_label: STERILITY_METHOD_LABELS[prep.sterility_method],
     sterility_specification: 'Not Detected',
+    sterility_projected_completion:
+      prep.sterility_method === 'culture_14_day' && prep.sterility_pass === null
+        ? (prep.sterility_projected_completion || '').trim()
+        : '',
+    endotoxin_eu_ml: prep.endotoxin_eu_ml.trim(),
+    endotoxin_pass: prep.endotoxin_pass,
     ...((prep.labeled_content || '').trim()
       ? {
           labeled_content: (prep.labeled_content || '').trim(),
           label_claim_unit: (prep.label_claim_unit || 'mg').trim() || 'mg',
         }
       : {}),
+    include_cas_number: prep.include_cas_number !== false,
   };
+
+  const includeCas = prep.include_cas_number !== false;
+  const resolvedCas = includeCas
+    ? (
+      looksLikeCasNumber(prep.cas_number || '')
+        ? (prep.cas_number || '').trim()
+        : resolveCasNumber(
+          prep.cas_number,
+          coa.sample_name,
+          coa.display_name,
+          coa.peptide_sequence,
+        )
+    )
+    : '';
+
   // Never embed base64 images in result_summary — that freezes COA pages (multi‑MB JSON).
   const summaryRecord = baseSummary as Record<string, unknown>;
   delete summaryRecord.vial_image;
@@ -655,6 +702,7 @@ export async function saveCoaPdfPrep(
     result_summary: baseSummary,
     panel_results,
     molecular_weight,
+    peptide_sequence: includeCas ? (resolvedCas || hydrated.peptide_sequence || '') : '',
   };
 
   const direct = {
@@ -665,6 +713,7 @@ export async function saveCoaPdfPrep(
     result_summary: baseSummary,
     panel_results,
     molecular_weight,
+    peptide_sequence: includeCas ? (resolvedCas || '') : '',
   };
 
   const { error } = await supabase.from('coas').update(direct).eq('id', coa.id);
@@ -722,6 +771,7 @@ export async function saveCoaPdfImages(
     molecular_weight: stats.molecular_weight,
     sterility_method: stats.sterility_method,
     sterility_pass: stats.sterility_pass,
+    sterility_projected_completion: stats.sterility_projected_completion,
     endotoxin_eu_ml: stats.endotoxin_eu_ml,
     endotoxin_pass: stats.endotoxin_pass,
     heavy_metals_pass: stats.heavy_metals_pass,

@@ -33,7 +33,7 @@ import PortalHome from '../components/portal/PortalHome';
 import OrderShippingChecklist from '../components/order/OrderShippingChecklist';
 import AtlasDigitalCoaCard from '../components/order/AtlasDigitalCoaCard';
 import OrderNotesThread from '../components/order/OrderNotesThread';
-import { assayResultsFromPanels, isHeavyMetalPanel, partitionCoaPanels, resolvePanelPass } from '../lib/coaDisplayPanels';
+import { assayResultsFromPanels, assayChipStatusesFromPanels, isHeavyMetalPanel, partitionCoaPanels, resolvePanelPass } from '../lib/coaDisplayPanels';
 import { createEmptySample, TestMode, type SampleCategory, type SampleMatrix } from '../lib/orderCatalog';
 import { trackingStageFromStatuses } from '../lib/orderProjection';
 import { queueNotification } from '../lib/notifications';
@@ -62,10 +62,11 @@ function panelPassStatus(panel: PanelResult, opts?: { metal?: boolean }): {
   pass: boolean | null;
   label: string;
 } {
-  const isNetContent = /net content|peptide content/i.test(panel.panel_name);
-  if (isNetContent) return { pass: true, label: 'Reported Value' };
   const resolved = resolvePanelPass(panel);
   if (resolved === null) return { pass: null, label: 'Pending' };
+  const isNetContent = /net content|peptide content/i.test(panel.panel_name)
+    && !/^blend content\b/i.test(panel.panel_name);
+  if (isNetContent) return { pass: true, label: 'Reported Value' };
   if (opts?.metal) {
     return { pass: resolved, label: resolved ? 'Pass' : 'Fail' };
   }
@@ -108,7 +109,7 @@ function sampleStillAnalyzing(sample: OrderSample, coa?: COA | null): boolean {
 
 function panelResultFilled(panel: PanelResult): boolean {
   const result = (panel.result || '').trim();
-  return !!result && !/^pending$/i.test(result);
+  return !!result && !/^pending\b/i.test(result);
 }
 
 /** Whether filled COA panels already cover an ordered catalog test name. */
@@ -1111,6 +1112,16 @@ export default function Portal() {
                                           {
                                             quantityUnit: meta?.label_claim_unit || 'mg',
                                           },
+                                        )
+                                        : null
+                                    }
+                                    assayStatuses={
+                                      coa
+                                        ? assayChipStatusesFromPanels(
+                                          hydrateMultiVialPanelResults(
+                                            coa.panel_results,
+                                            coa.result_summary as Record<string, unknown> | null,
+                                          ),
                                         )
                                         : null
                                     }

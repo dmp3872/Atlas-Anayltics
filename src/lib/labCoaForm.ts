@@ -77,6 +77,121 @@ export const STERILITY_METHOD_LABELS: Record<SterilityMethod, string> = {
   culture_14_day: '14-day culture',
 };
 
+/** Panel title with method in parentheses — same pattern as Identification (HPLC-UV/VIS). */
+export function sterilityPanelName(method: SterilityMethod): string {
+  return `Sterility (${STERILITY_METHOD_LABELS[method]})`;
+}
+
+/** Append sterility method to a specification cell (PDF AcroForm). */
+export function withSterilityMethodSpec(specification: string, method: SterilityMethod): string {
+  const label = STERILITY_METHOD_LABELS[method];
+  const base = (specification || '').trim();
+  if (!base) return label;
+  if (base.includes(label) || /\b(PCR|14-day culture)\b/i.test(base)) return base;
+  return `${base} · ${label}`;
+}
+
+/** YYYY-MM-DD local date, `days` after today (or after an optional start YYYY-MM-DD / ISO). */
+export function addDaysYmd(days: number, from?: string): string {
+  const base = new Date();
+  const m = (from || '').trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) {
+    base.setFullYear(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  }
+  base.setHours(12, 0, 0, 0);
+  base.setDate(base.getDate() + days);
+  const y = base.getFullYear();
+  const mo = String(base.getMonth() + 1).padStart(2, '0');
+  const d = String(base.getDate()).padStart(2, '0');
+  return `${y}-${mo}-${d}`;
+}
+
+/** Normalize an intake timestamp / date field to YYYY-MM-DD (local). */
+export function intakeYmdFromValue(raw?: string | null): string {
+  const value = (raw || '').trim();
+  if (!value) return '';
+  const iso = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${mo}-${day}`;
+}
+
+/** Sample intake date from a COA result_summary snapshot. */
+export function coaIntakeYmd(summary: Record<string, unknown> | null | undefined): string {
+  if (!summary || typeof summary !== 'object') return '';
+  return intakeYmdFromValue(
+    (typeof summary.received_at === 'string' && summary.received_at)
+    || (typeof summary.received_date === 'string' && summary.received_date)
+    || '',
+  );
+}
+
+/** Default projected completion = 14 days after sample intake (or today if intake unknown). */
+export function defaultCultureProjectedCompletion(intakeYmdOrIso?: string): string {
+  return addDaysYmd(14, intakeYmdFromValue(intakeYmdOrIso) || undefined);
+}
+
+/** Format YYYY-MM-DD without UTC shift. */
+export function formatLocalYmd(ymd: string): string {
+  const m = ymd.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return ymd.trim();
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return new Intl.DateTimeFormat('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  }).format(d);
+}
+
+export function formatSterilityPendingResult(projectedYmd?: string): string {
+  const ymd = (projectedYmd || '').trim();
+  if (!ymd) return 'Pending';
+  return `Pending (projected ${formatLocalYmd(ymd)})`;
+}
+
+export function parseSterilityMethod(
+  value: unknown,
+  panel?: { panel_name?: string; specification?: string; result?: string } | null,
+): SterilityMethod {
+  if (value === 'pcr' || value === 'culture_14_day') return value;
+  if (typeof value === 'string') {
+    const n = value.toLowerCase();
+    if (/14.?day|culture/.test(n)) return 'culture_14_day';
+    if (/\bpcr\b/.test(n)) return 'pcr';
+  }
+  const blob = `${panel?.panel_name ?? ''} ${panel?.specification ?? ''} ${panel?.result ?? ''}`.toLowerCase();
+  if (/14.?day|culture/.test(blob)) return 'culture_14_day';
+  return 'pcr';
+}
+
+/** Parse projected completion YYYY-MM-DD from summary or "Pending (projected …)" text. */
+export function parseSterilityProjectedCompletion(
+  summaryValue: unknown,
+  panelResult?: string,
+): string {
+  if (typeof summaryValue === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(summaryValue.trim())) {
+    return summaryValue.trim();
+  }
+  const raw = (panelResult || '').trim();
+  const m = raw.match(/projected\s+(\d{4}-\d{2}-\d{2})/i);
+  if (m) return m[1];
+  const pretty = raw.match(/projected\s+([A-Za-z]{3,9}\s+\d{1,2},\s+\d{4})/i);
+  if (pretty) {
+    const d = new Date(pretty[1]);
+    if (!Number.isNaN(d.getTime())) {
+      const y = d.getFullYear();
+      const mo = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${mo}-${day}`;
+    }
+  }
+  return '';
+}
+
 /** Analytical method for Identification / Net Content / Net Purity. */
 export type AssayMethod = 'hplc_uv_vis' | 'lcms';
 
@@ -272,6 +387,10 @@ export interface LabCoaResults {
   /** When false, Molecular Weight is omitted from the COA. */
   includeMolecularWeight: boolean;
   sterilityMethod: SterilityMethod;
+  /**
+   * Projected completion date (YYYY-MM-DD) when method is 14-day culture and result is still Pending.
+   */
+  sterilityProjectedCompletion: string;
   /** null = Pending until the lab result is entered. */
   sterilityPass: AssayPassState;
   endotoxinEuMl: string;
@@ -303,6 +422,7 @@ export const EMPTY_LAB_RESULTS: LabCoaResults = {
   molecularWeight: '',
   includeMolecularWeight: false,
   sterilityMethod: 'pcr',
+  sterilityProjectedCompletion: '',
   sterilityPass: null,
   endotoxinEuMl: '',
   endotoxinPass: null,
@@ -334,7 +454,13 @@ export const PEPTIDE_CAS_LOOKUP: { name: string; cas: string }[] = [
   { name: 'AOD-9604', cas: '221231-10-3' },
   { name: 'Selank', cas: '129954-34-3' },
   { name: 'Semax', cas: '80714-61-0' },
+  { name: 'Tesamorelin', cas: '218949-48-5' },
 ];
+
+/** True when value looks like a CAS registry number (e.g. 218949-48-5). */
+export function looksLikeCasNumber(raw: string): boolean {
+  return /^\d{2,7}-\d{2}-\d$/.test((raw || '').trim());
+}
 
 export function lookupCas(query: string): { name: string; cas: string }[] {
   const q = query.trim().toLowerCase();
@@ -347,11 +473,33 @@ export function lookupCas(query: string): { name: string; cas: string }[] {
 export function casForSampleName(sampleName: string): string {
   const key = sampleName.trim().toLowerCase();
   if (!key) return '';
-  const hit = PEPTIDE_CAS_LOOKUP.find(p => {
-    const n = p.name.toLowerCase();
-    return n === key || n.startsWith(`${key}-`) || n.startsWith(`${key} `) || key.includes(n);
-  });
-  return hit?.cas ?? '';
+  // Prefer longest name match so "Tesamorelin/Ipamorelin Blend" still hits Tesamorelin.
+  const hits = PEPTIDE_CAS_LOOKUP
+    .filter(p => {
+      const n = p.name.toLowerCase();
+      return n === key || key === n || key.includes(n) || n.includes(key);
+    })
+    .sort((a, b) => b.name.length - a.name.length);
+  return hits[0]?.cas ?? '';
+}
+
+/** Resolve a displayable CAS — never returns a peptide name. */
+export function resolveCasNumber(
+  peptideSequence: string | null | undefined,
+  ...nameHints: Array<string | null | undefined>
+): string {
+  const raw = (peptideSequence || '').trim();
+  if (looksLikeCasNumber(raw)) return raw;
+  for (const hint of nameHints) {
+    const fromName = casForSampleName(hint || '');
+    if (fromName) return fromName;
+  }
+  // If peptide_sequence stored a name, look that up.
+  if (raw) {
+    const fromStored = casForSampleName(raw);
+    if (fromStored) return fromStored;
+  }
+  return '';
 }
 
 /** Normalizes a free-typed mg amount into "10.0 mg" (always includes a decimal). */
@@ -672,11 +820,14 @@ export function buildLabResultsFromCoa(
         : true;
 
   const sterilityResult = (sterilityPanel?.result || '').trim();
-  const sterilityMethod: SterilityMethod =
-    /14.?day|culture/i.test(sterilityResult)
-    || summary.sterility_method === 'culture_14_day'
-      ? 'culture_14_day'
-      : 'pcr';
+  const sterilityMethod: SterilityMethod = parseSterilityMethod(
+    summary.sterility_method ?? summary.sterility_method_label,
+    sterilityPanel,
+  );
+  const sterilityProjectedCompletion = parseSterilityProjectedCompletion(
+    summary.sterility_projected_completion,
+    sterilityResult,
+  );
 
   const endotoxinRaw = endotoxinPanel?.result || '';
   const endotoxinEuMl = endotoxinRaw
@@ -690,7 +841,7 @@ export function buildLabResultsFromCoa(
     || (typeof summary.molecular_weight === 'string' ? summary.molecular_weight : '');
 
   const sterilityPass: AssayPassState = sterilityPanel
-    ? (sterilityPanel.pass === null || !sterilityResult || /^pending$/i.test(sterilityResult)
+    ? (sterilityPanel.pass === null || !sterilityResult || /^pending\b/i.test(sterilityResult)
       ? parseAssayPassState(summary.sterility_pass, null)
       : sterilityPanel.pass !== false && !/^detected\b/i.test(sterilityResult))
     : parseAssayPassState(summary.sterility_pass, null);
@@ -717,6 +868,8 @@ export function buildLabResultsFromCoa(
     molecularWeight: mwRaw,
     includeMolecularWeight: !!mwRaw || summary.include_molecular_weight === true,
     sterilityMethod,
+    sterilityProjectedCompletion:
+      sterilityMethod === 'culture_14_day' ? sterilityProjectedCompletion : '',
     sterilityPass,
     includeSterility: !!sterilityPanel || base.includeSterility,
     endotoxinEuMl,
@@ -799,20 +952,24 @@ export function labResultsToPanelResults(
   }
 
   if (results.includeSterility !== false) {
+    const sterilityMethodLabel = STERILITY_METHOD_LABELS[results.sterilityMethod];
+    const projected = results.sterilityMethod === 'culture_14_day'
+      ? (results.sterilityProjectedCompletion || '').trim()
+      : '';
     if (results.sterilityPass === null) {
       rows.push({
-        panel_name: 'Sterility',
+        panel_name: sterilityPanelName(results.sterilityMethod),
         specification: 'Not Detected',
-        result: 'Pending',
+        result: formatSterilityPendingResult(projected),
         pass: null,
       });
     } else {
       rows.push({
-        panel_name: 'Sterility',
+        panel_name: sterilityPanelName(results.sterilityMethod),
         specification: 'Not Detected',
         result: results.sterilityPass
-          ? `Not Detected (${STERILITY_METHOD_LABELS[results.sterilityMethod]})`
-          : `Detected (${STERILITY_METHOD_LABELS[results.sterilityMethod]})`,
+          ? `Not Detected (${sterilityMethodLabel})`
+          : `Detected (${sterilityMethodLabel})`,
         pass: results.sterilityPass,
       });
     }

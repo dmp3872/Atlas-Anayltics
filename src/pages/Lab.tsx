@@ -13,8 +13,9 @@ import { fetchUserCompanies } from '../lib/coaProfile';
 import {
   EMPTY_LAB_RESULTS, LabCoaResults, VIAL_SIZE_OPTIONS, VialSizeOption,
   HEAVY_METAL_NAMES, buildLabResultsFromSample, buildLabResultsFromCoa, labResultsToPanelResults,
-  parsePurityPercent, parseMolecularWeight, lookupCas, casForSampleName,
+  parsePurityPercent, parseMolecularWeight, lookupCas, casForSampleName, looksLikeCasNumber, resolveCasNumber,
   ENDOTOXIN_SPEC_EU_ML, ENDOTOXIN_PASS_RESULT, STERILITY_METHOD_LABELS,
+  defaultCultureProjectedCompletion,
   HEAVY_METAL_PASS_RESULT, heavyMetalsPassDefaults, heavyMetalsEmptyDefaults, computeLabAssayAverages,
   assayPassSelectValue, assayPassFromSelect, blendConformityVialRows, isBlendTotalConformityRow,
   MAX_PURITY_PERCENT, PURITY_INPUT_HINT, sanitizePurityInput, purityExceedsMax,
@@ -51,7 +52,7 @@ import OrderNotesThread from '../components/order/OrderNotesThread';
 import OrderEtaEditor from '../components/order/OrderEtaEditor';
 import { fetchOrderActionItems, openActionCount } from '../lib/orderActions';
 import { createEmptySample, LABEL_CLAIM_UNITS, SAMPLE_MATRICES, type TestMode, type WizardSample } from '../lib/orderCatalog';
-import { assayResultsFromPanels } from '../lib/coaDisplayPanels';
+import { assayResultsFromPanels, assayChipStatusesFromPanels } from '../lib/coaDisplayPanels';
 const MAX_COA_IMAGE_BYTES = 1024 * 1024;
 
 type Message = { type: 'success' | 'error'; text: string; slug?: string } | null;
@@ -386,7 +387,8 @@ export default function Lab() {
     const meta = parseSampleMetadata(s.metadata);
     const client = clients.find(c => c.id === s.user_id);
     const order = orders.find(o => o.id === s.order_id);
-    const cas = casForSampleName(s.sample_name) || meta.peptide_identification?.trim() || '';
+    const cas = casForSampleName(s.sample_name)
+      || (looksLikeCasNumber(meta.peptide_identification || '') ? (meta.peptide_identification || '').trim() : '');
     const brandHint = meta.brand_names?.[0] || order?.company_name || client?.company_name || '';
     const chemistName = (profile?.full_name || '').trim();
     setEditingCoaId(null);
@@ -422,10 +424,12 @@ export default function Lab() {
     const meta = parseSampleMetadata(sample?.metadata ?? {});
     const client = clients.find(c => c.id === coa.user_id);
     const order = coa.order_id ? orders.find(o => o.id === coa.order_id) : undefined;
-    const cas = coa.peptide_sequence?.trim()
-      || casForSampleName(coa.sample_name)
-      || meta.peptide_identification?.trim()
-      || '';
+    const cas = resolveCasNumber(
+      coa.peptide_sequence,
+      coa.sample_name,
+      coa.display_name,
+      meta.peptide_identification,
+    );
     const brandHint = coa.company_name || meta.brand_names?.[0] || order?.company_name || client?.company_name || '';
     const vialFromCoa = (coa.chromatogram_data as { vial_size?: string } | null)?.vial_size;
     const summary = (coa.result_summary && typeof coa.result_summary === 'object')
@@ -481,7 +485,16 @@ export default function Lab() {
       labelClaimUnit: summaryClaimUnit,
     });
     setPreferredBrandName(brandHint);
-    setLabResults(buildLabResultsFromCoa(coa, sample?.metadata));
+    const nextResults = buildLabResultsFromCoa(coa, sample?.metadata);
+    const intake = isoToLocalDateInput(summaryReceivedAt || sampleIntakeAt(sample)) || localDateInputValue();
+    if (
+      nextResults.sterilityMethod === 'culture_14_day'
+      && nextResults.sterilityPass === null
+      && !nextResults.sterilityProjectedCompletion.trim()
+    ) {
+      nextResults.sterilityProjectedCompletion = defaultCultureProjectedCompletion(intake);
+    }
+    setLabResults(nextResults);
     setVialImage(coa.vial_image || '');
     setChromatographImage(coa.hplc_image || '');
     setCasSuggestions(cas ? lookupCas(cas) : []);
@@ -609,7 +622,15 @@ export default function Lab() {
       identity: fromPanels?.identity ?? identity,
       quantityUnit: form.labelClaimUnit || linkedMeta?.label_claim_unit || 'mg',
     };
-  }, [labResults, form.labelClaimUnit, linkedMeta?.label_claim_unit, form.overallResult]);
+  }, [labResults, form.labelClaimUnit, form.labeledContent, linkedMeta?.label_claim_unit, linkedMeta?.labeled_content, form.overallResult]);
+
+  const issueAssayStatuses = useMemo(() => {
+    const panels = labResultsToPanelResults(labResults, {
+      labeledContent: form.labeledContent || linkedMeta?.labeled_content || '',
+      labelClaimUnit: form.labelClaimUnit || linkedMeta?.label_claim_unit || 'mg',
+    });
+    return assayChipStatusesFromPanels(panels);
+  }, [labResults, form.labeledContent, form.labelClaimUnit, linkedMeta?.labeled_content, linkedMeta?.label_claim_unit]);
 
   const issueTrackingStage =
     form.overallResult === 'pass' || form.overallResult === 'fail'
@@ -946,7 +967,18 @@ export default function Lab() {
     setMsg(null);
 
     try {
-      const cleanPanels = labResultsToPanelResults(labResults, {
+      const intakeForProjection = form.receivedDate.trim()
+        || isoToLocalDateInput(sampleIntakeAt(linkedSample))
+        || localDateInputValue();
+      const resultsForPanels: LabCoaResults = {
+        ...labResults,
+        sterilityProjectedCompletion:
+          labResults.sterilityMethod === 'culture_14_day' && labResults.sterilityPass === null
+            ? (labResults.sterilityProjectedCompletion.trim()
+              || defaultCultureProjectedCompletion(intakeForProjection))
+            : '',
+      };
+      const cleanPanels = labResultsToPanelResults(resultsForPanels, {
         labeledContent: form.labeledContent.trim() || linkedMeta?.labeled_content || '',
         labelClaimUnit: form.labelClaimUnit.trim() || linkedMeta?.label_claim_unit || 'mg',
       });
@@ -1058,7 +1090,9 @@ export default function Lab() {
         display_name: form.displayName.trim() || form.sampleName.trim(),
         company_name: (form.companyName.trim() || profile?.name || '').trim(),
         company_logo: companyLogo,
-        peptide_sequence: form.casNumber.trim(),
+        peptide_sequence: looksLikeCasNumber(form.casNumber.trim())
+          ? form.casNumber.trim()
+          : (resolveCasNumber(form.casNumber, form.sampleName, form.displayName) || ''),
         batch_number: form.batchNumber.trim(),
         purity_percent: storedPurity,
         molecular_weight: mwNum,
@@ -1077,6 +1111,10 @@ export default function Lab() {
           sterility_pass: labResults.sterilityPass,
           sterility_method_label: STERILITY_METHOD_LABELS[labResults.sterilityMethod],
           sterility_specification: 'Not Detected',
+          sterility_projected_completion:
+            resultsForPanels.sterilityMethod === 'culture_14_day' && resultsForPanels.sterilityPass === null
+              ? resultsForPanels.sterilityProjectedCompletion.trim()
+              : '',
           assay_method: labResults.assayMethod,
           assay_method_label: ASSAY_METHOD_LABELS[labResults.assayMethod],
           endotoxin_eu_ml: labResults.endotoxinEuMl.trim(),
@@ -1102,6 +1140,8 @@ export default function Lab() {
           test_mode: linkedMeta?.test_mode || '',
           labeled_content: form.labeledContent.trim() || linkedMeta?.labeled_content || '',
           label_claim_unit: form.labelClaimUnit.trim() || linkedMeta?.label_claim_unit || 'mg',
+          include_cas_number: !!looksLikeCasNumber(form.casNumber.trim())
+            || !!resolveCasNumber(form.casNumber, form.sampleName, form.displayName),
         },
         overall_result: form.overallResult,
         is_public: false,
@@ -1684,12 +1724,34 @@ export default function Lab() {
                       type="date"
                       className="input-field flex-1"
                       value={form.receivedDate || localDateInputValue()}
-                      onChange={e => update({ receivedDate: e.target.value })}
+                      onChange={e => {
+                        const nextDate = e.target.value;
+                        update({ receivedDate: nextDate });
+                        if (
+                          labResults.sterilityMethod === 'culture_14_day'
+                          && labResults.sterilityPass === null
+                        ) {
+                          updateResults({
+                            sterilityProjectedCompletion: defaultCultureProjectedCompletion(nextDate),
+                          });
+                        }
+                      }}
                     />
                     <button
                       type="button"
                       className="btn-secondary text-xs px-3 whitespace-nowrap"
-                      onClick={() => update({ receivedDate: localDateInputValue() })}
+                      onClick={() => {
+                        const today = localDateInputValue();
+                        update({ receivedDate: today });
+                        if (
+                          labResults.sterilityMethod === 'culture_14_day'
+                          && labResults.sterilityPass === null
+                        ) {
+                          updateResults({
+                            sterilityProjectedCompletion: defaultCultureProjectedCompletion(today),
+                          });
+                        }
+                      }}
                       title="Use today (issue day)"
                     >
                       Today
@@ -1904,13 +1966,27 @@ export default function Lab() {
                       <label className="label">Sterility method</label>
                       <select
                         value={labResults.sterilityMethod}
-                        onChange={e => updateResults({ sterilityMethod: e.target.value as LabCoaResults['sterilityMethod'] })}
+                        onChange={e => {
+                          const next = e.target.value as LabCoaResults['sterilityMethod'];
+                          const intake = form.receivedDate.trim()
+                            || isoToLocalDateInput(sampleIntakeAt(linkedSample))
+                            || localDateInputValue();
+                          updateResults({
+                            sterilityMethod: next,
+                            sterilityProjectedCompletion:
+                              next === 'culture_14_day'
+                                ? defaultCultureProjectedCompletion(intake)
+                                : '',
+                          });
+                        }}
                         className="input-field"
                       >
                         <option value="pcr">{STERILITY_METHOD_LABELS.pcr}</option>
                         <option value="culture_14_day">{STERILITY_METHOD_LABELS.culture_14_day}</option>
                       </select>
-                      <p className="text-xs text-neutral-500 mt-1">Specification: Not Detected</p>
+                      <p className="text-xs text-neutral-500 mt-1">
+                        Shown on COA as Sterility ({STERILITY_METHOD_LABELS[labResults.sterilityMethod]}) · Spec: Not Detected
+                      </p>
                     </div>
                     <div>
                       <label className="label">Sterility result</label>
@@ -1924,6 +2000,28 @@ export default function Lab() {
                         <option value="fail">Detected — FAIL</option>
                       </select>
                     </div>
+                    {labResults.sterilityMethod === 'culture_14_day' && labResults.sterilityPass === null && (
+                      <div className="sm:col-span-2">
+                        <label className="label" htmlFor="sterility-projected">
+                          Projected completion date
+                          <span className="ml-2 text-[11px] font-semibold uppercase tracking-wide text-amber-700">
+                            14-day culture
+                          </span>
+                        </label>
+                        <input
+                          id="sterility-projected"
+                          type="date"
+                          value={labResults.sterilityProjectedCompletion}
+                          onChange={e => updateResults({ sterilityProjectedCompletion: e.target.value })}
+                          className="input-field max-w-xs"
+                        />
+                        <p className="text-xs text-neutral-500 mt-1">
+                          Defaults to 14 days after sample intake
+                          {form.receivedDate.trim() ? ` (${form.receivedDate}).` : '.'}
+                          {' '}Shown on the COA while sterility is Pending.
+                        </p>
+                      </div>
+                    )}
                     {labResults.includeEndotoxin !== false && (
                       <>
                         <div>
@@ -2238,6 +2336,7 @@ export default function Lab() {
                     }
                     overallResult={form.overallResult}
                     assayResults={issueAssayResults}
+                    assayStatuses={issueAssayStatuses}
                   />
                 </div>
               </div>

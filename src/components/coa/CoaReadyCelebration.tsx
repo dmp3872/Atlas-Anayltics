@@ -3,7 +3,7 @@ import { Check, Copy, ExternalLink, PartyPopper, X } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import type { COA, OrderSample } from '../../lib/types';
 import AtlasDigitalCoaCard from '../order/AtlasDigitalCoaCard';
-import { assayResultsFromPanels } from '../../lib/coaDisplayPanels';
+import { assayResultsFromPanels, assayChipStatusesFromPanels } from '../../lib/coaDisplayPanels';
 import { createEmptySample, type TestMode } from '../../lib/orderCatalog';
 
 interface Props {
@@ -50,6 +50,10 @@ export default function CoaReadyCelebration({ coa, sample, onClose }: Props) {
         quantityUnit: digitalSample.label_claim_unit || 'mg',
       }),
     [coa.panel_results, digitalSample.label_claim_unit],
+  );
+  const assayStatuses = useMemo(
+    () => assayChipStatusesFromPanels(coa.panel_results),
+    [coa.panel_results],
   );
 
   useEffect(() => {
@@ -159,6 +163,7 @@ export default function CoaReadyCelebration({ coa, sample, onClose }: Props) {
                   : 'pending'
               }
               assayResults={assayResults}
+              assayStatuses={assayStatuses}
               celebrate
             />
           </div>

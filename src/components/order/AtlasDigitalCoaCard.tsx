@@ -15,6 +15,7 @@ import {
   methodsForSample,
   previewSampleForPackage,
 } from '../../lib/orderProjection';
+import type { DigitalAssayChipStatuses, DigitalChipStatus } from '../../lib/coaDisplayPanels';
 
 /**
  * Optional card features — flip any of these to false to remove that element.
@@ -54,6 +55,8 @@ type Props = {
   overallResult?: 'pass' | 'fail' | 'pending';
   /** Real lab readings when available; otherwise a deterministic preview is used. */
   assayResults?: DigitalCoaAssayResults | null;
+  /** Per-test Pass/Fail/Pending — pending assays must not inherit overall Pass. */
+  assayStatuses?: DigitalAssayChipStatuses | null;
   /** Runs a one-time seal pulse and front/back reveal animation. */
   celebrate?: boolean;
 };
@@ -470,13 +473,21 @@ function chipStatus(
   stage: WizardStage,
   tracking?: TrackingStage | null,
   overallResult?: 'pass' | 'fail' | 'pending',
-): 'pending' | 'queued' | 'pass' | 'fail' {
+): DigitalChipStatus {
   if (overallResult === 'fail') return 'fail';
   if (overallResult === 'pass') return 'pass';
   if (tracking === 'complete' || tracking === 'issued') return 'pass';
   if (tracking === 'analyzing' || tracking === 'in_review' || tracking === 'received') return 'queued';
   if (stage === 'submitted' || stage === 'tracking') return 'queued';
   return 'pending';
+}
+
+/** Prefer explicit panel status; never upgrade Pending to Pass from overall result. */
+function resolveChip(
+  explicit: DigitalChipStatus | undefined,
+  fallback: DigitalChipStatus,
+): DigitalChipStatus {
+  return explicit ?? fallback;
 }
 
 const TILT_MAX_DEG = 10;
@@ -554,6 +565,7 @@ export default function AtlasDigitalCoaCard({
   readinessPercent,
   overallResult,
   assayResults = null,
+  assayStatuses = null,
   celebrate = false,
 }: Props) {
   const tilt = useCardTilt();
@@ -588,13 +600,23 @@ export default function AtlasDigitalCoaCard({
   const accessionGhost = `${yymm}-\u25CF\u25CF\u25CF\u25CF\u25CF\u25CF`;
   const chipSt = chipStatus(stage, trackingStage, overallResult);
   const showConformityChart = conformityOn && chartVials > 0;
-  const identityChipStatus: 'pending' | 'queued' | 'pass' | 'fail' = showConformityChart
-    ? identityPass
-      ? 'pass'
-      : 'fail'
-    : chipSt;
-  const purityChipValue = showConformityChart ? formatPurityPct(avgPurity) : undefined;
-  const quantityChipValue = showConformityChart
+  const identityChipStatus = resolveChip(
+    assayStatuses?.identity,
+    showConformityChart
+      ? (identityPass ? 'pass' : 'fail')
+      : chipSt,
+  );
+  const purityChipStatus = resolveChip(assayStatuses?.purity, chipSt);
+  const quantityChipStatus = resolveChip(assayStatuses?.quantity, chipSt);
+  const heavyMetalsChipStatus = resolveChip(assayStatuses?.heavyMetals, chipSt);
+  const endotoxinChipStatus = resolveChip(assayStatuses?.endotoxin, chipSt);
+  const sterilityChipStatus = resolveChip(assayStatuses?.sterility, chipSt);
+  const fentanylChipStatus = resolveChip(assayStatuses?.fentanyl, chipSt);
+  // Only show measured averages when that assay itself has completed.
+  const purityChipValue = showConformityChart && purityChipStatus === 'pass'
+    ? formatPurityPct(avgPurity)
+    : undefined;
+  const quantityChipValue = showConformityChart && quantityChipStatus !== 'pending' && quantityChipStatus !== 'queued'
     ? formatQuantityAmt(avgQuantity, assaySeries.quantityUnit)
     : undefined;
   const sealLocked = stage === 'checkout' || stage === 'submitted' || stage === 'tracking' || !!trackingStage;
@@ -720,15 +742,15 @@ export default function AtlasDigitalCoaCard({
 
         <div className="flex gap-1.5 pt-0.5">
           <PendingChip label="Identity" status={identityChipStatus} />
-          <PendingChip label="Purity" status={chipSt} value={purityChipValue} />
-          <PendingChip label="Quantity" status={chipSt} value={quantityChipValue} />
+          <PendingChip label="Purity" status={purityChipStatus} value={purityChipValue} />
+          <PendingChip label="Quantity" status={quantityChipStatus} value={quantityChipValue} />
         </div>
         {(showEndotoxin || showSterility || showHeavyMetals || fentanyl) && (
           <div className="flex flex-wrap gap-1.5">
-            {showHeavyMetals && <PendingChip label="Heavy metals" status={chipSt} />}
-            {showEndotoxin && <PendingChip label="Endotoxin" status={chipSt} />}
-            {showSterility && <PendingChip label="Sterility" status={chipSt} />}
-            {fentanyl && <PendingChip label="Fentanyl" status={chipSt} />}
+            {showHeavyMetals && <PendingChip label="Heavy metals" status={heavyMetalsChipStatus} />}
+            {showEndotoxin && <PendingChip label="Endotoxin" status={endotoxinChipStatus} />}
+            {showSterility && <PendingChip label="Sterility" status={sterilityChipStatus} />}
+            {fentanyl && <PendingChip label="Fentanyl" status={fentanylChipStatus} />}
           </div>
         )}
       </div>
