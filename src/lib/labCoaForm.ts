@@ -456,6 +456,8 @@ export const PEPTIDE_CAS_LOOKUP: { name: string; cas: string }[] = [
   { name: 'Selank', cas: '129954-34-3' },
   { name: 'Semax', cas: '80714-61-0' },
   { name: 'Tesamorelin', cas: '218949-48-5' },
+  { name: 'HCG', cas: '9002-61-3' },
+  { name: 'Chorionic Gonadotropin', cas: '9002-61-3' },
 ];
 
 /** True when value looks like a CAS registry number (e.g. 218949-48-5). */
@@ -628,9 +630,9 @@ export function buildLabResultsFromSample(metadata: OrderSample['metadata'], sam
   // Only assays present on the order appear on the COA (basic IPQ ≠ Atlas Pro biosafety).
   const includeHeavyMetals = sampleIncludesAssay(orderRef, 'heavy_metals_icpms');
   const includeEndotoxin = sampleIncludesAssay(orderRef, 'endotoxin_usp85');
+  const includeSterilityCulture = sampleIncludesAssay(orderRef, 'sterility_culture');
   const includeSterility =
-    sampleIncludesAssay(orderRef, 'sterility_pcr')
-    || sampleIncludesAssay(orderRef, 'sterility_culture');
+    includeSterilityCulture || sampleIncludesAssay(orderRef, 'sterility_pcr');
   return {
     ...EMPTY_LAB_RESULTS,
     identification,
@@ -640,11 +642,74 @@ export function buildLabResultsFromSample(metadata: OrderSample['metadata'], sam
     includeHeavyMetals,
     includeEndotoxin,
     includeSterility,
+    sterilityMethod: includeSterilityCulture ? 'culture_14_day' : 'pcr',
     conformityPeptides: isBlend
       ? seedBlendConformityPeptides(blendPeptides, extraConformityVialCount(metadata))
       : [],
     blendPeptides,
   };
+}
+
+/**
+ * Whether sterility belongs on a COA. Order metadata wins; otherwise trust an
+ * existing sterility panel (including Pending) or an explicit include flag.
+ * Never treat a Pending sterility row as "not included".
+ */
+export function resolveIncludeSterility(
+  coa: Pick<COA, 'panel_results' | 'result_summary'>,
+  sampleMetadata?: OrderSample['metadata'] | null,
+): boolean {
+  if (sampleMetadata != null) {
+    const orderRef = { metadata: sampleMetadata };
+    return (
+      sampleIncludesAssay(orderRef, 'sterility_pcr')
+      || sampleIncludesAssay(orderRef, 'sterility_culture')
+    );
+  }
+  const summary = (coa.result_summary && typeof coa.result_summary === 'object')
+    ? (coa.result_summary as Record<string, unknown>)
+    : {};
+  const panels = Array.isArray(coa.panel_results) ? coa.panel_results : [];
+  if (panels.some(p => /steril/i.test(p.panel_name))) return true;
+  if (typeof summary.include_sterility === 'boolean') return summary.include_sterility;
+  if (summary.test_mode === 'atlas_pro' || summary.test_mode === 'full_qc') return true;
+  return false;
+}
+
+/** Same rules as resolveIncludeSterility for endotoxin. */
+export function resolveIncludeEndotoxin(
+  coa: Pick<COA, 'panel_results' | 'result_summary'>,
+  sampleMetadata?: OrderSample['metadata'] | null,
+): boolean {
+  if (sampleMetadata != null) {
+    return sampleIncludesAssay({ metadata: sampleMetadata }, 'endotoxin_usp85');
+  }
+  const summary = (coa.result_summary && typeof coa.result_summary === 'object')
+    ? (coa.result_summary as Record<string, unknown>)
+    : {};
+  const panels = Array.isArray(coa.panel_results) ? coa.panel_results : [];
+  if (panels.some(p => /endotoxin|lal/i.test(p.panel_name))) return true;
+  if (typeof summary.include_endotoxin === 'boolean') return summary.include_endotoxin;
+  if (summary.test_mode === 'atlas_pro') return true;
+  return false;
+}
+
+/** Same rules as resolveIncludeSterility for heavy metals. */
+export function resolveIncludeHeavyMetals(
+  coa: Pick<COA, 'panel_results' | 'result_summary'>,
+  sampleMetadata?: OrderSample['metadata'] | null,
+): boolean {
+  if (sampleMetadata != null) {
+    return sampleIncludesAssay({ metadata: sampleMetadata }, 'heavy_metals_icpms');
+  }
+  const summary = (coa.result_summary && typeof coa.result_summary === 'object')
+    ? (coa.result_summary as Record<string, unknown>)
+    : {};
+  const panels = Array.isArray(coa.panel_results) ? coa.panel_results : [];
+  if (panels.some(p => /lead|arsenic|cadmium|mercury|chromium/i.test(p.panel_name))) return true;
+  if (typeof summary.include_heavy_metals === 'boolean') return summary.include_heavy_metals;
+  if (summary.test_mode === 'atlas_pro') return true;
+  return false;
 }
 
 /** Rebuild Issue COA form values from an existing certificate (restart / re-issue). */
