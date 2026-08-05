@@ -18,9 +18,8 @@ function parseNumber(raw: string): number | null {
   // Scientific notation stays as-is; European decimals: 1,23 or 1.234,56
   if (/^\d{1,3}(\.\d{3})+,\d+$/.test(s) || (/^\d+,\d+$/.test(s) && !s.includes('.'))) {
     s = s.replace(/\./g, '').replace(',', '.');
-  } else {
-    // Strip thousands separators: 1,234.56
-    if (/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(s)) s = s.replace(/,/g, '');
+  } else if (/^\d{1,3}(,\d{3})+(\.\d+)?$/.test(s)) {
+    s = s.replace(/,/g, '');
   }
   const n = Number(s);
   return Number.isFinite(n) ? n : null;
@@ -29,9 +28,8 @@ function parseNumber(raw: string): number | null {
 /** Split a line on commas / tabs / semicolons / multi-spaces while keeping quoted cells. */
 function splitRow(line: string): string[] {
   if (line.includes('\t')) return line.split('\t').map(c => c.trim());
-  if (line.includes(';') && (line.match(/;/g) || []).length >= (line.match(/,/g) || []).length) {
-    return line.split(';').map(c => c.trim());
-  }
+  // European HPLC exports often use ';' as delimiter and ',' as decimal.
+  if (line.includes(';')) return line.split(';').map(c => c.trim());
   const cells: string[] = [];
   let cur = '';
   let inQuotes = false;
@@ -41,7 +39,7 @@ function splitRow(line: string): string[] {
       inQuotes = !inQuotes;
       continue;
     }
-    if ((ch === ',' || ch === ';') && !inQuotes) {
+    if (ch === ',' && !inQuotes) {
       cells.push(cur.trim());
       cur = '';
       continue;
@@ -54,16 +52,19 @@ function splitRow(line: string): string[] {
 }
 
 function isTimeHeader(cell: string): boolean {
-  return /retention|\btime\b|\brt\b|\bmin\b|\bx\b/i.test(cell);
+  const t = cell.toLowerCase();
+  if (/\b(wavelength|pressure|temp|flow|volume|inj)\b/.test(t)) return false;
+  return /retention|\btime\b|\brt\b|\bmin(ute)?s?\b|\bx\b/i.test(cell);
 }
 
 function isIntensityHeader(cell: string): boolean {
-  return /intens|absorb|\bmau\b|\bau\b|signal|response|height|detector|\buv\b|\bric\b|\by\b/i.test(cell);
+  const t = cell.toLowerCase();
+  if (/\b(wavelength|pressure|temp|flow|volume|inj|time|retention)\b/.test(t)) return false;
+  return /intens|absorb|\bmau\b|\bau\b|signal|response|height|detector|\buv\b|\bric\b|\bcounts?\b|\by\b/i.test(cell);
 }
 
 function looksLikeHeader(cells: string[]): boolean {
-  const joined = cells.join(' ');
-  return isTimeHeader(joined) || isIntensityHeader(joined);
+  return cells.some(isTimeHeader) || cells.some(isIntensityHeader);
 }
 
 function pickColumns(header: string[]): { x: number; y: number } | null {
@@ -86,6 +87,47 @@ function rowAsPoint(cells: string[], col: { x: number; y: number }): Chromatogra
   return { x, y };
 }
 
+/** Score a candidate point series — prefer long monotonic time runs. */
+function scoreSeries(points: ChromatogramPoint[]): number {
+  if (points.length < 2) return 0;
+  let mono = 0;
+  for (let i = 1; i < points.length; i += 1) {
+    if (points[i].x >= points[i - 1].x) mono += 1;
+  }
+  const monoRatio = mono / (points.length - 1);
+  const span = points[points.length - 1].x - points[0].x;
+  return points.length * monoRatio * (span > 0 ? 1 : 0.1);
+}
+
+function extractSeries(
+  lines: string[],
+  col: { x: number; y: number },
+  startAt = 0,
+): ChromatogramPoint[] {
+  const series: ChromatogramPoint[] = [];
+  let gap = 0;
+  for (let i = startAt; i < lines.length; i += 1) {
+    const point = rowAsPoint(splitRow(lines[i]), col);
+    if (!point) {
+      // Allow a few blank/metadata gaps inside a run; break on long gaps once we have data.
+      if (series.length > 0) {
+        gap += 1;
+        if (gap > 5) break;
+      }
+      continue;
+    }
+    gap = 0;
+    // Keep the first contiguous mostly-monotonic run.
+    if (series.length > 0 && point.x + 1e-9 < series[series.length - 1].x) {
+      if (series.length >= 20) break;
+      // Early noise — restart.
+      series.length = 0;
+    }
+    series.push(point);
+  }
+  return series;
+}
+
 /** Evenly downsample dense HPLC traces for SVG rendering / JSON size. */
 export function downsampleChromatogramPoints(
   points: ChromatogramPoint[],
@@ -98,7 +140,6 @@ export function downsampleChromatogramPoints(
     const idx = Math.round((i / (maxPoints - 1)) * last);
     out.push(points[idx]);
   }
-  // Always keep the global max peak so the main RT marker stays accurate.
   let maxIdx = 0;
   for (let i = 1; i < points.length; i += 1) {
     if (points[i].y > points[maxIdx].y) maxIdx = i;
@@ -111,10 +152,29 @@ export function downsampleChromatogramPoints(
   return out;
 }
 
+export function looksLikeBinaryChromatogramFile(bytes: Uint8Array, filename?: string): boolean {
+  const name = (filename || '').toLowerCase();
+  if (/\.(xlsx|xls|cdf|dx|fs|amdis|raw|pdf|png|jpe?g|gif|webp)$/i.test(name)) return true;
+  if (bytes.length >= 4) {
+    // ZIP/XLSX, PDF, PNG, JPEG
+    if (bytes[0] === 0x50 && bytes[1] === 0x4b) return true;
+    if (bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46) return true;
+    if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return true;
+    if (bytes[0] === 0xff && bytes[1] === 0xd8) return true;
+  }
+  // High ratio of null / non-text bytes → binary
+  let weird = 0;
+  const n = Math.min(bytes.length, 512);
+  for (let i = 0; i < n; i += 1) {
+    const b = bytes[i];
+    if (b === 0 || (b < 9 && b !== 9 && b !== 10 && b !== 13) || (b > 126 && b < 160)) weird += 1;
+  }
+  return weird / n > 0.3;
+}
+
 /**
  * Parse HPLC export text (CSV / TSV / whitespace) into chromatogram points.
- * Accepts common OpenLab / Chromeleon / Empower-style time vs intensity dumps,
- * including preamble metadata lines and headers like "Time [min]".
+ * Accepts OpenLab / Chromeleon / Empower-style dumps with preamble metadata.
  */
 export function parseChromatogramText(text: string, filename?: string): ParsedChromatogram {
   const lines = text
@@ -127,51 +187,49 @@ export function parseChromatogramText(text: string, filename?: string): ParsedCh
     throw new Error('File needs at least two rows of retention time and intensity.');
   }
 
-  let col = { x: 0, y: 1 };
-  let start = 0;
+  type Candidate = { points: ChromatogramPoint[]; score: number };
+  let best: Candidate | null = null;
 
-  // Find the first plausible header or numeric data block (skip instrument preamble).
-  for (let i = 0; i < Math.min(lines.length, 80); i += 1) {
+  const consider = (points: ChromatogramPoint[]) => {
+    const score = scoreSeries(points);
+    if (score < 2) return;
+    if (!best || score > best.score) best = { points, score };
+  };
+
+  // 1) Prefer an explicit time/intensity header anywhere in the file.
+  for (let i = 0; i < lines.length; i += 1) {
     const cells = splitRow(lines[i]);
-    if (cells.length < 2) continue;
-    if (looksLikeHeader(cells) && Number.isNaN(Number(cells[0].replace(/,/g, '')))) {
-      const picked = pickColumns(cells);
-      if (picked) {
-        col = picked;
-        start = i + 1;
-        break;
-      }
-    }
-    const probe = rowAsPoint(cells, col);
-    if (probe) {
-      // Confirm a short run of numeric pairs so we didn't catch a lone metadata number.
-      let ok = 0;
-      for (let j = i; j < Math.min(lines.length, i + 8); j += 1) {
-        if (rowAsPoint(splitRow(lines[j]), col)) ok += 1;
-      }
-      if (ok >= 3) {
-        start = i;
-        break;
-      }
-    }
+    if (cells.length < 2 || !looksLikeHeader(cells)) continue;
+    if (parseNumber(cells[0] || '') != null && parseNumber(cells[1] || '') != null) continue;
+    const picked = pickColumns(cells);
+    if (!picked) continue;
+    consider(extractSeries(lines, picked, i + 1));
   }
 
-  const raw: ChromatogramPoint[] = [];
-  for (let i = start; i < lines.length; i += 1) {
-    const point = rowAsPoint(splitRow(lines[i]), col);
-    if (!point) continue;
-    raw.push(point);
+  // 2) Fallback: first two numeric columns, starting at each plausible offset.
+  const defaultCol = { x: 0, y: 1 };
+  for (let i = 0; i < lines.length; i += 1) {
+    const probe = rowAsPoint(splitRow(lines[i]), defaultCol);
+    if (!probe) continue;
+    let ok = 0;
+    for (let j = i; j < Math.min(lines.length, i + 12); j += 1) {
+      if (rowAsPoint(splitRow(lines[j]), defaultCol)) ok += 1;
+    }
+    if (ok < 5) continue;
+    consider(extractSeries(lines, defaultCol, i));
+    // Jump ahead a bit once we found a strong start.
+    if (best && best.score > 100) break;
+    i += Math.max(0, ok - 1);
   }
 
-  if (raw.length < 2) {
+  if (!best || best.points.length < 2) {
     throw new Error(
-      'Could not read enough numeric time/intensity pairs. Export CSV/TSV with retention time and intensity columns.',
+      'Could not read time/intensity pairs. Export a CSV or TSV (not Excel/PDF/image) with retention time and intensity columns.',
     );
   }
 
-  raw.sort((a, b) => a.x - b.x);
   const deduped: ChromatogramPoint[] = [];
-  for (const p of raw) {
+  for (const p of best.points) {
     const prev = deduped[deduped.length - 1];
     if (prev && Math.abs(prev.x - p.x) < 1e-9) {
       if (p.y > prev.y) deduped[deduped.length - 1] = p;
@@ -195,7 +253,14 @@ export function parseChromatogramText(text: string, filename?: string): ParsedCh
 }
 
 export async function parseChromatogramFile(file: File): Promise<ParsedChromatogram> {
-  const text = await file.text();
+  const buffer = await file.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+  if (looksLikeBinaryChromatogramFile(bytes, file.name)) {
+    throw new Error(
+      'That file looks like Excel, PDF, image, or instrument binary. Export the chromatogram as CSV or TSV (time + intensity) and try again.',
+    );
+  }
+  const text = new TextDecoder('utf-8', { fatal: false }).decode(bytes);
   return parseChromatogramText(text, file.name);
 }
 
@@ -213,9 +278,18 @@ export function chromatogramDataFromParsed(
   };
 }
 
+/** Keep vial/matrix metadata while replacing or clearing measured points. */
+export function mergeChromatogramData(
+  existing: ChromatogramData | null | undefined,
+  patch: Partial<ChromatogramData> | null | undefined,
+): ChromatogramData {
+  const base = existing && typeof existing === 'object' ? { ...existing } : {};
+  if (!patch) return base;
+  return { ...base, ...patch };
+}
+
 export function hasMeasuredChromatogram(data: ChromatogramData | null | undefined): boolean {
   if (!data || !Array.isArray(data.points) || data.points.length < 2) return false;
   if (data.source === 'measured') return true;
-  // Legacy rows that stored points without a source flag.
   return data.points.length >= 2;
 }

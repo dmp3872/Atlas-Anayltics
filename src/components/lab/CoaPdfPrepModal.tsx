@@ -249,14 +249,12 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
         hplc_image: hplcImage,
         chromatogram_data: chromatogramParsed
           ? chromatogramDataFromParsed(chromatogramParsed, coa.chromatogram_data)
-          : {
-              ...(coa.chromatogram_data && typeof coa.chromatogram_data === 'object'
-                ? {
-                    vial_size: coa.chromatogram_data.vial_size,
-                    sample_matrix: coa.chromatogram_data.sample_matrix,
-                  }
-                : {}),
-            },
+          : (
+            // Keep previously measured points unless the chemist attached a replacement file.
+            coa.chromatogram_data && typeof coa.chromatogram_data === 'object'
+              ? coa.chromatogram_data
+              : null
+          ),
         company_logo: coa.company_logo || '',
         avg_net_peptide_content: avgNetPeptide,
         mean_of_vials_tested: vials,
