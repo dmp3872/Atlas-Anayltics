@@ -34,7 +34,7 @@ import OrderShippingChecklist from '../components/order/OrderShippingChecklist';
 import AtlasDigitalCoaCard from '../components/order/AtlasDigitalCoaCard';
 import OrderNotesThread from '../components/order/OrderNotesThread';
 import { assayResultsFromPanels, assayChipStatusesFromPanels, isHeavyMetalPanel, partitionCoaPanels, resolvePanelPass } from '../lib/coaDisplayPanels';
-import { createEmptySample, TestMode, type SampleCategory, type SampleMatrix } from '../lib/orderCatalog';
+import { TestMode, wizardSampleFromOrderSample } from '../lib/orderCatalog';
 import { trackingStageFromStatuses } from '../lib/orderProjection';
 import { queueNotification } from '../lib/notifications';
 import { hydrateCoaImages } from '../lib/coaImages';
@@ -1067,20 +1067,11 @@ export default function Portal() {
                             category?: string;
                           } | null;
                           const tests = portalTestsForSample(s, panels);
-                          const mode = (meta?.test_mode as TestMode | undefined) ?? 'individual';
-                          const trackerSample = createEmptySample({
-                            sample_name: s.sample_name,
-                            display_name: s.display_name || s.sample_name,
-                            batch_number: meta?.batch_number || '',
-                            labeled_content: meta?.labeled_content || '',
-                            label_claim_unit: meta?.label_claim_unit || 'mg',
-                            primary_test_id: meta?.primary_test_id || (mode === 'individual' ? '' : mode),
-                            test_mode: mode,
-                            include_fentanyl: !!meta?.include_fentanyl,
-                            conformity_extra: Number(meta?.conformity_extra) || 0,
-                            sample_type: s.sample_type,
-                            category: meta?.category as SampleCategory | undefined,
-                            sample_matrix: meta?.sample_matrix as SampleMatrix | undefined,
+                          const trackerSample = wizardSampleFromOrderSample(s, {
+                            batch_number:
+                              (coa?.batch_number || '').trim()
+                              || (typeof meta?.batch_number === 'string' ? meta.batch_number.trim() : '')
+                              || undefined,
                           });
                           const trackStage = trackingStageFromStatuses({
                             orderStatus: order.status,
