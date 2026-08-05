@@ -31,6 +31,9 @@ import {
   lookupCas,
   defaultCultureProjectedCompletion,
   coaIntakeYmd,
+  resolveIncludeSterility,
+  resolveIncludeEndotoxin,
+  resolveIncludeHeavyMetals,
 } from '../../lib/labCoaForm';
 import { downloadCoaPdf, openCoaPrintView } from '../../lib/coaPdf';
 import { LABEL_CLAIM_UNITS, labelClaimFromSummary } from '../../lib/orderCatalog';
@@ -40,11 +43,14 @@ import {
 } from '../../lib/chromatogramParse';
 import LogoDropzone from '../account/LogoDropzone';
 import ChromatogramDataDropzone from './ChromatogramDataDropzone';
+import type { OrderSample } from '../../lib/types';
 
 const MAX_COA_IMAGE_BYTES = 1024 * 1024;
 
 interface Props {
   coa: COA;
+  /** Linked order sample — used so Prepare keeps ordered assays (e.g. pending sterility). */
+  sampleMetadata?: OrderSample['metadata'] | null;
   onClose: () => void;
   onSaved?: (coa: COA) => void;
 }
@@ -103,8 +109,11 @@ function applyPrepDefaults(coa: COA) {
   };
 }
 
-export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
+export default function CoaPdfPrepModal({ coa, sampleMetadata = null, onClose, onSaved }: Props) {
   const boot = applyPrepDefaults(coa);
+  const includeSterility = resolveIncludeSterility(coa, sampleMetadata);
+  const includeEndotoxin = resolveIncludeEndotoxin(coa, sampleMetadata);
+  const includeHeavyMetals = resolveIncludeHeavyMetals(coa, sampleMetadata);
   const [vialImage, setVialImage] = useState(boot.next.vial_image || '');
   const [hplcImage, setHplcImage] = useState(boot.next.hplc_image || '');
   const [watermarkImage, setWatermarkImage] = useState(boot.next.chromatogram_image || '');
@@ -278,44 +287,9 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
         endotoxin_pass: endotoxinPass,
         heavy_metals_pass: heavyMetalsPass,
         heavy_metals: heavyMetals,
-        include_sterility: (() => {
-          const summary = (coa.result_summary && typeof coa.result_summary === 'object')
-            ? (coa.result_summary as Record<string, unknown>)
-            : {};
-          if (typeof summary.include_sterility === 'boolean') return summary.include_sterility;
-          if (summary.test_mode === 'atlas_pro' || summary.test_mode === 'full_qc') return true;
-          const panel = (Array.isArray(coa.panel_results) ? coa.panel_results : [])
-            .find(p => /steril/i.test(p.panel_name));
-          if (!panel) return false;
-          const result = (panel.result || '').trim();
-          return !(panel.pass === null || /^pending\b/i.test(result));
-        })(),
-        include_endotoxin: (() => {
-          const summary = (coa.result_summary && typeof coa.result_summary === 'object')
-            ? (coa.result_summary as Record<string, unknown>)
-            : {};
-          if (typeof summary.include_endotoxin === 'boolean') return summary.include_endotoxin;
-          if (summary.test_mode === 'atlas_pro') return true;
-          if (summary.test_mode === 'full_qc') return false;
-          const panel = (Array.isArray(coa.panel_results) ? coa.panel_results : [])
-            .find(p => /endotoxin|lal/i.test(p.panel_name));
-          if (!panel) return false;
-          const result = (panel.result || '').trim();
-          return !(panel.pass === null || /^pending$/i.test(result));
-        })(),
-        include_heavy_metals: (() => {
-          const summary = (coa.result_summary && typeof coa.result_summary === 'object')
-            ? (coa.result_summary as Record<string, unknown>)
-            : {};
-          if (typeof summary.include_heavy_metals === 'boolean') return summary.include_heavy_metals;
-          if (summary.test_mode === 'atlas_pro') return true;
-          if (summary.test_mode === 'full_qc') return false;
-          const panels = Array.isArray(coa.panel_results) ? coa.panel_results : [];
-          const metal = panels.find(p => /lead|arsenic|cadmium|mercury|chromium/i.test(p.panel_name));
-          if (!metal) return false;
-          const result = (metal.result || '').trim();
-          return !(metal.pass === null || /^pending$/i.test(result));
-        })(),
+        include_sterility: includeSterility,
+        include_endotoxin: includeEndotoxin,
+        include_heavy_metals: includeHeavyMetals,
       });
       if (saveError) {
         setError(saveError);
@@ -652,6 +626,7 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
                   </div>
                 </div>
 
+                {includeSterility && (
                 <div className="space-y-3">
                   <h3 className="text-sm font-bold uppercase tracking-wide text-black">Sterility</h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -715,7 +690,9 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
                     )}
                   </div>
                 </div>
+                )}
 
+                {includeEndotoxin && (
                 <div className="space-y-3">
                   <h3 className="text-sm font-bold uppercase tracking-wide text-black">Endotoxins (LAL)</h3>
                   <p className="text-xs text-neutral-500">Specification on COA: {ENDOTOXIN_SPEC_EU_ML}</p>
@@ -752,7 +729,9 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
                     </div>
                   </div>
                 </div>
+                )}
 
+                {includeHeavyMetals && (
                 <div className="space-y-3">
                   <div className="grid sm:grid-cols-2 gap-3">
                     <div>
@@ -794,6 +773,7 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
                     ))}
                   </div>
                 </div>
+                )}
 
                 <div className="space-y-3">
                   <h3 className="text-sm font-bold uppercase tracking-wide text-black">Fentanyl Detection</h3>
