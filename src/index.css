@@ -358,12 +358,9 @@
 }
 
 .coa-png-export .coa-print-chromatogram {
-<<<<<<< HEAD
+  overflow: visible !important;
   min-height: 10.5rem !important;
   height: 100% !important;
-=======
-  overflow: visible !important;
-  min-height: 12rem !important;
 }
 
 .coa-png-export .coa-hcg-chrom-note,
@@ -375,11 +372,6 @@
   overflow: visible !important;
   white-space: normal !important;
   page-break-inside: avoid;
-}
-
-.coa-png-export .coa-chrom-photo {
-  overflow: hidden !important;
->>>>>>> 5bdeb90 (Fix digital COA cards to show ordered assays, full lot numbers, and HCG chromatogram note.)
 }
 
 .coa-png-export .coa-chrom-photo img {
