@@ -989,10 +989,25 @@ export default function Lab() {
       const intakeForProjection = form.receivedDate.trim()
         || isoToLocalDateInput(sampleIntakeAt(linkedSample))
         || localDateInputValue();
+      const orderedIncludes = linkedSample
+        ? buildLabResultsFromSample(linkedSample.metadata, linkedSample.sample_name)
+        : null;
       const resultsForPanels: LabCoaResults = {
         ...labResults,
+        includeSterility: labResults.includeSterility || !!orderedIncludes?.includeSterility,
+        includeEndotoxin: labResults.includeEndotoxin || !!orderedIncludes?.includeEndotoxin,
+        includeHeavyMetals: labResults.includeHeavyMetals || !!orderedIncludes?.includeHeavyMetals,
+        includeFentanyl: labResults.includeFentanyl || !!orderedIncludes?.includeFentanyl,
+        sterilityMethod:
+          labResults.includeSterility || orderedIncludes?.includeSterility
+            ? (labResults.sterilityMethod === 'pcr' && orderedIncludes?.sterilityMethod === 'culture_14_day'
+              ? 'culture_14_day'
+              : labResults.sterilityMethod)
+            : labResults.sterilityMethod,
         sterilityProjectedCompletion:
-          labResults.sterilityMethod === 'culture_14_day' && labResults.sterilityPass === null
+          (labResults.sterilityMethod === 'culture_14_day'
+            || orderedIncludes?.sterilityMethod === 'culture_14_day')
+          && labResults.sterilityPass === null
             ? (labResults.sterilityProjectedCompletion.trim()
               || defaultCultureProjectedCompletion(intakeForProjection))
             : '',
@@ -1133,9 +1148,9 @@ export default function Lab() {
         result_summary: {
           include_molecular_weight: includeMw,
           molecular_weight: includeMw ? labResults.molecularWeight.trim() : '',
-          sterility_method: labResults.sterilityMethod,
-          sterility_pass: labResults.sterilityPass,
-          sterility_method_label: STERILITY_METHOD_LABELS[labResults.sterilityMethod],
+          sterility_method: resultsForPanels.sterilityMethod,
+          sterility_pass: resultsForPanels.sterilityPass,
+          sterility_method_label: STERILITY_METHOD_LABELS[resultsForPanels.sterilityMethod],
           sterility_specification: 'Not Detected',
           sterility_projected_completion:
             resultsForPanels.sterilityMethod === 'culture_14_day' && resultsForPanels.sterilityPass === null
@@ -1164,10 +1179,10 @@ export default function Lab() {
           ...(resolvedSampleMatrix ? { matrix_type: resolvedSampleMatrix, sample_matrix: resolvedSampleMatrix } : {}),
           category: linkedMeta?.category || '',
           test_mode: linkedMeta?.test_mode || '',
-          include_endotoxin: !!labResults.includeEndotoxin,
-          include_heavy_metals: !!labResults.includeHeavyMetals,
-          include_sterility: !!labResults.includeSterility,
-          include_fentanyl: !!labResults.includeFentanyl,
+          include_endotoxin: !!resultsForPanels.includeEndotoxin,
+          include_heavy_metals: !!resultsForPanels.includeHeavyMetals,
+          include_sterility: !!resultsForPanels.includeSterility,
+          include_fentanyl: !!resultsForPanels.includeFentanyl,
           labeled_content: form.labeledContent.trim() || linkedMeta?.labeled_content || '',
           label_claim_unit: form.labelClaimUnit.trim() || linkedMeta?.label_claim_unit || 'mg',
           include_cas_number: !!looksLikeCasNumber(form.casNumber.trim())
@@ -2547,6 +2562,11 @@ export default function Lab() {
       {prepCoa && (
         <CoaPdfPrepModal
           coa={prepCoa}
+          sampleMetadata={
+            prepCoa.sample_id
+              ? (samples.find(s => s.id === prepCoa.sample_id)?.metadata ?? null)
+              : null
+          }
           onClose={() => setPrepCoa(null)}
           onSaved={updated => {
             setCoas(prev => prev.map(c => (c.id === updated.id ? hydrateCoaImages(updated) : c)));
