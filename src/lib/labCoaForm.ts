@@ -1,6 +1,7 @@
 import { COA, OrderSample, PanelResult } from './types';
 import { OrderSampleMetadata, parseSampleMetadata, orderSampleIncludesFentanyl } from './coaPanels';
 import { ATLAS_PRO_INCLUDED_CONFORMITY_VIALS, formatLabelClaim } from './orderCatalog';
+import { sampleIncludesAssay } from './orderProjection';
 
 export const VIAL_SIZE_OPTIONS = ['3ml', '5ml', '10ml'] as const;
 export type VialSizeOption = (typeof VIAL_SIZE_OPTIONS)[number];
@@ -426,11 +427,11 @@ export const EMPTY_LAB_RESULTS: LabCoaResults = {
   sterilityPass: null,
   endotoxinEuMl: '',
   endotoxinPass: null,
-  includeEndotoxin: true,
+  includeEndotoxin: false,
   heavyMetalsPass: null,
   heavyMetals: heavyMetalsEmptyDefaults(),
-  includeHeavyMetals: true,
-  includeSterility: true,
+  includeHeavyMetals: false,
+  includeSterility: false,
   conformityPeptides: [],
   blendPeptides: [],
   includeFentanyl: false,
@@ -623,20 +624,13 @@ export function buildLabResultsFromSample(metadata: OrderSample['metadata'], sam
     ? blendPeptides.map(p => p.name).join(' + ')
     : (meta.peptide_identification?.trim() || sampleName.trim());
   const includeFentanyl = orderSampleIncludesFentanyl(metadata);
-  const assayIds = Array.isArray(meta.individual_tests) ? meta.individual_tests.map(String) : [];
-  const mode = typeof meta.test_mode === 'string' ? meta.test_mode : '';
-  // Atlas Pro always includes biosafety metals/endotoxin; revised Full QC does not.
-  const includeHeavyMetals =
-    mode === 'atlas_pro' || assayIds.includes('heavy_metals_icpms');
-  const includeEndotoxin =
-    mode === 'atlas_pro' || assayIds.includes('endotoxin_usp85');
+  const orderRef = { metadata };
+  // Only assays present on the order appear on the COA (basic IPQ ≠ Atlas Pro biosafety).
+  const includeHeavyMetals = sampleIncludesAssay(orderRef, 'heavy_metals_icpms');
+  const includeEndotoxin = sampleIncludesAssay(orderRef, 'endotoxin_usp85');
   const includeSterility =
-    mode === 'atlas_pro' ||
-    mode === 'full_qc' ||
-    assayIds.includes('sterility_pcr') ||
-    assayIds.includes('sterility_culture') ||
-    // Legacy Full QC rows that still list endotoxin/metals in metadata still had sterility.
-    assayIds.length === 0;
+    sampleIncludesAssay(orderRef, 'sterility_pcr')
+    || sampleIncludesAssay(orderRef, 'sterility_culture');
   return {
     ...EMPTY_LAB_RESULTS,
     identification,
@@ -871,14 +865,14 @@ export function buildLabResultsFromCoa(
     sterilityProjectedCompletion:
       sterilityMethod === 'culture_14_day' ? sterilityProjectedCompletion : '',
     sterilityPass,
-    includeSterility: !!sterilityPanel || base.includeSterility,
+    includeSterility: sampleMetadata != null ? base.includeSterility : (!!sterilityPanel || base.includeSterility),
     endotoxinEuMl,
     endotoxinPass,
-    includeEndotoxin: !!endotoxinPanel || base.includeEndotoxin,
-    includeHeavyMetals: includeHeavyMetals || base.includeHeavyMetals,
+    includeEndotoxin: sampleMetadata != null ? base.includeEndotoxin : (!!endotoxinPanel || base.includeEndotoxin),
+    includeHeavyMetals: sampleMetadata != null ? base.includeHeavyMetals : (includeHeavyMetals || base.includeHeavyMetals),
     heavyMetalsPass,
     heavyMetals,
-    includeFentanyl: !!fentanylPanel || base.includeFentanyl,
+    includeFentanyl: sampleMetadata != null ? base.includeFentanyl : (!!fentanylPanel || base.includeFentanyl),
     fentanylPass: fentanylPanel ? fentanylPanel.pass !== false : true,
     conformityPeptides,
     blendPeptides: blendPeptides.length > 0 ? blendPeptides : base.blendPeptides,
@@ -951,7 +945,7 @@ export function labResultsToPanelResults(
     });
   }
 
-  if (results.includeSterility !== false) {
+  if (results.includeSterility) {
     const sterilityMethodLabel = STERILITY_METHOD_LABELS[results.sterilityMethod];
     const projected = results.sterilityMethod === 'culture_14_day'
       ? (results.sterilityProjectedCompletion || '').trim()
@@ -975,7 +969,7 @@ export function labResultsToPanelResults(
     }
   }
 
-  if (results.includeEndotoxin !== false) {
+  if (results.includeEndotoxin) {
     if (results.endotoxinPass === null) {
       rows.push({
         panel_name: 'Endotoxin',
@@ -993,7 +987,7 @@ export function labResultsToPanelResults(
     }
   }
 
-  if (results.includeHeavyMetals !== false) {
+  if (results.includeHeavyMetals) {
     for (const metal of HEAVY_METAL_NAMES) {
       const filled = (results.heavyMetals[metal] ?? '').trim();
       const pending = results.heavyMetalsPass === null;

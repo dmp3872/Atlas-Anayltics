@@ -280,6 +280,44 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
         endotoxin_pass: endotoxinPass,
         heavy_metals_pass: heavyMetalsPass,
         heavy_metals: heavyMetals,
+        include_sterility: (() => {
+          const summary = (coa.result_summary && typeof coa.result_summary === 'object')
+            ? (coa.result_summary as Record<string, unknown>)
+            : {};
+          if (typeof summary.include_sterility === 'boolean') return summary.include_sterility;
+          if (summary.test_mode === 'atlas_pro' || summary.test_mode === 'full_qc') return true;
+          const panel = (Array.isArray(coa.panel_results) ? coa.panel_results : [])
+            .find(p => /steril/i.test(p.panel_name));
+          if (!panel) return false;
+          const result = (panel.result || '').trim();
+          return !(panel.pass === null || /^pending\b/i.test(result));
+        })(),
+        include_endotoxin: (() => {
+          const summary = (coa.result_summary && typeof coa.result_summary === 'object')
+            ? (coa.result_summary as Record<string, unknown>)
+            : {};
+          if (typeof summary.include_endotoxin === 'boolean') return summary.include_endotoxin;
+          if (summary.test_mode === 'atlas_pro') return true;
+          if (summary.test_mode === 'full_qc') return false;
+          const panel = (Array.isArray(coa.panel_results) ? coa.panel_results : [])
+            .find(p => /endotoxin|lal/i.test(p.panel_name));
+          if (!panel) return false;
+          const result = (panel.result || '').trim();
+          return !(panel.pass === null || /^pending$/i.test(result));
+        })(),
+        include_heavy_metals: (() => {
+          const summary = (coa.result_summary && typeof coa.result_summary === 'object')
+            ? (coa.result_summary as Record<string, unknown>)
+            : {};
+          if (typeof summary.include_heavy_metals === 'boolean') return summary.include_heavy_metals;
+          if (summary.test_mode === 'atlas_pro') return true;
+          if (summary.test_mode === 'full_qc') return false;
+          const panels = Array.isArray(coa.panel_results) ? coa.panel_results : [];
+          const metal = panels.find(p => /lead|arsenic|cadmium|mercury|chromium/i.test(p.panel_name));
+          if (!metal) return false;
+          const result = (metal.result || '').trim();
+          return !(metal.pass === null || /^pending$/i.test(result));
+        })(),
       });
       if (saveError) {
         setError(saveError);
