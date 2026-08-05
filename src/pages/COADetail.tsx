@@ -11,7 +11,7 @@ import { verifyCoaIntegrity } from '../lib/coaVerify';
 import { hydrateCoaImages, readCoaPdfStats, resolveCoaHeaderLogo, resolveCoaWatermark, trimImageWhitespace } from '../lib/coaImages';
 import { partitionCoaPanels, panelStatusLabel, panelStatusToneClass, resolvePanelPass, formatCoaResultDisplay } from '../lib/coaDisplayPanels';
 import { COA_DETAIL_COLUMNS, fetchCoaImageRow } from '../lib/coaSelect';
-import { casForSampleName, formatCoaDecimal, parseAssayMethod, ASSAY_METHOD_LABELS, assayMethodFromPanels, hydrateMultiVialPanelResults } from '../lib/labCoaForm';
+import { formatCoaDecimal, parseAssayMethod, ASSAY_METHOD_LABELS, assayMethodFromPanels, hydrateMultiVialPanelResults, resolveCasNumber } from '../lib/labCoaForm';
 import { labelClaimFromSummary, netContentSpecificationDisplay } from '../lib/orderCatalog';
 import { compressImageDataUrl } from '../lib/imageCompress';
 import { coaPngFilename, downloadCoaPngFromElement } from '../lib/coaPdf';
@@ -307,11 +307,18 @@ export default function COADetail() {
       return n > 0 ? String(n) : '';
     })()
     || '—';
-  const casRaw = (coa.peptide_sequence || '').trim();
-  const casNumber = /^\d+-\d+-\d+$/.test(casRaw)
-    ? casRaw
-    : (casForSampleName(coa.sample_name) || casForSampleName(coa.display_name || '') || casRaw || '—');
-  const labelClaim = labelClaimFromSummary(summary) || '—';
+  const includeCas = summary.include_cas_number !== false;
+  const casNumber = includeCas
+    ? (resolveCasNumber(coa.peptide_sequence, coa.sample_name, coa.display_name) || '—')
+    : '';
+  const labelClaim = labelClaimFromSummary(summary)
+    || (() => {
+      const net = mainPanels.find(p => /net content|peptide content/i.test(p.panel_name)
+        && !/^blend content/i.test(p.panel_name));
+      const m = (net?.specification || '').match(/label claim:\s*(.+)$/i);
+      return m?.[1]?.trim() || '';
+    })()
+    || '—';
 
   const clientWebsite =
     (typeof summary.client_website === 'string' && summary.client_website.trim())
@@ -336,7 +343,7 @@ export default function COADetail() {
     ],
     [
       { label: 'Label Claim', value: labelClaim },
-      { label: 'CAS Number', value: casNumber },
+      ...(includeCas ? [{ label: 'CAS Number', value: casNumber || '—' }] : []),
     ],
     [
       { label: 'Vials Tested', value: vialsTested },
@@ -535,7 +542,7 @@ export default function COADetail() {
                         {r.unit && r.result ? ` ${r.unit}` : ''}
                       </td>
                       <td className="px-3 py-1 border-t border-atlas-border">
-                        {isNetContent ? (
+                        {isNetContent && pass !== null ? (
                           <span className="font-bold uppercase text-xs text-atlas-success">Reported Value</span>
                         ) : (
                           <span className={`font-bold uppercase text-xs ${panelStatusToneClass(pass)}`}>

@@ -1,7 +1,7 @@
 import { COA, PanelResult } from './types';
 import { formatDate } from './utils';
 import { readCoaPdfStats } from './coaImages';
-import { ENDOTOXIN_SPEC_EU_ML, STERILITY_METHOD_LABELS, formatCoaDecimal, parseAssayMethod, withAssayMethodSpec, ASSAY_METHOD_LABELS, assayMethodFromPanels, hydrateMultiVialPanelResults, formatPurityResultWithUncertainty } from './labCoaForm';
+import { ENDOTOXIN_SPEC_EU_ML, STERILITY_METHOD_LABELS, formatCoaDecimal, parseAssayMethod, withAssayMethodSpec, withSterilityMethodSpec, ASSAY_METHOD_LABELS, assayMethodFromPanels, hydrateMultiVialPanelResults, formatPurityResultWithUncertainty, formatSterilityPendingResult } from './labCoaForm';
 import { collapseConformityPanels } from './coaDisplayPanels';
 import { labelClaimFromSummary, netContentSpecificationDisplay } from './orderCatalog';
 
@@ -21,14 +21,14 @@ function findPanel(panels: PanelResult[], ...keywords: string[]): PanelResult | 
 function conformityLabel(panel: PanelResult | undefined): string {
   if (!panel) return '';
   if (!panel.result?.trim() && panel.specification === undefined) return '';
-  if (panel.pass === null || /^pending$/i.test((panel.result || '').trim())) return 'PENDING';
+  if (panel.pass === null || /^pending\b/i.test((panel.result || '').trim())) return 'PENDING';
   return panel.pass ? 'PASS' : 'FAIL';
 }
 
 function netContentConformityLabel(panel: PanelResult | undefined): string {
   if (!panel) return '';
   if (!panel.result?.trim() && panel.specification === undefined) return '';
-  if (panel.pass === null || /^pending$/i.test((panel.result || '').trim())) return 'PENDING';
+  if (panel.pass === null || /^pending\b/i.test((panel.result || '').trim())) return 'PENDING';
   return 'Reported Value';
 }
 
@@ -70,16 +70,21 @@ function resolveSterility(coa: COA, panels: PanelResult[]) {
   const panel = findPanel(panels, 'steril');
   const methodLabel = STERILITY_METHOD_LABELS[stats.sterility_method];
   const pass = stats.sterility_pass;
+  const specification = withSterilityMethodSpec('Not Detected', stats.sterility_method);
   if (pass === null) {
     return {
-      specification: 'Not Detected',
-      result: 'Pending',
+      specification,
+      result: formatSterilityPendingResult(
+        stats.sterility_method === 'culture_14_day'
+          ? stats.sterility_projected_completion
+          : '',
+      ),
       conformity: 'PENDING',
       panel,
     };
   }
   return {
-    specification: 'Not Detected',
+    specification,
     result: pass
       ? `Not Detected (${methodLabel})`
       : `Detected (${methodLabel})`,

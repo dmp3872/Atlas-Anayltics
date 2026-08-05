@@ -144,15 +144,64 @@ export function isDeferredAssayPanel(name: string): boolean {
 
 /**
  * Resolve Pass / Fail / Pending for a panel row.
- * null = Pending. Also treats legacy empty biosafety/metal rows (pass:false) as pending.
+ * null = Pending. Empty / "Pending" results never count as Pass or Fail.
  */
 export function resolvePanelPass(panel: PanelResult): boolean | null {
   if (panel.pass === null) return null;
   const result = (panel.result || '').trim();
-  if (!result || /^pending$/i.test(result)) {
-    if (isDeferredAssayPanel(panel.panel_name) && panel.pass !== true) return null;
-  }
+  if (!result || /^pending\b/i.test(result)) return null;
   return panel.pass;
+}
+
+export type DigitalChipStatus = 'pending' | 'queued' | 'pass' | 'fail';
+
+/** Per-assay chip statuses for the Atlas digital COA card. */
+export type DigitalAssayChipStatuses = {
+  identity?: DigitalChipStatus;
+  purity?: DigitalChipStatus;
+  quantity?: DigitalChipStatus;
+  heavyMetals?: DigitalChipStatus;
+  endotoxin?: DigitalChipStatus;
+  sterility?: DigitalChipStatus;
+  fentanyl?: DigitalChipStatus;
+};
+
+function chipFromPass(pass: boolean | null): DigitalChipStatus {
+  if (pass === true) return 'pass';
+  if (pass === false) return 'fail';
+  return 'pending';
+}
+
+/** Derive digital-card chip statuses from COA panel rows (Pending stays Pending). */
+export function assayChipStatusesFromPanels(
+  panels: PanelResult[] | null | undefined,
+): DigitalAssayChipStatuses {
+  const list = Array.isArray(panels) ? panels : [];
+  if (list.length === 0) return {};
+
+  const find = (pred: (name: string) => boolean) => list.find(p => pred(p.panel_name));
+  const statusOf = (panel: PanelResult | undefined): DigitalChipStatus | undefined => (
+    panel ? chipFromPass(resolvePanelPass(panel)) : undefined
+  );
+
+  const metals = list.filter(p => isHeavyMetalPanel(p.panel_name));
+  let heavyMetals: DigitalChipStatus | undefined;
+  if (metals.length > 0) {
+    const resolved = metals.map(resolvePanelPass);
+    if (resolved.some(p => p === false)) heavyMetals = 'fail';
+    else if (resolved.some(p => p === null)) heavyMetals = 'pending';
+    else heavyMetals = 'pass';
+  }
+
+  return {
+    identity: statusOf(find(n => /identity|identification/i.test(n))),
+    purity: statusOf(find(isNetPurityPanel)),
+    quantity: statusOf(find(isNetContentPanel)),
+    heavyMetals,
+    endotoxin: statusOf(find(n => /endotoxin|lal/i.test(n))),
+    sterility: statusOf(find(n => /sterility/i.test(n))),
+    fentanyl: statusOf(find(n => /fentanyl/i.test(n))),
+  };
 }
 
 export function panelStatusLabel(pass: boolean | null): 'Pass' | 'Fail' | 'Pending' {
@@ -237,7 +286,7 @@ export function partitionCoaPanels(panels: PanelResult[]): {
     const found = metals.find(m => match.test(m.panel_name));
     const pass = found ? resolvePanelPass(found) : null;
     const rawResult = (found?.result ?? '').trim();
-    const result = pass === null && (!rawResult || /^pending$/i.test(rawResult))
+    const result = pass === null && (!rawResult || /^pending\b/i.test(rawResult))
       ? 'Pending'
       : (found?.result ?? '');
     return {
@@ -256,7 +305,7 @@ export function partitionCoaPanels(panels: PanelResult[]): {
 function formatEndotoxinPanel(panel: PanelResult): PanelResult {
   if (!/endotoxin|lal/i.test(panel.panel_name)) return panel;
   const raw = (panel.result || '').trim();
-  if (!raw || /^pending$/i.test(raw) || /\(\s*lal\s*\)/i.test(raw)) return panel;
+  if (!raw || /^pending\b/i.test(raw) || /\(\s*lal\s*\)/i.test(raw)) return panel;
   return { ...panel, result: `${raw} (LAL)` };
 }
 
