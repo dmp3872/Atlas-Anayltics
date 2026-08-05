@@ -53,6 +53,7 @@ import OrderEtaEditor from '../components/order/OrderEtaEditor';
 import { fetchOrderActionItems, openActionCount } from '../lib/orderActions';
 import { createEmptySample, LABEL_CLAIM_UNITS, SAMPLE_MATRICES, type TestMode, type WizardSample } from '../lib/orderCatalog';
 import { assayResultsFromPanels, assayChipStatusesFromPanels } from '../lib/coaDisplayPanels';
+import { parseOrderNotes } from '../lib/orderMeta';
 const MAX_COA_IMAGE_BYTES = 1024 * 1024;
 
 type Message = { type: 'success' | 'error'; text: string; slug?: string } | null;
@@ -1161,8 +1162,26 @@ export default function Lab() {
         issuedSlug = data?.slug || sampleCode;
 
         const sampleRow = form.sampleId ? samples.find(s => s.id === form.sampleId) : null;
-        const brandNames = (sampleRow?.metadata as { brand_names?: string[] } | null)?.brand_names?.filter(Boolean) ?? [];
+        const linkedOrder = form.orderId ? orders.find(o => o.id === form.orderId) : undefined;
+        const metaBrands = (sampleRow?.metadata as { brand_names?: string[] } | null)?.brand_names?.filter(Boolean) ?? [];
+        let noteBrands: string[] = [];
+        if (linkedOrder?.notes && sampleRow) {
+          const { meta } = parseOrderNotes(linkedOrder.notes);
+          const detail = Array.isArray(meta.samples_detail) ? meta.samples_detail : [];
+          const sampleName = (sampleRow.sample_name || '').trim().toLowerCase();
+          const displayName = (sampleRow.display_name || '').trim().toLowerCase();
+          for (const row of detail) {
+            const rowName = String(row.peptide_identification || row.sample_name || '').trim().toLowerCase();
+            if (rowName && (rowName === sampleName || rowName === displayName) && Array.isArray(row.brand_names)) {
+              noteBrands = row.brand_names.filter((n): n is string => typeof n === 'string' && !!n.trim());
+            }
+          }
+        }
+        const brandNames = [...new Set([...metaBrands, ...noteBrands])];
+        const primaryBrand = String(payload.company_name || '').trim().toLowerCase();
         for (const brand of brandNames) {
+          if (!brand.trim()) continue;
+          if (primaryBrand && brand.trim().toLowerCase() === primaryBrand) continue;
           await issueCoaForBrand({ ...payload, coa_workflow_stage: 'issued' }, brand, sampleCreatedAt);
         }
       }
