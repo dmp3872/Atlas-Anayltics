@@ -56,10 +56,10 @@ export default function InteractiveChromatogram({
   }, [data?.points]);
 
   const width = 720;
-  const height = 200;
-  const padL = 18;
-  const padR = 8;
-  const padB = 22;
+  const height = 210;
+  const padL = 22;
+  const padR = 10;
+  const padB = 32;
   const padT = 8;
   const innerW = width - padL - padR;
   const innerH = height - padB - padT;
@@ -71,6 +71,22 @@ export default function InteractiveChromatogram({
   const maxX = points[points.length - 1]?.x || 1;
   const minX = points[0]?.x ?? 0;
   const spanX = Math.max(maxX - minX, 1e-9);
+
+  const minuteTicks = useMemo(() => {
+    const ticks: number[] = [];
+    const first = Math.ceil(minX - 1e-9);
+    const last = Math.floor(maxX + 1e-9);
+    for (let m = first; m <= last; m += 1) ticks.push(m);
+    // Short runs that don't cross an integer still get endpoint minutes.
+    if (ticks.length === 0) {
+      ticks.push(Math.round(minX));
+      if (Math.round(maxX) !== Math.round(minX)) ticks.push(Math.round(maxX));
+    }
+    return ticks;
+  }, [minX, maxX]);
+
+  // Label every minute on typical HPLC runs; thin labels only on very long traces.
+  const labelEvery = spanX > 45 ? 5 : spanX > 30 ? 2 : 1;
 
   const projectX = (x: number) => padL + ((x - minX) / spanX) * innerW;
   const projectY = (y: number) => padT + (1 - (y - minY) / spanY) * innerH;
@@ -141,15 +157,21 @@ export default function InteractiveChromatogram({
             Measured
           </p>
         )}
+        {(data?.retention_time || (measured && mainPeak)) && (
+          <p className="absolute right-3 top-2 text-[8px] font-mono font-semibold text-neutral-600 bg-white/90 px-1.5 py-0.5 rounded border border-atlas-border">
+            Main RT {(data?.retention_time ?? mainPeak.x).toFixed(2)} min
+            {measured ? ` · ${relIntensity.toFixed(0)}%` : ''}
+          </p>
+        )}
         {hover && (
-          <p className="absolute right-3 top-2 text-[10px] font-mono text-brand-700 bg-brand-50 px-2 py-0.5 rounded border border-brand-200">
+          <p className="absolute right-3 top-7 text-[10px] font-mono text-brand-700 bg-brand-50 px-2 py-0.5 rounded border border-brand-200 no-print">
             RT {hover.rt.toFixed(2)} · {(((hover.intensity - minY) / spanY) * 100).toFixed(1)}% rel.
           </p>
         )}
       </div>
       <svg
         viewBox={`0 0 ${width} ${height}`}
-        preserveAspectRatio="none"
+        preserveAspectRatio="xMidYMid meet"
         className="relative w-full flex-1 min-h-[9.5rem] cursor-crosshair coa-chrom-svg"
         onMouseMove={onMouseMove}
         onMouseLeave={() => setHover(null)}
@@ -159,6 +181,52 @@ export default function InteractiveChromatogram({
         ))}
         <line x1={padL} y1={padT} x2={padL} y2={height - padB} stroke="#999" strokeWidth="1" />
         <line x1={padL} y1={height - padB} x2={width - padR} y2={height - padB} stroke="#999" strokeWidth="1" />
+        {/* Vertical minute grid + tick marks for PDF print readability */}
+        {minuteTicks.map(m => {
+          const x = projectX(m);
+          const showLabel = m % labelEvery === 0;
+          return (
+            <g key={`min-${m}`}>
+              <line
+                x1={x}
+                y1={padT}
+                x2={x}
+                y2={height - padB}
+                stroke="#F0F0F0"
+                strokeWidth="1"
+              />
+              <line
+                x1={x}
+                y1={height - padB}
+                x2={x}
+                y2={height - padB + (showLabel ? 5 : 3)}
+                stroke="#666"
+                strokeWidth="1"
+              />
+              {showLabel && (
+                <text
+                  x={x}
+                  y={height - 8}
+                  fill="#444"
+                  fontSize="8"
+                  fontFamily="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
+                  textAnchor="middle"
+                >
+                  {m}
+                </text>
+              )}
+            </g>
+          );
+        })}
+        <text
+          x={(padL + width - padR) / 2}
+          y={height - 1}
+          fill="#888"
+          fontSize="7"
+          textAnchor="middle"
+        >
+          Retention time (min)
+        </text>
         <path d={pathD} stroke={GOLD} strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
         {mainPeak && (
           <circle
@@ -175,18 +243,6 @@ export default function InteractiveChromatogram({
             <line x1={hover.x} y1={padT} x2={hover.x} y2={height - padB} stroke={GOLD} strokeWidth="1" strokeDasharray="4 3" opacity="0.6" />
             <circle cx={hover.x} cy={hover.y} r="5" fill={GOLD} stroke="#fff" strokeWidth="2" />
           </>
-        )}
-        <text x={padL} y={height - 6} fill="#666" fontSize="9" textAnchor="start">
-          {minX.toFixed(minX < 10 ? 1 : 0)} min
-        </text>
-        <text x={padL + innerW} y={height - 6} fill="#666" fontSize="9" textAnchor="end">
-          {maxX.toFixed(maxX < 10 ? 1 : 0)} min
-        </text>
-        {(data?.retention_time || (measured && mainPeak)) && (
-          <text x={width / 2} y={height - 6} fill="#666" fontSize="9" textAnchor="middle">
-            Main RT: {(data?.retention_time ?? mainPeak.x).toFixed(2)} min
-            {measured ? ` · ${relIntensity.toFixed(0)}%` : ''}
-          </text>
         )}
       </svg>
       <p className="text-[10px] text-neutral-400 px-3 pb-2 no-print shrink-0">
