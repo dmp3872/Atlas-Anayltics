@@ -174,6 +174,13 @@ export interface ChromatogramData {
   points?: { x: number; y: number }[];
   /** Chemist-assigned vial size locked onto the COA (e.g. 3ml). */
   vial_size?: string;
+  /** Product form from order sample (Lyophilized, Liquid/Solution, etc.). */
+  sample_matrix?: string;
+  /** `measured` when points came from raw HPLC export at Issue/Prepare. */
+  source?: 'measured' | 'demo';
+  source_filename?: string;
+  /** Point count before downsampling (for chemist UI). */
+  point_count?: number;
 }
 
 export interface ApiKey {
