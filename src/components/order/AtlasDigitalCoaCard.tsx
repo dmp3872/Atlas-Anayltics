@@ -357,8 +357,9 @@ function FieldValue({ value, placeholderWidth = 'w-20' }: { value?: string; plac
   if (!trimmed) {
     return <span className={`inline-block h-2 rounded-sm bg-white/15 align-middle ${placeholderWidth}`} />;
   }
+  // Never truncate lot/client/product — long lot codes must stay fully readable on every card size.
   return (
-    <span className="max-w-[65%] truncate text-right font-bold text-white normal-case tracking-normal" title={trimmed}>
+    <span className="min-w-0 flex-1 text-right font-bold text-white normal-case tracking-normal break-all whitespace-normal leading-snug">
       {trimmed}
     </span>
   );
@@ -378,11 +379,14 @@ function PendingChip({
   label,
   status = 'pending',
   value,
+  instrument: instrumentOverride,
 }: {
   label: string;
   status?: 'pending' | 'queued' | 'pass' | 'fail';
   /** When set, shown instead of Pending/Pass/Fail (e.g. avg purity / quantity). */
   value?: string;
+  /** Override instrument chip (e.g. Sterility → 14-day vs PCR). */
+  instrument?: string;
 }) {
   const statusLabel =
     value?.trim() ||
@@ -422,7 +426,7 @@ function PendingChip({
       </div>
     );
   }
-  const instrument = CHIP_INSTRUMENTS[label] ?? 'LAB';
+  const instrument = instrumentOverride || CHIP_INSTRUMENTS[label] || 'LAB';
   return (
     <div className="flex-1 rounded-md border border-white/10 bg-white/[0.04] px-1.5 py-1.5 text-center">
       <p className="text-[8px] font-bold uppercase tracking-[0.14em] text-neutral-400">
@@ -585,13 +589,14 @@ export default function AtlasDigitalCoaCard({
   const name = sample ? productLabel(sample) : '';
   const lot = sample?.batch_number.trim() ?? '';
   const client = companyName.trim();
-  const clientLot = [client, lot].filter(Boolean).join(' · ');
   const claim = sample ? formatLabelClaim(sample.labeled_content, sample.label_claim_unit) : '';
-  const filled = Boolean(name || clientLot || claim);
+  const filled = Boolean(name || client || lot || claim);
   const methods = methodsForSample(sample);
   const methodKeys = new Set(methods.map(m => m.key));
   const showEndotoxin = methodKeys.has('endotoxin_usp85');
-  const showSterility = methodKeys.has('sterility_pcr') || methodKeys.has('sterility_culture');
+  const showSterilityCulture = methodKeys.has('sterility_culture');
+  const showSterilityPcr = methodKeys.has('sterility_pcr');
+  const showSterility = showSterilityCulture || showSterilityPcr;
   const showHeavyMetals = methodKeys.has('heavy_metals_icpms');
   const fentanyl = sample ? sampleIncludesFentanyl(sample) : false;
   const yymm = `${String(new Date().getFullYear()).slice(-2)}${String(new Date().getMonth() + 1).padStart(2, '0')}`;
@@ -708,17 +713,21 @@ export default function AtlasDigitalCoaCard({
           {sample ? typeLabel(sample) : 'Sample'}
         </p>
 
-        <div className="flex items-baseline justify-between gap-3 text-[9px] font-mono uppercase tracking-wider text-neutral-400">
-          <span className="shrink-0">Product</span>
+        <div className="flex items-start justify-between gap-3 text-[9px] font-mono uppercase tracking-wider text-neutral-400">
+          <span className="shrink-0 pt-px">Product</span>
           <FieldValue value={name} placeholderWidth="w-28" />
         </div>
-        <div className="flex items-baseline justify-between gap-3 text-[9px] font-mono uppercase tracking-wider text-neutral-400">
-          <span className="shrink-0">Client / Lot</span>
-          <FieldValue value={clientLot} placeholderWidth="w-20" />
+        <div className="flex items-start justify-between gap-3 text-[9px] font-mono uppercase tracking-wider text-neutral-400">
+          <span className="shrink-0 pt-px">Client</span>
+          <FieldValue value={client} placeholderWidth="w-20" />
+        </div>
+        <div className="flex items-start justify-between gap-3 text-[9px] font-mono uppercase tracking-wider text-neutral-400">
+          <span className="shrink-0 pt-px">Lot</span>
+          <FieldValue value={lot} placeholderWidth="w-24" />
         </div>
         {claim ? (
-          <div className="flex items-baseline justify-between gap-3 text-[9px] font-mono uppercase tracking-wider text-neutral-400">
-            <span className="shrink-0">Label claim</span>
+          <div className="flex items-start justify-between gap-3 text-[9px] font-mono uppercase tracking-wider text-neutral-400">
+            <span className="shrink-0 pt-px">Label claim</span>
             <FieldValue value={claim} placeholderWidth="w-16" />
           </div>
         ) : null}
@@ -749,7 +758,13 @@ export default function AtlasDigitalCoaCard({
           <div className="flex flex-wrap gap-1.5">
             {showHeavyMetals && <PendingChip label="Heavy metals" status={heavyMetalsChipStatus} />}
             {showEndotoxin && <PendingChip label="Endotoxin" status={endotoxinChipStatus} />}
-            {showSterility && <PendingChip label="Sterility" status={sterilityChipStatus} />}
+            {showSterility && (
+              <PendingChip
+                label="Sterility"
+                instrument={showSterilityCulture ? '14-day' : 'PCR'}
+                status={sterilityChipStatus}
+              />
+            )}
             {fentanyl && <PendingChip label="Fentanyl" status={fentanylChipStatus} />}
           </div>
         )}

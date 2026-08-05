@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import type { COA, OrderSample } from '../../lib/types';
 import AtlasDigitalCoaCard from '../order/AtlasDigitalCoaCard';
 import { assayResultsFromPanels, assayChipStatusesFromPanels } from '../../lib/coaDisplayPanels';
-import { createEmptySample, type TestMode } from '../../lib/orderCatalog';
+import { wizardSampleFromOrderSample } from '../../lib/orderCatalog';
 
 interface Props {
   coa: COA;
@@ -14,31 +14,21 @@ interface Props {
 
 function coaSample(coa: COA, sample?: OrderSample) {
   const meta = (sample?.metadata ?? {}) as Record<string, unknown>;
-  const modeValue = typeof meta.test_mode === 'string' ? meta.test_mode : 'individual';
-  const mode: TestMode =
-    modeValue === 'atlas_pro' || modeValue === 'full_qc' ? modeValue : 'individual';
-  const individualTests = Array.isArray(meta.individual_tests)
-    ? meta.individual_tests.filter((value): value is string => typeof value === 'string')
-    : [];
-  if (mode === 'individual' && individualTests.length === 0) {
-    individualTests.push('identity_purity_quantity');
-  }
-  return createEmptySample({
-    sample_name: sample?.sample_name || coa.sample_name,
-    display_name: sample?.display_name || coa.display_name,
-    batch_number:
-      (typeof meta.batch_number === 'string' ? meta.batch_number : '') || coa.batch_number || '',
-    labeled_content: typeof meta.labeled_content === 'string' ? meta.labeled_content : '',
-    label_claim_unit:
-      typeof meta.label_claim_unit === 'string' ? meta.label_claim_unit : 'mg',
-    primary_test_id:
-      (typeof meta.primary_test_id === 'string' ? meta.primary_test_id : '') ||
-      (mode === 'individual' ? 'identity_purity_quantity' : mode),
-    test_mode: mode,
-    individual_tests: individualTests,
-    conformity_extra: Number(meta.conformity_extra) || 0,
-    include_fentanyl: Boolean(meta.include_fentanyl),
-  });
+  return wizardSampleFromOrderSample(
+    {
+      sample_name: sample?.sample_name || coa.sample_name,
+      display_name: sample?.display_name || coa.display_name,
+      sample_type: sample?.sample_type,
+      metadata: sample?.metadata,
+    },
+    {
+      // Prefer issued COA lot (authoritative), then sample metadata — never slice.
+      batch_number:
+        (coa.batch_number || '').trim()
+        || (typeof meta.batch_number === 'string' ? meta.batch_number.trim() : '')
+        || '',
+    },
+  );
 }
 
 export default function CoaReadyCelebration({ coa, sample, onClose }: Props) {

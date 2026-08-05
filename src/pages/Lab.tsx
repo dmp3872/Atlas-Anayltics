@@ -51,7 +51,7 @@ import OrderActionChecklist from '../components/order/OrderActionChecklist';
 import OrderNotesThread from '../components/order/OrderNotesThread';
 import OrderEtaEditor from '../components/order/OrderEtaEditor';
 import { fetchOrderActionItems, openActionCount } from '../lib/orderActions';
-import { createEmptySample, LABEL_CLAIM_UNITS, SAMPLE_MATRICES, type TestMode, type WizardSample } from '../lib/orderCatalog';
+import { LABEL_CLAIM_UNITS, SAMPLE_MATRICES, wizardSampleFromOrderSample, type WizardSample } from '../lib/orderCatalog';
 import { assayResultsFromPanels, assayChipStatusesFromPanels } from '../lib/coaDisplayPanels';
 import { parseOrderNotes } from '../lib/orderMeta';
 const MAX_COA_IMAGE_BYTES = 1024 * 1024;
@@ -571,31 +571,23 @@ export default function Lab() {
   const linkedClient = form.clientId ? clients.find(c => c.id === form.clientId) : undefined;
 
   const issuePreviewSample = useMemo(() => {
-    const modeValue = linkedMeta?.test_mode;
-    const mode: TestMode =
-      modeValue === 'atlas_pro' || modeValue === 'full_qc' ? modeValue : 'individual';
-    const individualTests = Array.isArray(linkedMeta?.individual_tests)
-      ? linkedMeta!.individual_tests!.filter((value): value is string => typeof value === 'string')
-      : [];
-    if (mode === 'individual' && individualTests.length === 0) {
-      individualTests.push('identity_purity_quantity');
-    }
-    return createEmptySample({
-      sample_name: form.sampleName || linkedSample?.sample_name || '',
-      display_name: form.displayName || linkedSample?.display_name || form.sampleName,
-      batch_number: form.batchNumber || linkedMeta?.batch_number || '',
-      labeled_content: form.labeledContent || linkedMeta?.labeled_content || '',
-      label_claim_unit: form.labelClaimUnit || linkedMeta?.label_claim_unit || 'mg',
-      primary_test_id:
-        linkedMeta?.primary_test_id ||
-        (mode === 'individual' ? 'identity_purity_quantity' : mode),
-      test_mode: mode,
-      individual_tests: individualTests,
-      conformity_extra: Number(linkedMeta?.conformity_extra) || 0,
-      include_fentanyl: !!labResults.includeFentanyl,
-      category: (linkedMeta?.category as WizardSample['category'] | undefined) || undefined,
-      sample_matrix: (form.matrixType || linkedMeta?.sample_matrix || undefined) as WizardSample['sample_matrix'] | undefined,
-    });
+    return wizardSampleFromOrderSample(
+      {
+        sample_name: linkedSample?.sample_name,
+        display_name: linkedSample?.display_name,
+        sample_type: linkedSample?.sample_type,
+        metadata: linkedMeta ?? linkedSample?.metadata,
+      },
+      {
+        sample_name: form.sampleName || linkedSample?.sample_name || '',
+        display_name: form.displayName || linkedSample?.display_name || form.sampleName,
+        batch_number: form.batchNumber || linkedMeta?.batch_number || '',
+        labeled_content: form.labeledContent || linkedMeta?.labeled_content || '',
+        label_claim_unit: form.labelClaimUnit || linkedMeta?.label_claim_unit || 'mg',
+        include_fentanyl: !!labResults.includeFentanyl || !!linkedMeta?.include_fentanyl,
+        sample_matrix: (form.matrixType || linkedMeta?.sample_matrix || undefined) as WizardSample['sample_matrix'] | undefined,
+      },
+    );
   }, [
     form.sampleName, form.displayName, form.batchNumber, form.matrixType,
     form.labeledContent, form.labelClaimUnit, linkedMeta, linkedSample, labResults.includeFentanyl,

@@ -25,6 +25,7 @@ import Footer from '../components/layout/Footer';
 import AtlasLogo from '../components/brand/AtlasLogo';
 import InteractiveChromatogram from '../components/coa/InteractiveChromatogram';
 import CoaQrCode from '../components/coa/CoaQrCode';
+import { chromatogramNoteForSample } from '../lib/coaCompoundNotes';
 
 function footerDate(iso: string): string {
   const d = new Date(iso);
@@ -412,6 +413,11 @@ export default function COADetail() {
     || (typeof summary.company_address === 'string' && summary.company_address.trim())
     || '';
   const resolvedClientLogo = clientLogo || coa.company_logo || '';
+  const chromatogramNote = chromatogramNoteForSample(
+    coa.sample_name,
+    coa.display_name,
+    coa.peptide_sequence,
+  );
 
   const infoRows = [
     [
@@ -555,6 +561,12 @@ export default function COADetail() {
               />
             </div>
           </div>
+
+          {chromatogramNote ? (
+            <p className="coa-hcg-chrom-note mb-3 text-[9px] sm:text-[10px] leading-snug text-neutral-600 border border-atlas-border bg-neutral-50 px-2.5 py-2">
+              {chromatogramNote}
+            </p>
+          ) : null}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
             <div className="coa-stat-card">
