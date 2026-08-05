@@ -458,6 +458,8 @@ export type CoaPdfPrepPayload = {
   chromatogram_image: string;
   /** Unique HPLC / chromatograph photo for this run. */
   hplc_image?: string;
+  /** Measured HPLC points for the interactive digital chromatogram. */
+  chromatogram_data?: COA['chromatogram_data'] | null;
   /** Brand logo for HPLC watermark; snapshotted onto coa.company_logo. */
   company_logo?: string;
   avg_net_peptide_content: string;
@@ -703,6 +705,9 @@ export async function saveCoaPdfPrep(
     panel_results,
     molecular_weight,
     peptide_sequence: includeCas ? (resolvedCas || hydrated.peptide_sequence || '') : '',
+    ...(prep.chromatogram_data
+      ? { chromatogram_data: prep.chromatogram_data }
+      : {}),
   };
 
   const direct = {
@@ -714,6 +719,9 @@ export async function saveCoaPdfPrep(
     panel_results,
     molecular_weight,
     peptide_sequence: includeCas ? (resolvedCas || '') : '',
+    ...(prep.chromatogram_data
+      ? { chromatogram_data: prep.chromatogram_data }
+      : {}),
   };
 
   const { error } = await supabase.from('coas').update(direct).eq('id', coa.id);

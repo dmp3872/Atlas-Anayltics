@@ -34,7 +34,12 @@ import {
 } from '../../lib/labCoaForm';
 import { downloadCoaPdf, openCoaPrintView } from '../../lib/coaPdf';
 import { LABEL_CLAIM_UNITS, labelClaimFromSummary } from '../../lib/orderCatalog';
+import {
+  chromatogramDataFromParsed,
+  type ParsedChromatogram,
+} from '../../lib/chromatogramParse';
 import LogoDropzone from '../account/LogoDropzone';
+import ChromatogramDataDropzone from './ChromatogramDataDropzone';
 
 const MAX_COA_IMAGE_BYTES = 1024 * 1024;
 
@@ -103,6 +108,17 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
   const [vialImage, setVialImage] = useState(boot.next.vial_image || '');
   const [hplcImage, setHplcImage] = useState(boot.next.hplc_image || '');
   const [watermarkImage, setWatermarkImage] = useState(boot.next.chromatogram_image || '');
+  const [chromatogramParsed, setChromatogramParsed] = useState<ParsedChromatogram | null>(() => {
+    const chrom = boot.next.chromatogram_data;
+    const pts = Array.isArray(chrom?.points) ? chrom.points : [];
+    if (pts.length < 2) return null;
+    return {
+      points: pts,
+      retention_time: Number(chrom?.retention_time) || pts.reduce((a, b) => (b.y > a.y ? b : a), pts[0]).x,
+      source_filename: chrom?.source_filename || 'Saved chromatogram data',
+      original_count: Number(chrom?.point_count) || pts.length,
+    };
+  });
   const [avgNetPeptide, setAvgNetPeptide] = useState(boot.avgNetPeptide);
   const [meanOfVials, setMeanOfVials] = useState(boot.meanOfVials);
   const [avgPurity, setAvgPurity] = useState(boot.avgPurity);
@@ -170,6 +186,20 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
     setEndotoxinPass(d.stats.endotoxin_pass);
     setHeavyMetalsPass(d.stats.heavy_metals_pass);
     setHeavyMetals(d.stats.heavy_metals || heavyMetalsEmptyDefaults());
+    {
+      const chrom = d.next.chromatogram_data;
+      const pts = Array.isArray(chrom?.points) ? chrom.points : [];
+      if (pts.length >= 2) {
+        setChromatogramParsed({
+          points: pts,
+          retention_time: Number(chrom?.retention_time) || pts.reduce((a, b) => (b.y > a.y ? b : a), pts[0]).x,
+          source_filename: chrom?.source_filename || 'Saved chromatogram data',
+          original_count: Number(chrom?.point_count) || pts.length,
+        });
+      } else {
+        setChromatogramParsed(null);
+      }
+    }
     setShowAssayEdits(false);
     setError(null);
     setLoadingImages(true);
@@ -217,6 +247,16 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
         vial_image: vialImage,
         chromatogram_image: watermarkImage || coa.chromatogram_image || '',
         hplc_image: hplcImage,
+        chromatogram_data: chromatogramParsed
+          ? chromatogramDataFromParsed(chromatogramParsed, coa.chromatogram_data)
+          : {
+              ...(coa.chromatogram_data && typeof coa.chromatogram_data === 'object'
+                ? {
+                    vial_size: coa.chromatogram_data.vial_size,
+                    sample_matrix: coa.chromatogram_data.sample_matrix,
+                  }
+                : {}),
+            },
         company_logo: coa.company_logo || '',
         avg_net_peptide_content: avgNetPeptide,
         mean_of_vials_tested: vials,
@@ -359,6 +399,18 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
                 hint="JPG or PNG, up to 1 MB"
               />
             </div>
+          </div>
+
+          <div>
+            <label className="label mb-2 block">Raw chromatogram data</label>
+            <p className="text-xs text-neutral-500 mb-2">
+              Optional CSV/TSV (retention time + intensity). Drives the interactive digital chromatogram on the certificate.
+            </p>
+            <ChromatogramDataDropzone
+              parsed={chromatogramParsed}
+              onParsed={setChromatogramParsed}
+              onError={setError}
+            />
           </div>
 
           <div className="rounded-lg border border-atlas-border p-4 space-y-3 bg-neutral-50/60">
