@@ -41,6 +41,7 @@ import { hydrateCoaImages } from '../lib/coaImages';
 import { hydrateMultiVialPanelResults } from '../lib/labCoaForm';
 import { COA_LIST_COLUMNS } from '../lib/coaSelect';
 import CoaReadyCelebration from '../components/coa/CoaReadyCelebration';
+import OrderBrandingEditor from '../components/portal/OrderBrandingEditor';
 import { fetchSeenCoaCelebrations, markCoaCelebrationSeen } from '../lib/orderMessages';
 
 type PortalTab = 'home' | 'getting-started' | 'peptide-requests' | 'coas' | 'samples' | 'orders' | 'invoices' | 'payments' | 'account' | 'widget' | 'team';
@@ -1029,6 +1030,21 @@ export default function Portal() {
                             </span>
                           </div>
                         )}
+                        <OrderBrandingEditor
+                          userId={user!.id}
+                          order={order}
+                          samples={orderSamples}
+                          coas={coas}
+                          onSaved={({ order: nextOrder, samples: nextSamples }) => {
+                            setOrders(prev => prev.map(o => (o.id === nextOrder.id ? nextOrder : o)));
+                            if (nextSamples.length > 0) {
+                              setSamples(prev => prev.map(s => {
+                                const hit = nextSamples.find(u => u.id === s.id);
+                                return hit || s;
+                              }));
+                            }
+                          }}
+                        />
                         {order.payment_method === 'crypto' && orderIsPayable(order.payment_status) && (
                           <p className="px-5 py-3 text-xs text-neutral-600 bg-amber-50 border-b border-amber-100">
                             Paid via cryptocurrency · transaction confirmed at checkout
@@ -1081,6 +1097,18 @@ export default function Portal() {
                                   </span>
                                   {coa ? <ResultBadge result={coa.overall_result} /> : <span className="badge-pending"><Clock size={10} /> {SAMPLE_STATUS_LABELS[s.status]}</span>}
                                 </div>
+                                {(() => {
+                                  const brands = [
+                                    order.company_name,
+                                    ...((s.metadata as { brand_names?: string[] } | null)?.brand_names || []),
+                                  ].filter((n, i, arr) => !!n && arr.findIndex(x => x?.toLowerCase() === n.toLowerCase()) === i);
+                                  if (brands.length === 0) return null;
+                                  return (
+                                    <p className="text-xs text-neutral-500 mt-1">
+                                      COA brand{brands.length === 1 ? '' : 's'}: {brands.join(' · ')}
+                                    </p>
+                                  );
+                                })()}
                                 <p className="text-xs font-semibold uppercase tracking-wider text-neutral-400 mt-2 mb-1">
                                   Tests Ordered{meta?.tests_label ? ` · ${meta.tests_label}` : ''}
                                 </p>
