@@ -52,6 +52,7 @@ import CoaPdfPrepModal from '../components/lab/CoaPdfPrepModal';
 import { COA_LIST_COLUMNS } from '../lib/coaSelect';
 import { useAuth } from '../context/AuthContext';
 import AtlasDigitalCoaCard, { type DigitalCoaAssayResults } from '../components/order/AtlasDigitalCoaCard';
+import InteractiveChromatogram from '../components/coa/InteractiveChromatogram';
 import OrderActionChecklist from '../components/order/OrderActionChecklist';
 import OrderNotesThread from '../components/order/OrderNotesThread';
 import OrderEtaEditor from '../components/order/OrderEtaEditor';
@@ -1163,6 +1164,10 @@ export default function Lab() {
           ...(resolvedSampleMatrix ? { matrix_type: resolvedSampleMatrix, sample_matrix: resolvedSampleMatrix } : {}),
           category: linkedMeta?.category || '',
           test_mode: linkedMeta?.test_mode || '',
+          include_endotoxin: !!labResults.includeEndotoxin,
+          include_heavy_metals: !!labResults.includeHeavyMetals,
+          include_sterility: !!labResults.includeSterility,
+          include_fentanyl: !!labResults.includeFentanyl,
           labeled_content: form.labeledContent.trim() || linkedMeta?.labeled_content || '',
           label_claim_unit: form.labelClaimUnit.trim() || linkedMeta?.label_claim_unit || 'mg',
           include_cas_number: !!looksLikeCasNumber(form.casNumber.trim())
@@ -2006,6 +2011,8 @@ export default function Lab() {
                     </div>
                   )}
                   <div className="grid sm:grid-cols-2 gap-4">
+                    {labResults.includeSterility && (
+                      <>
                     <div>
                       <label className="label">Sterility method</label>
                       <select
@@ -2066,7 +2073,9 @@ export default function Lab() {
                         </p>
                       </div>
                     )}
-                    {labResults.includeEndotoxin !== false && (
+                      </>
+                    )}
+                    {labResults.includeEndotoxin && (
                       <>
                         <div>
                           <label className="label">Endotoxin (EU/mL)</label>
@@ -2111,7 +2120,7 @@ export default function Lab() {
                       </div>
                     )}
                   </div>
-                  {labResults.includeHeavyMetals !== false && (
+                  {labResults.includeHeavyMetals && (
                   <div>
                     <div className="grid sm:grid-cols-2 gap-3 mb-3">
                       <div>
@@ -2361,6 +2370,22 @@ export default function Lab() {
                     onParsed={setChromatogramParsed}
                     onError={text => setMsg({ type: 'error', text })}
                   />
+                  {chromatogramParsed && (
+                    <div className="mt-3 max-w-xl">
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-neutral-500 mb-1.5">
+                        Measured chromatogram preview
+                      </p>
+                      <InteractiveChromatogram
+                        data={{
+                          points: chromatogramParsed.points,
+                          retention_time: chromatogramParsed.retention_time,
+                          source: 'measured',
+                          source_filename: chromatogramParsed.source_filename,
+                          point_count: chromatogramParsed.original_count,
+                        }}
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
               <button type="submit" disabled={saving} className="btn-primary w-full gap-2">

@@ -483,6 +483,10 @@ export type CoaPdfPrepPayload = {
   endotoxin_pass: AssayPassState;
   heavy_metals_pass: AssayPassState;
   heavy_metals: Record<HeavyMetalName, string>;
+  /** When false, strip/omit sterility from panel_results (ordered tests only). */
+  include_sterility?: boolean;
+  include_endotoxin?: boolean;
+  include_heavy_metals?: boolean;
 };
 
 function upsertNamedPanel(
@@ -524,6 +528,9 @@ export function applyPrepToCoaPanels(coa: COA, prep: CoaPdfPrepPayload): {
     panels,
     name => name.includes('steril'),
     (() => {
+      const hadSterility = panels.some(p => /steril/i.test(p.panel_name));
+      const includeSterility = prep.include_sterility ?? hadSterility;
+      if (!includeSterility) return null;
       const projected = prep.sterility_method === 'culture_14_day'
         ? (prep.sterility_projected_completion || '').trim()
         : '';
@@ -549,19 +556,24 @@ export function applyPrepToCoaPanels(coa: COA, prep: CoaPdfPrepPayload): {
   panels = upsertNamedPanel(
     panels,
     name => name.includes('endotoxin') || name.includes('lal'),
-    prep.endotoxin_pass === null
-      ? {
-          panel_name: 'Endotoxin',
-          specification: ENDOTOXIN_SPEC_EU_ML,
-          result: 'Pending',
-          pass: null,
-        }
-      : {
-          panel_name: 'Endotoxin',
-          specification: ENDOTOXIN_SPEC_EU_ML,
-          result: formatEndotoxinResult(prep.endotoxin_eu_ml),
-          pass: prep.endotoxin_pass,
-        },
+    (() => {
+      const hadEndotoxin = panels.some(p => /endotoxin|lal/i.test(p.panel_name));
+      const includeEndotoxin = prep.include_endotoxin ?? hadEndotoxin;
+      if (!includeEndotoxin) return null;
+      return prep.endotoxin_pass === null
+        ? {
+            panel_name: 'Endotoxin',
+            specification: ENDOTOXIN_SPEC_EU_ML,
+            result: 'Pending',
+            pass: null,
+          }
+        : {
+            panel_name: 'Endotoxin',
+            specification: ENDOTOXIN_SPEC_EU_ML,
+            result: formatEndotoxinResult(prep.endotoxin_eu_ml),
+            pass: prep.endotoxin_pass,
+          };
+    })(),
   );
 
   const mwTrim = prep.molecular_weight.trim();
@@ -594,22 +606,32 @@ export function applyPrepToCoaPanels(coa: COA, prep: CoaPdfPrepPayload): {
       : null,
   );
 
+  const hadMetals = panels.some(p =>
+    HEAVY_METAL_NAMES.some(m => p.panel_name.toLowerCase().includes(
+      m.replace(/\s*\(.*\)\s*$/, '').trim().toLowerCase(),
+    )),
+  );
+  const includeHeavyMetals = prep.include_heavy_metals ?? hadMetals;
   for (const metal of HEAVY_METAL_NAMES) {
-    const pending = prep.heavy_metals_pass === null;
-    const result = pending
-      ? 'Pending'
-      : ((prep.heavy_metals[metal] ?? '').trim()
-        || (prep.heavy_metals_pass ? HEAVY_METAL_PASS_RESULT : ''));
     panels = upsertNamedPanel(
       panels,
       name => name.includes(metal.replace(/\s*\(.*\)\s*$/, '').trim().toLowerCase())
         || name === metal.toLowerCase(),
-      {
-        panel_name: metal,
-        specification: HEAVY_METAL_USP_SPECS[metal],
-        result,
-        pass: pending ? null : prep.heavy_metals_pass === true,
-      },
+      includeHeavyMetals
+        ? (() => {
+            const pending = prep.heavy_metals_pass === null;
+            const result = pending
+              ? 'Pending'
+              : ((prep.heavy_metals[metal] ?? '').trim()
+                || (prep.heavy_metals_pass ? HEAVY_METAL_PASS_RESULT : ''));
+            return {
+              panel_name: metal,
+              specification: HEAVY_METAL_USP_SPECS[metal],
+              result,
+              pass: pending ? null : prep.heavy_metals_pass === true,
+            };
+          })()
+        : null,
     );
   }
 
@@ -665,6 +687,9 @@ export async function saveCoaPdfPrep(
         : '',
     endotoxin_eu_ml: prep.endotoxin_eu_ml.trim(),
     endotoxin_pass: prep.endotoxin_pass,
+    ...(typeof prep.include_sterility === 'boolean' ? { include_sterility: prep.include_sterility } : {}),
+    ...(typeof prep.include_endotoxin === 'boolean' ? { include_endotoxin: prep.include_endotoxin } : {}),
+    ...(typeof prep.include_heavy_metals === 'boolean' ? { include_heavy_metals: prep.include_heavy_metals } : {}),
     ...((prep.labeled_content || '').trim()
       ? {
           labeled_content: (prep.labeled_content || '').trim(),
