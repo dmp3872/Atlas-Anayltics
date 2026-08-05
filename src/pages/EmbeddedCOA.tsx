@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ExternalLink, Loader, ShieldCheck } from 'lucide-react';
 import { Link, useParams } from 'react-router-dom';
 import AtlasDigitalCoaCard from '../components/order/AtlasDigitalCoaCard';
-import { assayResultsFromPanels } from '../lib/coaDisplayPanels';
+import { assayResultsFromPanels, assayChipStatusesFromPanels } from '../lib/coaDisplayPanels';
 import { createEmptySample, type TestMode, type WizardSample, isOtherResearchMaterial } from '../lib/orderCatalog';
 import { hydrateMultiVialPanelResults } from '../lib/labCoaForm';
 import { supabase } from '../lib/supabase';
@@ -174,6 +174,15 @@ export default function EmbeddedCOA() {
       },
     );
   }, [coa, sample]);
+  const assayStatuses = useMemo(() => {
+    if (!coa) return null;
+    const summary = (coa.result_summary && typeof coa.result_summary === 'object')
+      ? (coa.result_summary as Record<string, unknown>)
+      : null;
+    return assayChipStatusesFromPanels(
+      hydrateMultiVialPanelResults(coa.panel_results, summary),
+    );
+  }, [coa]);
 
   if (loading) {
     return (
@@ -215,6 +224,7 @@ export default function EmbeddedCOA() {
           readinessPercent={100}
           overallResult={result}
           assayResults={assayResults}
+          assayStatuses={assayStatuses}
         />
 
         <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-atlas-border bg-white/95 px-3 py-2 shadow-sm">

@@ -26,6 +26,11 @@ import {
   PURITY_INPUT_HINT,
   sanitizePurityInput,
   purityExceedsMax,
+  resolveCasNumber,
+  looksLikeCasNumber,
+  lookupCas,
+  defaultCultureProjectedCompletion,
+  coaIntakeYmd,
 } from '../../lib/labCoaForm';
 import { downloadCoaPdf, openCoaPrintView } from '../../lib/coaPdf';
 import { LABEL_CLAIM_UNITS, labelClaimFromSummary } from '../../lib/orderCatalog';
@@ -50,10 +55,31 @@ function applyPrepDefaults(coa: COA) {
     coa.purity_percent,
     summary,
   );
-  const labeledContent = typeof summary.labeled_content === 'string' ? summary.labeled_content.trim() : '';
-  const labelClaimUnit = typeof summary.label_claim_unit === 'string' && summary.label_claim_unit.trim()
+  let labeledContent = typeof summary.labeled_content === 'string' ? summary.labeled_content.trim() : '';
+  let labelClaimUnit = typeof summary.label_claim_unit === 'string' && summary.label_claim_unit.trim()
     ? summary.label_claim_unit.trim()
     : 'mg';
+  if (!labeledContent) {
+    const panels = Array.isArray(coa.panel_results) ? coa.panel_results : [];
+    const net = panels.find(p => /net content|peptide content/i.test(p.panel_name)
+      && !/^blend content/i.test(p.panel_name));
+    const m = (net?.specification || '').match(/label claim:\s*([\d.]+)\s*([a-z%µμ]+)?/i);
+    if (m) {
+      labeledContent = m[1];
+      if (m[2]) labelClaimUnit = m[2];
+    }
+  }
+  const resolvedCas = resolveCasNumber(coa.peptide_sequence, coa.sample_name, coa.display_name);
+  const includeCas = summary.include_cas_number !== false;
+  const intakeYmd = coaIntakeYmd(summary);
+  let sterilityProjectedCompletion = stats.sterility_projected_completion || '';
+  if (
+    stats.sterility_method === 'culture_14_day'
+    && stats.sterility_pass === null
+    && !sterilityProjectedCompletion.trim()
+  ) {
+    sterilityProjectedCompletion = defaultCultureProjectedCompletion(intakeYmd || undefined);
+  }
   return {
     next,
     stats,
@@ -65,6 +91,10 @@ function applyPrepDefaults(coa: COA) {
     labeledContent,
     labelClaimUnit,
     claimDisplay: labelClaimFromSummary(summary),
+    includeCas,
+    casNumber: resolvedCas,
+    intakeYmd,
+    sterilityProjectedCompletion,
   };
 }
 
@@ -78,6 +108,10 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
   const [avgPurity, setAvgPurity] = useState(boot.avgPurity);
   const [labeledContent, setLabeledContent] = useState(boot.labeledContent);
   const [labelClaimUnit, setLabelClaimUnit] = useState(boot.labelClaimUnit);
+  const [includeCas, setIncludeCas] = useState(boot.includeCas);
+  const [casNumber, setCasNumber] = useState(boot.casNumber);
+  const [casSuggestions, setCasSuggestions] = useState<{ name: string; cas: string }[]>([]);
+  const [showCasSuggestions, setShowCasSuggestions] = useState(false);
   const [fentanylDetection, setFentanylDetection] = useState<FentanylDetectionMark>(
     boot.stats.fentanyl_detection,
   );
@@ -89,6 +123,10 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
     boot.stats.sterility_method,
   );
   const [sterilityPass, setSterilityPass] = useState<AssayPassState>(boot.stats.sterility_pass);
+  const [sterilityProjectedCompletion, setSterilityProjectedCompletion] = useState(
+    boot.sterilityProjectedCompletion,
+  );
+  const [intakeYmd, setIntakeYmd] = useState(boot.intakeYmd);
   const [endotoxinEuMl, setEndotoxinEuMl] = useState(boot.endotoxinEuMl);
   const [endotoxinPass, setEndotoxinPass] = useState<AssayPassState>(boot.stats.endotoxin_pass);
   const [heavyMetalsPass, setHeavyMetalsPass] = useState<AssayPassState>(boot.stats.heavy_metals_pass);
@@ -119,11 +157,15 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
     setAvgPurity(d.avgPurity);
     setLabeledContent(d.labeledContent);
     setLabelClaimUnit(d.labelClaimUnit);
+    setIncludeCas(d.includeCas);
+    setCasNumber(d.casNumber);
     setFentanylDetection(d.stats.fentanyl_detection);
     setIncludeMolecularWeight(d.stats.include_molecular_weight);
     setMolecularWeight(d.stats.molecular_weight);
     setSterilityMethod(d.stats.sterility_method);
     setSterilityPass(d.stats.sterility_pass);
+    setSterilityProjectedCompletion(d.sterilityProjectedCompletion);
+    setIntakeYmd(d.intakeYmd);
     setEndotoxinEuMl(d.endotoxinEuMl);
     setEndotoxinPass(d.stats.endotoxin_pass);
     setHeavyMetalsPass(d.stats.heavy_metals_pass);
@@ -181,11 +223,19 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
         avg_purity: avgPurity,
         labeled_content: labeledContent,
         label_claim_unit: labelClaimUnit,
+        include_cas_number: includeCas,
+        cas_number: includeCas
+          ? (looksLikeCasNumber(casNumber) ? casNumber.trim() : resolveCasNumber(casNumber, coa.sample_name, coa.display_name))
+          : '',
         fentanyl_detection: fentanylDetection,
         include_molecular_weight: includeMolecularWeight,
         molecular_weight: molecularWeight,
         sterility_method: sterilityMethod,
         sterility_pass: sterilityPass,
+        sterility_projected_completion:
+          sterilityMethod === 'culture_14_day' && sterilityPass === null
+            ? sterilityProjectedCompletion.trim()
+            : '',
         endotoxin_eu_ml: endotoxinEuMl,
         endotoxin_pass: endotoxinPass,
         heavy_metals_pass: heavyMetalsPass,
@@ -371,6 +421,62 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
                 </select>
               </div>
             </div>
+            <div className="rounded-lg border border-atlas-border bg-white p-3 space-y-2">
+              <label className="inline-flex items-center gap-2 text-sm text-neutral-800 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={includeCas}
+                  onChange={e => setIncludeCas(e.target.checked)}
+                  className="rounded border-atlas-border"
+                />
+                Include CAS Number on COA
+              </label>
+              {includeCas && (
+                <div className="relative">
+                  <label className="label" htmlFor="prep-cas">CAS Number</label>
+                  <input
+                    id="prep-cas"
+                    value={casNumber}
+                    onChange={e => {
+                      setCasNumber(e.target.value);
+                      setCasSuggestions(lookupCas(e.target.value));
+                      setShowCasSuggestions(true);
+                    }}
+                    onFocus={() => {
+                      setCasSuggestions(lookupCas(casNumber || coa.sample_name || ''));
+                      setShowCasSuggestions(true);
+                    }}
+                    onBlur={() => setTimeout(() => setShowCasSuggestions(false), 150)}
+                    className="input-field"
+                    placeholder="e.g. 218949-48-5"
+                    autoComplete="off"
+                  />
+                  {showCasSuggestions && casSuggestions.length > 0 && (
+                    <ul className="absolute z-10 mt-1 w-full bg-white border border-atlas-border rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                      {casSuggestions.map(hit => (
+                        <li key={`${hit.name}-${hit.cas}`}>
+                          <button
+                            type="button"
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-brand-50"
+                            onMouseDown={e => e.preventDefault()}
+                            onClick={() => {
+                              setCasNumber(hit.cas);
+                              setShowCasSuggestions(false);
+                            }}
+                          >
+                            <span className="font-medium">{hit.name}</span>
+                            <span className="text-neutral-500 ml-2 font-mono text-xs">{hit.cas}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <p className="text-xs text-neutral-500 mt-1">
+                    Prefills from sample name when known (e.g. Tesamorelin → 218949-48-5).
+                  </p>
+                </div>
+              )}
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="label" htmlFor="avg-net-peptide">Average Net Peptide Content</label>
@@ -466,13 +572,26 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
                       <select
                         id="sterility-method"
                         value={sterilityMethod}
-                        onChange={e => setSterilityMethod(e.target.value as SterilityMethod)}
+                        onChange={e => {
+                          const next = e.target.value as SterilityMethod;
+                          setSterilityMethod(next);
+                          if (next === 'culture_14_day') {
+                            setSterilityProjectedCompletion(
+                              defaultCultureProjectedCompletion(intakeYmd || undefined),
+                            );
+                          } else {
+                            setSterilityProjectedCompletion('');
+                          }
+                        }}
                         className="input-field"
                       >
                         {(Object.keys(STERILITY_METHOD_LABELS) as SterilityMethod[]).map(key => (
                           <option key={key} value={key}>{STERILITY_METHOD_LABELS[key]}</option>
                         ))}
                       </select>
+                      <p className="text-xs text-neutral-500 mt-1">
+                        COA row: Sterility ({STERILITY_METHOD_LABELS[sterilityMethod]})
+                      </p>
                     </div>
                     <div>
                       <label className="label" htmlFor="sterility-pass">Result</label>
@@ -487,6 +606,25 @@ export default function CoaPdfPrepModal({ coa, onClose, onSaved }: Props) {
                         <option value="fail">Detected — FAIL</option>
                       </select>
                     </div>
+                    {sterilityMethod === 'culture_14_day' && sterilityPass === null && (
+                      <div className="sm:col-span-2">
+                        <label className="label" htmlFor="prep-sterility-projected">
+                          Projected completion date
+                        </label>
+                        <input
+                          id="prep-sterility-projected"
+                          type="date"
+                          value={sterilityProjectedCompletion}
+                          onChange={e => setSterilityProjectedCompletion(e.target.value)}
+                          className="input-field max-w-xs"
+                        />
+                        <p className="text-xs text-neutral-500 mt-1">
+                          Defaults to 14 days after sample intake
+                          {intakeYmd ? ` (${intakeYmd}).` : '.'}
+                          {' '}Shown on the COA while Pending.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
 
