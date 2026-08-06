@@ -9,11 +9,13 @@ import { COA, Order, OrderSample, UserProfile } from '../../lib/types';
 import { formatDate } from '../../lib/utils';
 import {
   COA_WORKFLOW_BOARD_COLUMNS, COA_WORKFLOW_LABELS, COA_WORKFLOW_STEPS,
-  CoaWorkflowStage, canPrepareCoa, canReturnCoaToTesting, coaSignatureProgress, coaWorkflowStage,
+  CoaWorkflowStage, canPrepareCoa, canReturnCoaToTesting, canUpdatePendingPublishedCoa,
+  coaSignatureProgress, coaWorkflowStage,
 } from '../../lib/coaWorkflow';
 import { LAB_PRIORITY_STYLES, QueueSampleItem, testsLabelForSample } from '../../lib/labQueue';
 import PriorityBanner from './PriorityBanner';
 import { parseSampleMetadata } from '../../lib/coaPanels';
+import { pendingAssayLabels } from '../../lib/coaDisplayPanels';
 import { downloadCoaPdf } from '../../lib/coaPdf';
 import CoaPdfPrepModal from './CoaPdfPrepModal';
 import OrderNotesThread from '../order/OrderNotesThread';
@@ -582,10 +584,15 @@ export default function CoaWorkflowBoard({
     for (const coa of coas) {
       groups[coaWorkflowStage(coa)].push(coa);
     }
-    // Mine-first within each COA column
+    // Mine-first within each COA column; published pending-assay cards float to top.
     for (const stage of COA_WORKFLOW_BOARD_COLUMNS) {
       if (stage === 'testing_in_progress') continue;
       groups[stage].sort((a, b) => {
+        if (stage === 'published' || stage === 'verified') {
+          const aPend = canUpdatePendingPublishedCoa(a) ? 0 : 1;
+          const bPend = canUpdatePendingPublishedCoa(b) ? 0 : 1;
+          if (aPend !== bPend) return aPend - bPend;
+        }
         const aMine = currentUserId && (
           a.review_assigned_to === currentUserId || assigneeForCoa(a) === currentUserId
         ) ? 0 : 1;
@@ -710,6 +717,8 @@ export default function CoaWorkflowBoard({
         date or leave staff/client notes. Drag or use <strong>Back to testing</strong> to rework an issued COA, then
         <strong> Restart COA</strong> to edit results and re-issue. Cards marked <strong className="text-sky-800">Assigned to you</strong> are yours.
         Chemists can <strong>Publish now</strong> from any stage to override stopping points when needed.
+        Published cards with deferred assays (e.g. 14-day sterility) show an amber <strong>Update pending</strong> action
+        so you can finish those results without unpublishing.
       </p>
 
       {prepCoa && (
@@ -790,6 +799,10 @@ export default function CoaWorkflowBoard({
           const isOver = overStage === stage && draggingId !== null;
           const bundles = bundlesByStage[stage] || [];
           const columnCount = bundles.reduce((n, b) => n + bundleItemCount(b), 0);
+          const pendingFollowUpCount =
+            (stage === 'published' || stage === 'verified')
+              ? grouped[stage].filter(c => canUpdatePendingPublishedCoa(c)).length
+              : 0;
 
           return (
             <div
@@ -807,6 +820,14 @@ export default function CoaWorkflowBoard({
                   <span className="truncate">{COA_WORKFLOW_LABELS[stage]}</span>
                 </h3>
                 <div className="flex items-center gap-1 shrink-0">
+                  {pendingFollowUpCount > 0 && (
+                    <span
+                      className="text-[10px] font-bold uppercase tracking-wide text-amber-900 bg-amber-100 border border-amber-300 px-1.5 py-0.5 rounded-full"
+                      title="Certificates with deferred assays still pending"
+                    >
+                      {pendingFollowUpCount} pending
+                    </span>
+                  )}
                   <span className="text-xs font-semibold text-neutral-500 bg-white/70 px-2 py-0.5 rounded-full">
                     {columnCount}
                   </span>
@@ -925,6 +946,10 @@ export default function CoaWorkflowBoard({
                     const isAwaitingInfo = currentStage === 'awaiting_info';
                     const assignee = assigneeForCoa(coa);
                     const reviewAssigneeId = coa.review_assigned_to ?? null;
+                    const needsPendingUpdate = canUpdatePendingPublishedCoa(coa);
+                    const pendingLabels = needsPendingUpdate
+                      ? pendingAssayLabels(coa.panel_results)
+                      : [];
                     const mine = !!currentUserId && (
                       assignee === currentUserId || reviewAssigneeId === currentUserId
                     );
@@ -944,12 +969,29 @@ export default function CoaWorkflowBoard({
                         className={`rounded-lg border bg-white p-3 shadow-sm transition-all select-none ${
                           isDragging ? 'opacity-40 scale-[0.98]' : 'hover:shadow-md'
                         } ${isMoving ? 'opacity-60 pointer-events-none' : 'cursor-grab active:cursor-grabbing'} ${
-                          mine ? 'ring-2 ring-sky-400 border-sky-300' : ''
+                          needsPendingUpdate
+                            ? 'ring-2 ring-amber-400 border-amber-300'
+                            : mine
+                              ? 'ring-2 ring-sky-400 border-sky-300'
+                              : ''
                         }`}
                       >
                         <div className="flex items-start gap-2">
                           <GripVertical size={14} className="text-neutral-300 flex-shrink-0 mt-0.5" />
                           <div className="min-w-0 flex-1 space-y-1.5">
+                            {needsPendingUpdate && (
+                              <div className="rounded-md border border-amber-300 bg-amber-50 px-2 py-1.5">
+                                <p className="text-[11px] font-bold uppercase tracking-wide text-amber-900 flex items-center gap-1">
+                                  <Clock size={11} className="flex-shrink-0" />
+                                  Pending assays — update results
+                                </p>
+                                {pendingLabels.length > 0 && (
+                                  <p className="text-[11px] text-amber-800 mt-0.5 truncate">
+                                    {pendingLabels.join(' · ')}
+                                  </p>
+                                )}
+                              </div>
+                            )}
                             <div className="flex items-center justify-between gap-2">
                               <p className="font-medium text-sm text-black leading-snug truncate">
                                 {coa.display_name || coa.sample_name}
@@ -1048,7 +1090,20 @@ export default function CoaWorkflowBoard({
                         </div>
 
                         <div className="flex flex-wrap gap-2 pt-2 mt-2 border-t border-atlas-border">
-                          {canPrepareCoa(coa) && (
+                          {needsPendingUpdate && (
+                            <button
+                              type="button"
+                              onClick={e => {
+                                e.stopPropagation();
+                                setPrepCoa(coa);
+                              }}
+                              className="btn-primary text-xs py-1 px-2 gap-1"
+                              title="Update pending assay results without unpublishing"
+                            >
+                              <FlaskConical size={11} /> Update pending
+                            </button>
+                          )}
+                          {canPrepareCoa(coa) && !needsPendingUpdate && (
                             <button
                               type="button"
                               onClick={e => {
@@ -1058,6 +1113,20 @@ export default function CoaWorkflowBoard({
                               className="btn-outline text-xs py-1 px-2 gap-1"
                             >
                               Prepare
+                            </button>
+                          )}
+                          {needsPendingUpdate && onRestartCoa && (
+                            <button
+                              type="button"
+                              onClick={e => {
+                                e.stopPropagation();
+                                onRestartCoa(coa);
+                              }}
+                              disabled={!!movingId}
+                              className="btn-outline text-xs py-1 px-2 gap-1"
+                              title="Full restart via Issue COA (stays linked to this LIMS ID)"
+                            >
+                              Full edit
                             </button>
                           )}
                           <Link
@@ -1219,9 +1288,15 @@ export default function CoaWorkflowBoard({
                             </button>
                           )}
 
-                          {currentStage === 'published' && (
+                          {currentStage === 'published' && !needsPendingUpdate && (
                             <span className="text-xs text-emerald-700 font-medium flex items-center gap-1">
                               <CheckCircle size={12} /> Client visible
+                            </span>
+                          )}
+                          {(currentStage === 'published' || currentStage === 'verified') && needsPendingUpdate && (
+                            <span className="text-xs text-amber-800 font-medium flex items-center gap-1">
+                              <Globe size={12} />
+                              {currentStage === 'published' ? 'Published · awaiting assay finish' : 'Verified · awaiting assay finish'}
                             </span>
                           )}
                         </div>

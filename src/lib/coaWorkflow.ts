@@ -1,4 +1,5 @@
 import { COA, CoaWorkflowStage } from './types';
+import { coaHasPendingAssays } from './coaDisplayPanels';
 
 export type { CoaWorkflowStage };
 
@@ -73,10 +74,21 @@ export function coaHasDirectorSignature(
   return coaSignatureProgress(coa).signed >= 2;
 }
 
-/** Prepare (vial + panel stats) is only allowed before verify / publish. */
-export function canPrepareCoa(coa: Pick<COA, 'coa_workflow_stage' | 'is_public'>): boolean {
+/** Prepare (vial + panel stats) — also allowed on published/verified when assays are still pending. */
+export function canPrepareCoa(coa: Pick<COA, 'coa_workflow_stage' | 'is_public' | 'panel_results' | 'overall_result'>): boolean {
   const stage = coaWorkflowStage(coa);
-  return stage === 'issued' || stage === 'awaiting_info' || stage === 'testing_in_progress';
+  if (stage === 'issued' || stage === 'awaiting_info' || stage === 'testing_in_progress') return true;
+  // Chemists need a fast path to finish deferred assays (e.g. 14-day sterility) after publish.
+  if ((stage === 'published' || stage === 'verified') && coaHasPendingAssays(coa)) return true;
+  return false;
+}
+
+/** True when a published/verified COA still needs chemist follow-up on pending assays. */
+export function canUpdatePendingPublishedCoa(
+  coa: Pick<COA, 'coa_workflow_stage' | 'is_public' | 'panel_results' | 'overall_result'>,
+): boolean {
+  const stage = coaWorkflowStage(coa);
+  return (stage === 'published' || stage === 'verified') && coaHasPendingAssays(coa);
 }
 
 export function workflowStepIndex(stage: CoaWorkflowStage): number {
