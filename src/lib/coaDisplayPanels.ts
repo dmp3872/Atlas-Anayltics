@@ -153,6 +153,35 @@ export function resolvePanelPass(panel: PanelResult): boolean | null {
   return panel.pass;
 }
 
+/** Panel rows that are still Pending (including deferred assays like sterility). */
+export function listPendingAssayPanels(
+  panels: PanelResult[] | null | undefined,
+): PanelResult[] {
+  const list = Array.isArray(panels) ? panels : [];
+  return list.filter(p => resolvePanelPass(p) === null);
+}
+
+export function coaHasPendingAssays(
+  coa: { panel_results?: PanelResult[] | null; overall_result?: string | null },
+): boolean {
+  if (listPendingAssayPanels(coa.panel_results).length > 0) return true;
+  return coa.overall_result === 'pending';
+}
+
+/** Short labels for pending-assay badges on workflow cards. */
+export function pendingAssayLabels(
+  panels: PanelResult[] | null | undefined,
+): string[] {
+  return listPendingAssayPanels(panels).map(p => {
+    const n = p.panel_name.toLowerCase();
+    if (n.includes('sterility')) return 'Sterility';
+    if (n.includes('endotoxin') || n.includes('lal')) return 'Endotoxin';
+    if (/lead|arsenic|cadmium|mercury|chromium/i.test(p.panel_name)) return 'Heavy metals';
+    if (n.includes('fentanyl')) return 'Fentanyl';
+    return p.panel_name.replace(/\s*\([^)]*\)\s*$/, '').trim() || p.panel_name;
+  }).filter((v, i, arr) => arr.indexOf(v) === i);
+}
+
 export type DigitalChipStatus = 'pending' | 'queued' | 'pass' | 'fail';
 
 /** Per-assay chip statuses for the Atlas digital COA card. */
