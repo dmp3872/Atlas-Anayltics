@@ -735,6 +735,16 @@ export async function saveCoaPdfPrep(
       : {}),
   };
 
+  // Keep overall_result in sync when deferred assays finish (or stay pending).
+  const pendingLeft = panel_results.some(p => resolvePanelPass(p) === null);
+  const anyFail = panel_results.some(p => resolvePanelPass(p) === false);
+  const overall_result: COA['overall_result'] = pendingLeft
+    ? 'pending'
+    : anyFail
+      ? 'fail'
+      : 'pass';
+  next.overall_result = overall_result;
+
   const direct = {
     vial_image: vialImage || '',
     chromatogram_image: watermark,
@@ -744,6 +754,7 @@ export async function saveCoaPdfPrep(
     panel_results,
     molecular_weight,
     peptide_sequence: includeCas ? (resolvedCas || '') : '',
+    overall_result,
     ...(prep.chromatogram_data
       ? { chromatogram_data: prep.chromatogram_data }
       : {}),
