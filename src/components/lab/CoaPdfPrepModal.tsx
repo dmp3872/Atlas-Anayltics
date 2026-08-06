@@ -7,6 +7,8 @@ import {
   readCoaPdfStats,
   saveCoaPdfPrep,
 } from '../../lib/coaImages';
+import { canUpdatePendingPublishedCoa } from '../../lib/coaWorkflow';
+import { pendingAssayLabels } from '../../lib/coaDisplayPanels';
 import { fetchCoaImageRow } from '../../lib/coaSelect';
 import {
   ENDOTOXIN_PASS_RESULT,
@@ -316,6 +318,8 @@ export default function CoaPdfPrepModal({ coa, sampleMetadata = null, onClose, o
   const watermark = watermarkImage || hydrated.chromatogram_image || '';
   const contentBreakdown = assay.content_values.join(' · ') || '—';
   const purityBreakdown = assay.purity_values.join(' · ') || '—';
+  const pendingUpdate = canUpdatePendingPublishedCoa(coa);
+  const pendingLabels = pendingUpdate ? pendingAssayLabels(coa.panel_results) : [];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={onClose}>
@@ -325,7 +329,9 @@ export default function CoaPdfPrepModal({ coa, sampleMetadata = null, onClose, o
       >
         <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-atlas-border">
           <div>
-            <h2 className="text-lg font-bold text-black">Prepare certificate</h2>
+            <h2 className="text-lg font-bold text-black">
+              {pendingUpdate ? 'Update pending assays' : 'Prepare certificate'}
+            </h2>
             <p className="text-sm text-neutral-500 mt-0.5">
               {coa.display_name || coa.sample_name}
               {coa.company_name ? ` · ${coa.company_name}` : ''}
@@ -337,9 +343,18 @@ export default function CoaPdfPrepModal({ coa, sampleMetadata = null, onClose, o
         </div>
 
         <div className="px-5 py-4 space-y-5">
-          <p className="text-sm text-neutral-600">
-            Assay averages are calculated from Issue results. Vial and chromatograph photos attached at Issue are loaded automatically — replace only if needed.
-          </p>
+          {pendingUpdate ? (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-950">
+              <p className="font-semibold">Published — finish deferred results without unpublishing.</p>
+              {pendingLabels.length > 0 && (
+                <p className="mt-1 text-amber-900">Still pending: {pendingLabels.join(', ')}</p>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm text-neutral-600">
+              Assay averages are calculated from Issue results. Vial and chromatograph photos attached at Issue are loaded automatically — replace only if needed.
+            </p>
+          )}
 
           {(headerLogo || watermark) && (
             <div className="flex flex-wrap gap-4 rounded-lg border border-atlas-border bg-neutral-50 p-3">

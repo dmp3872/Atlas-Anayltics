@@ -1427,6 +1427,7 @@ export default function Lab() {
             onOpenQueue={() => setTab('queue')}
             onOpenWorkflow={() => setTab('workflow')}
             onIssueCoa={prefillFromSample}
+            onUpdatePendingCoa={coa => setPrepCoa(coa)}
           />
         )}
 
