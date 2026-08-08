@@ -83,6 +83,11 @@ export function sterilityPanelName(method: SterilityMethod): string {
   return `Sterility (${STERILITY_METHOD_LABELS[method]})`;
 }
 
+/** Endotoxin panel title — LAL (Limulus Amebocyte Lysate / USP <85>). */
+export function endotoxinPanelName(): string {
+  return 'Endotoxin (LAL)';
+}
+
 /** Append sterility method to a specification cell (PDF AcroForm). */
 export function withSterilityMethodSpec(specification: string, method: SterilityMethod): string {
   const label = STERILITY_METHOD_LABELS[method];
@@ -1037,14 +1042,14 @@ export function labResultsToPanelResults(
   if (results.includeEndotoxin) {
     if (results.endotoxinPass === null) {
       rows.push({
-        panel_name: 'Endotoxin',
+        panel_name: endotoxinPanelName(),
         specification: ENDOTOXIN_SPEC_EU_ML,
         result: 'Pending',
         pass: null,
       });
     } else {
       rows.push({
-        panel_name: 'Endotoxin',
+        panel_name: endotoxinPanelName(),
         specification: ENDOTOXIN_SPEC_EU_ML,
         result: formatEndotoxinResult(results.endotoxinEuMl),
         pass: results.endotoxinPass,

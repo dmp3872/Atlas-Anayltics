@@ -9,6 +9,7 @@ import {
   AssayPassState,
   computeAssayAveragesFromPanels,
   formatEndotoxinResult,
+  endotoxinPanelName,
   heavyMetalsEmptyDefaults,
   heavyMetalsPassDefaults,
   parseAssayPassState,
@@ -562,13 +563,13 @@ export function applyPrepToCoaPanels(coa: COA, prep: CoaPdfPrepPayload): {
       if (!includeEndotoxin) return null;
       return prep.endotoxin_pass === null
         ? {
-            panel_name: 'Endotoxin',
+            panel_name: endotoxinPanelName(),
             specification: ENDOTOXIN_SPEC_EU_ML,
             result: 'Pending',
             pass: null,
           }
         : {
-            panel_name: 'Endotoxin',
+            panel_name: endotoxinPanelName(),
             specification: ENDOTOXIN_SPEC_EU_ML,
             result: formatEndotoxinResult(prep.endotoxin_eu_ml),
             pass: prep.endotoxin_pass,
