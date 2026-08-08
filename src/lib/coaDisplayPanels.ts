@@ -330,12 +330,16 @@ export function partitionCoaPanels(panels: PanelResult[]): {
   return { main, metals: orderedMetals };
 }
 
-/** Ensure endotoxin results read like sterility: "0.25 EU/mL (LAL)". */
+/** Ensure endotoxin shows LAL method on the COA (panel name + result), like sterility. */
 function formatEndotoxinPanel(panel: PanelResult): PanelResult {
   if (!/endotoxin|lal/i.test(panel.panel_name)) return panel;
-  const raw = (panel.result || '').trim();
-  if (!raw || /^pending\b/i.test(raw) || /\(\s*lal\s*\)/i.test(raw)) return panel;
-  return { ...panel, result: `${raw} (LAL)` };
+  let next = panel;
+  if (!/\(\s*lal\s*\)/i.test(panel.panel_name)) {
+    next = { ...next, panel_name: 'Endotoxin (LAL)' };
+  }
+  const raw = (next.result || '').trim();
+  if (!raw || /^pending\b/i.test(raw) || /\(\s*lal\s*\)/i.test(raw)) return next;
+  return { ...next, result: `${raw} (LAL)` };
 }
 
 function splitResultList(raw: string): string[] {
