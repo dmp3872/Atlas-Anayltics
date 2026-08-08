@@ -2069,7 +2069,7 @@ export default function Lab() {
                     {labResults.includeEndotoxin && (
                       <>
                         <div>
-                          <label className="label">Endotoxin (EU/mL)</label>
+                          <label className="label">Endotoxin (LAL) — EU/mL</label>
                           <input
                             type="text"
                             value={labResults.endotoxinEuMl}
@@ -2081,7 +2081,7 @@ export default function Lab() {
                           <p className="text-xs text-neutral-500 mt-1">Spec: {ENDOTOXIN_SPEC_EU_ML}</p>
                         </div>
                         <div>
-                          <label className="label">Endotoxin conformity</label>
+                          <label className="label">Endotoxin (LAL) conformity</label>
                           <select
                             value={assayPassSelectValue(labResults.endotoxinPass)}
                             onChange={e => {
