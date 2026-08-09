@@ -26,6 +26,11 @@ import {
 import { compressImageDataUrl } from './imageCompress';
 import { resolvePanelPass } from './coaDisplayPanels';
 import { formatLabelClaim } from './orderCatalog';
+import {
+  appendCoaUpdateLog,
+  formatPostIssueUpdateNote,
+  summarizeCoaContentChanges,
+} from './coaUpdateLog';
 
 export type FentanylDetectionMark = '' | 'none_detected' | 'detected';
 
@@ -721,21 +726,6 @@ export async function saveCoaPdfPrep(
   delete summaryRecord.hplc_image;
   delete summaryRecord.company_logo;
 
-  const next: COA = {
-    ...hydrated,
-    vial_image: vialImage,
-    chromatogram_image: watermark,
-    hplc_image: hplcImage,
-    company_logo: companyLogo || hydrated.company_logo || '',
-    result_summary: baseSummary,
-    panel_results,
-    molecular_weight,
-    peptide_sequence: includeCas ? (resolvedCas || hydrated.peptide_sequence || '') : '',
-    ...(prep.chromatogram_data
-      ? { chromatogram_data: prep.chromatogram_data }
-      : {}),
-  };
-
   // Keep overall_result in sync when deferred assays finish (or stay pending).
   const pendingLeft = panel_results.some(p => resolvePanelPass(p) === null);
   const anyFail = panel_results.some(p => resolvePanelPass(p) === false);
@@ -744,14 +734,47 @@ export async function saveCoaPdfPrep(
     : anyFail
       ? 'fail'
       : 'pass';
-  next.overall_result = overall_result;
+
+  const changeNote = summarizeCoaContentChanges(
+    { panel_results: hydrated.panel_results, overall_result: hydrated.overall_result },
+    { panel_results, overall_result },
+  );
+  // Always log post-issue edits (including Pending ↔ PASS/FAIL) so the certificate audit trail stays complete.
+  const stage = hydrated.coa_workflow_stage;
+  const postIssue = stage === 'issued'
+    || stage === 'pending_review'
+    || stage === 'verified'
+    || stage === 'published'
+    || hydrated.is_public;
+  const result_summary = postIssue
+    ? appendCoaUpdateLog(
+      baseSummary,
+      formatPostIssueUpdateNote(hydrated, changeNote || 'Certificate details updated'),
+    )
+    : (changeNote ? appendCoaUpdateLog(baseSummary, changeNote) : baseSummary);
+
+  const next: COA = {
+    ...hydrated,
+    vial_image: vialImage,
+    chromatogram_image: watermark,
+    hplc_image: hplcImage,
+    company_logo: companyLogo || hydrated.company_logo || '',
+    result_summary,
+    panel_results,
+    molecular_weight,
+    peptide_sequence: includeCas ? (resolvedCas || hydrated.peptide_sequence || '') : '',
+    overall_result,
+    ...(prep.chromatogram_data
+      ? { chromatogram_data: prep.chromatogram_data }
+      : {}),
+  };
 
   const direct = {
     vial_image: vialImage || '',
     chromatogram_image: watermark,
     hplc_image: hplcImage || '',
     company_logo: companyLogo || hydrated.company_logo || '',
-    result_summary: baseSummary,
+    result_summary,
     panel_results,
     molecular_weight,
     peptide_sequence: includeCas ? (resolvedCas || '') : '',
@@ -772,7 +795,7 @@ export async function saveCoaPdfPrep(
   if (/hplc_image/i.test(error.message || '')) {
     const { hplc_image: _h, ...restDirect } = direct;
     const summaryWithHplc = {
-      ...baseSummary,
+      ...result_summary,
       ...(hplcImage ? { hplc_image: hplcImage } : {}),
     };
     const retry = await supabase

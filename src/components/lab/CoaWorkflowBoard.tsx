@@ -9,7 +9,7 @@ import { COA, Order, OrderSample, UserProfile } from '../../lib/types';
 import { formatDate } from '../../lib/utils';
 import {
   COA_WORKFLOW_BOARD_COLUMNS, COA_WORKFLOW_LABELS, COA_WORKFLOW_STEPS,
-  CoaWorkflowStage, canPrepareCoa, canReturnCoaToTesting, canUpdatePendingPublishedCoa,
+  CoaWorkflowStage, canEditLiveCoa, canPrepareCoa, canReturnCoaToTesting, canUpdatePendingPublishedCoa,
   coaSignatureProgress, coaWorkflowStage,
 } from '../../lib/coaWorkflow';
 import { LAB_PRIORITY_STYLES, QueueSampleItem, testsLabelForSample } from '../../lib/labQueue';
@@ -717,8 +717,8 @@ export default function CoaWorkflowBoard({
         date or leave staff/client notes. Drag or use <strong>Back to testing</strong> to rework an issued COA, then
         <strong> Restart COA</strong> to edit results and re-issue. Cards marked <strong className="text-sky-800">Assigned to you</strong> are yours.
         Chemists can <strong>Publish now</strong> from any stage to override stopping points when needed.
-        Published cards with deferred assays (e.g. 14-day sterility) show an amber <strong>Update pending</strong> action
-        so you can finish those results without unpublishing.
+        Published / verified cards stay editable — use <strong>Edit COA</strong> (or amber <strong>Update pending</strong>
+        when deferred assays remain). Changes are written to the certificate update log without unpublishing.
       </p>
 
       {prepCoa && (
@@ -947,6 +947,7 @@ export default function CoaWorkflowBoard({
                     const assignee = assigneeForCoa(coa);
                     const reviewAssigneeId = coa.review_assigned_to ?? null;
                     const needsPendingUpdate = canUpdatePendingPublishedCoa(coa);
+                    const canLiveEdit = canEditLiveCoa(coa);
                     const pendingLabels = needsPendingUpdate
                       ? pendingAssayLabels(coa.panel_results)
                       : [];
@@ -1098,12 +1099,25 @@ export default function CoaWorkflowBoard({
                                 setPrepCoa(coa);
                               }}
                               className="btn-primary text-xs py-1 px-2 gap-1"
-                              title="Update pending assay results without unpublishing"
+                              title="Update pending assay results without unpublishing — changes are logged"
                             >
                               <FlaskConical size={11} /> Update pending
                             </button>
                           )}
-                          {canPrepareCoa(coa) && !needsPendingUpdate && (
+                          {canLiveEdit && !needsPendingUpdate && (
+                            <button
+                              type="button"
+                              onClick={e => {
+                                e.stopPropagation();
+                                setPrepCoa(coa);
+                              }}
+                              className="btn-primary text-xs py-1 px-2 gap-1"
+                              title="Open and edit this live COA without unpublishing — pass/fail/pending changes are logged"
+                            >
+                              <FlaskConical size={11} /> Edit COA
+                            </button>
+                          )}
+                          {canPrepareCoa(coa) && !needsPendingUpdate && !canLiveEdit && (
                             <button
                               type="button"
                               onClick={e => {
@@ -1115,7 +1129,7 @@ export default function CoaWorkflowBoard({
                               Prepare
                             </button>
                           )}
-                          {needsPendingUpdate && onRestartCoa && (
+                          {canLiveEdit && onRestartCoa && (
                             <button
                               type="button"
                               onClick={e => {
@@ -1124,7 +1138,7 @@ export default function CoaWorkflowBoard({
                               }}
                               disabled={!!movingId}
                               className="btn-outline text-xs py-1 px-2 gap-1"
-                              title="Full restart via Issue COA (stays linked to this LIMS ID)"
+                              title="Open full Issue form — stays published/verified and logs every change"
                             >
                               Full edit
                             </button>
@@ -1290,7 +1304,12 @@ export default function CoaWorkflowBoard({
 
                           {currentStage === 'published' && !needsPendingUpdate && (
                             <span className="text-xs text-emerald-700 font-medium flex items-center gap-1">
-                              <CheckCircle size={12} /> Client visible
+                              <CheckCircle size={12} /> Client visible · editable
+                            </span>
+                          )}
+                          {currentStage === 'verified' && !needsPendingUpdate && (
+                            <span className="text-xs text-sky-800 font-medium flex items-center gap-1">
+                              <CheckCircle size={12} /> Verified · editable
                             </span>
                           )}
                           {(currentStage === 'published' || currentStage === 'verified') && needsPendingUpdate && (
