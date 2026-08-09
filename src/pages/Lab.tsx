@@ -25,6 +25,7 @@ import { COA_WORKFLOW_LABELS, canPrepareCoa, coaWorkflowStage, buildWorkflowStag
 import {
   appendCoaUpdateLog,
   carryForwardUpdateLog,
+  fetchAndAppendCoaUpdateLog,
   formatPostIssueUpdateNote,
   summarizeCoaContentChanges,
 } from '../lib/coaUpdateLog';
@@ -890,10 +891,14 @@ export default function Lab() {
             : targetStage === 'testing_in_progress' ? 'Returned to testing'
               : null;
     if (stageLogNote) {
-      patch.result_summary = appendCoaUpdateLog(
-        coa.result_summary as Record<string, unknown>,
-        stageLogNote,
-      );
+      // Kanban rows omit result_summary — fetch before appending so we never wipe it.
+      const logged = await fetchAndAppendCoaUpdateLog(coa.id, stageLogNote);
+      if (logged.error || !logged.summary) {
+        setMsg({ type: 'error', text: logged.error || 'Could not update the COA change log.' });
+        setMovingCoaId(null);
+        return;
+      }
+      patch.result_summary = logged.summary;
     }
     const { data: updatedRow, error } = await supabase
       .from('coas')
