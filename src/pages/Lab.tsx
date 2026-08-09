@@ -22,6 +22,12 @@ import {
   ASSAY_METHOD_LABELS, AssayMethod,
 } from '../lib/labCoaForm';
 import { COA_WORKFLOW_LABELS, canPrepareCoa, coaWorkflowStage, buildWorkflowStagePatch, CoaWorkflowStage } from '../lib/coaWorkflow';
+import {
+  appendCoaUpdateLog,
+  carryForwardUpdateLog,
+  formatPostIssueUpdateNote,
+  summarizeCoaContentChanges,
+} from '../lib/coaUpdateLog';
 import CoaWorkflowBoard from '../components/lab/CoaWorkflowBoard';
 import CompanyFilterSearch from '../components/lab/CompanyFilterSearch';
 import TestingQueuePanel from '../components/lab/TestingQueuePanel';
@@ -877,10 +883,45 @@ export default function Lab() {
     if (targetStage === 'verified' && user?.id) {
       patch.verified_by = user.id;
     }
-    const { error } = await supabase.from('coas').update(patch).eq('id', coa.id);
+    const stageLogNote =
+      targetStage === 'published' ? 'Published'
+        : targetStage === 'verified' ? 'Verified (signatures 2/2)'
+          : targetStage === 'pending_review' ? 'Sent for review'
+            : targetStage === 'testing_in_progress' ? 'Returned to testing'
+              : null;
+    if (stageLogNote) {
+      patch.result_summary = appendCoaUpdateLog(
+        coa.result_summary as Record<string, unknown>,
+        stageLogNote,
+      );
+    }
+    const { data: updatedRow, error } = await supabase
+      .from('coas')
+      .update(patch)
+      .eq('id', coa.id)
+      .select(COA_LIST_COLUMNS)
+      .maybeSingle();
 
     if (error) {
       setMsg({ type: 'error', text: error.message });
+      setMovingCoaId(null);
+      return;
+    }
+    if (!updatedRow) {
+      setMsg({
+        type: 'error',
+        text: 'Could not move this COA — the update was blocked or no row changed. Try again or refresh.',
+      });
+      setMovingCoaId(null);
+      return;
+    }
+
+    const updatedCoa = hydrateCoaImages({ ...coa, ...(updatedRow as COA) });
+    if (coaWorkflowStage(updatedCoa) !== targetStage) {
+      setMsg({
+        type: 'error',
+        text: `Move failed to stick — still in ${COA_WORKFLOW_LABELS[coaWorkflowStage(updatedCoa)]}.`,
+      });
       setMovingCoaId(null);
       return;
     }
@@ -903,7 +944,9 @@ export default function Lab() {
         const allSamplesDone = orderSamples.length > 0 && orderSamples.every(s => {
           if (s.id === coa.sample_id) return true;
           if (s.status === 'complete') return true;
-          return coas.some(c => c.sample_id === s.id && coaWorkflowStage(c) === 'published');
+          return coas.some(c => c.sample_id === s.id && (
+            c.id === coa.id || coaWorkflowStage(c) === 'published'
+          ));
         });
         if (allSamplesDone) {
           await supabase.from('orders').update({ status: 'complete' }).eq('id', coa.order_id);
@@ -923,7 +966,7 @@ export default function Lab() {
       }
     }
 
-    setCoas(prev => prev.map(c => (c.id === coa.id ? { ...c, ...patch } as COA : c)));
+    setCoas(prev => prev.map(c => (c.id === coa.id ? { ...c, ...updatedCoa } : c)));
     setMsg({
       type: 'success',
       text: targetStage === 'testing_in_progress'
@@ -1002,13 +1045,14 @@ export default function Lab() {
         panel_results: cleanPanels,
       });
 
-      const profile = selectedCompany
+      const coaCompanyProfile = selectedCompany
         ?? clientCompanies.find(c => c.is_default)
         ?? clientCompanies[0]
         ?? null;
+      const chemistByline = (profile?.full_name || '').trim() || undefined;
 
-      const headerLogoRaw = applyHeaderLogo ? (profile?.logo || '') : '';
-      const watermarkRaw = applyWatermark ? (profile?.chromatograph_background || '') : '';
+      const headerLogoRaw = applyHeaderLogo ? (coaCompanyProfile?.logo || '') : '';
+      const watermarkRaw = applyWatermark ? (coaCompanyProfile?.chromatograph_background || '') : '';
       const [companyLogoRaw, watermarkRawResolved, hplcRawResolved, vialResolved] = await Promise.all([
         headerLogoRaw ? resolveImageAsDataUrl(headerLogoRaw) : Promise.resolve(''),
         watermarkRaw ? resolveImageAsDataUrl(watermarkRaw) : Promise.resolve(''),
@@ -1107,7 +1151,7 @@ export default function Lab() {
         accession_number: sampleCode,
         sample_name: form.sampleName.trim(),
         display_name: form.displayName.trim() || form.sampleName.trim(),
-        company_name: (form.companyName.trim() || profile?.name || '').trim(),
+        company_name: (form.companyName.trim() || coaCompanyProfile?.name || '').trim(),
         company_logo: companyLogo,
         peptide_sequence: looksLikeCasNumber(form.casNumber.trim())
           ? form.casNumber.trim()
@@ -1120,49 +1164,76 @@ export default function Lab() {
         vial_image: vialForSave || '',
         chromatogram_image: watermarkImage,
         hplc_image: hplcImage || '',
-        result_summary: {
-          include_molecular_weight: includeMw,
-          molecular_weight: includeMw ? labResults.molecularWeight.trim() : '',
-          sterility_method: resultsForPanels.sterilityMethod,
-          sterility_pass: resultsForPanels.sterilityPass,
-          sterility_method_label: STERILITY_METHOD_LABELS[resultsForPanels.sterilityMethod],
-          sterility_specification: 'Not Detected',
-          sterility_projected_completion:
-            resultsForPanels.sterilityMethod === 'culture_14_day' && resultsForPanels.sterilityPass === null
-              ? resultsForPanels.sterilityProjectedCompletion.trim()
-              : '',
-          assay_method: labResults.assayMethod,
-          assay_method_label: ASSAY_METHOD_LABELS[labResults.assayMethod],
-          endotoxin_eu_ml: labResults.endotoxinEuMl.trim(),
-          endotoxin_pass: labResults.endotoxinPass,
-          heavy_metals_pass: labResults.heavyMetalsPass,
-          heavy_metals: labResults.heavyMetals,
-          blend_peptides: labResults.blendPeptides,
-          // Pre-calculate Prepare COA averages from assay + conformity vials.
-          avg_net_peptide_content: assayAverages.avg_net_peptide_content,
-          avg_purity: assayAverages.avg_purity,
-          mean_of_vials_tested: assayAverages.mean_of_vials_tested,
-          vials_tested: assayAverages.mean_of_vials_tested,
-          content_values: assayAverages.content_values,
-          purity_values: assayAverages.purity_values,
-          apply_company_logo: applyHeaderLogo,
-          apply_watermark: applyWatermark,
-          coa_profile_id: profile?.id ?? null,
-          received_at: receivedAtIso,
-          received_date: receivedDate,
-          received_by: receivedByName,
-          ...(resolvedSampleMatrix ? { matrix_type: resolvedSampleMatrix, sample_matrix: resolvedSampleMatrix } : {}),
-          category: linkedMeta?.category || '',
-          test_mode: linkedMeta?.test_mode || '',
-          include_endotoxin: !!resultsForPanels.includeEndotoxin,
-          include_heavy_metals: !!resultsForPanels.includeHeavyMetals,
-          include_sterility: !!resultsForPanels.includeSterility,
-          include_fentanyl: !!resultsForPanels.includeFentanyl,
-          labeled_content: form.labeledContent.trim() || linkedMeta?.labeled_content || '',
-          label_claim_unit: form.labelClaimUnit.trim() || linkedMeta?.label_claim_unit || 'mg',
-          include_cas_number: !!looksLikeCasNumber(form.casNumber.trim())
-            || !!resolveCasNumber(form.casNumber, form.sampleName, form.displayName),
-        },
+        result_summary: (() => {
+          const existing = editingCoaId ? coas.find(c => c.id === editingCoaId) : undefined;
+          const baseSummary = {
+            include_molecular_weight: includeMw,
+            molecular_weight: includeMw ? labResults.molecularWeight.trim() : '',
+            sterility_method: resultsForPanels.sterilityMethod,
+            sterility_pass: resultsForPanels.sterilityPass,
+            sterility_method_label: STERILITY_METHOD_LABELS[resultsForPanels.sterilityMethod],
+            sterility_specification: 'Not Detected',
+            sterility_projected_completion:
+              resultsForPanels.sterilityMethod === 'culture_14_day' && resultsForPanels.sterilityPass === null
+                ? resultsForPanels.sterilityProjectedCompletion.trim()
+                : '',
+            assay_method: labResults.assayMethod,
+            assay_method_label: ASSAY_METHOD_LABELS[labResults.assayMethod],
+            endotoxin_eu_ml: labResults.endotoxinEuMl.trim(),
+            endotoxin_pass: labResults.endotoxinPass,
+            heavy_metals_pass: labResults.heavyMetalsPass,
+            heavy_metals: labResults.heavyMetals,
+            blend_peptides: labResults.blendPeptides,
+            // Pre-calculate Prepare COA averages from assay + conformity vials.
+            avg_net_peptide_content: assayAverages.avg_net_peptide_content,
+            avg_purity: assayAverages.avg_purity,
+            mean_of_vials_tested: assayAverages.mean_of_vials_tested,
+            vials_tested: assayAverages.mean_of_vials_tested,
+            content_values: assayAverages.content_values,
+            purity_values: assayAverages.purity_values,
+            apply_company_logo: applyHeaderLogo,
+            apply_watermark: applyWatermark,
+            coa_profile_id: coaCompanyProfile?.id ?? null,
+            received_at: receivedAtIso,
+            received_date: receivedDate,
+            received_by: receivedByName,
+            ...(resolvedSampleMatrix ? { matrix_type: resolvedSampleMatrix, sample_matrix: resolvedSampleMatrix } : {}),
+            category: linkedMeta?.category || '',
+            test_mode: linkedMeta?.test_mode || '',
+            include_endotoxin: !!resultsForPanels.includeEndotoxin,
+            include_heavy_metals: !!resultsForPanels.includeHeavyMetals,
+            include_sterility: !!resultsForPanels.includeSterility,
+            include_fentanyl: !!resultsForPanels.includeFentanyl,
+            labeled_content: form.labeledContent.trim() || linkedMeta?.labeled_content || '',
+            label_claim_unit: form.labelClaimUnit.trim() || linkedMeta?.label_claim_unit || 'mg',
+            include_cas_number: !!looksLikeCasNumber(form.casNumber.trim())
+              || !!resolveCasNumber(form.casNumber, form.sampleName, form.displayName),
+          };
+          const withPrior = carryForwardUpdateLog(
+            existing?.result_summary as Record<string, unknown> | undefined,
+            baseSummary,
+          );
+          if (editingCoaId && existing) {
+            const detail = summarizeCoaContentChanges(
+              { panel_results: existing.panel_results, overall_result: existing.overall_result },
+              { panel_results: cleanPanels, overall_result: form.overallResult },
+            );
+            const existingStage = coaWorkflowStage(existing);
+            const keepLive = existingStage === 'published' || existingStage === 'verified' || !!existing.is_public;
+            return appendCoaUpdateLog(
+              withPrior,
+              keepLive
+                ? formatPostIssueUpdateNote(existing, detail || 'Certificate details updated')
+                : (detail ? `Re-issued · ${detail}` : 'Certificate re-issued'),
+              { by: chemistByline },
+            );
+          }
+          return appendCoaUpdateLog(
+            withPrior,
+            'Certificate issued',
+            { by: chemistByline },
+          );
+        })(),
         overall_result: form.overallResult,
         is_public: false,
         coa_workflow_stage: 'issued',
@@ -1171,21 +1242,31 @@ export default function Lab() {
       };
 
       const wasRestart = !!editingCoaId;
+      const existingForEdit = editingCoaId ? coas.find(c => c.id === editingCoaId) : undefined;
+      const existingStageForEdit = existingForEdit ? coaWorkflowStage(existingForEdit) : null;
+      const keepPublished = !!existingForEdit && (
+        existingStageForEdit === 'published' || !!existingForEdit.is_public
+      );
+      const keepVerified = !!existingForEdit && existingStageForEdit === 'verified' && !keepPublished;
+      const keepLive = keepPublished || keepVerified;
       let issuedSlug = sampleCode;
 
       if (editingCoaId) {
-        const existing = coas.find(c => c.id === editingCoaId);
+        const existing = existingForEdit;
         const { signature: _sig, slug: _slug, ...updateFields } = payload;
+        // Editing a live published/verified COA keeps it client-visible — no unpublish bounce.
         const restartPatch = {
           ...updateFields,
           slug: existing?.slug || sampleCode,
           signature: existing?.signature || payload.signature,
-          review_assigned_to: null,
-          verified_at: null,
-          verified_by: null,
-          published_at: null,
-          is_public: false,
-          coa_workflow_stage: 'issued' as const,
+          review_assigned_to: keepLive ? (existing?.review_assigned_to ?? null) : null,
+          verified_at: keepLive ? (existing?.verified_at ?? null) : null,
+          verified_by: keepLive ? (existing?.verified_by ?? null) : null,
+          published_at: keepPublished ? (existing?.published_at ?? new Date().toISOString()) : null,
+          is_public: keepPublished,
+          coa_workflow_stage: (
+            keepPublished ? 'published' : keepVerified ? 'verified' : 'issued'
+          ) as CoaWorkflowStage,
         };
         const { error } = await supabase.from('coas').update(restartPatch).eq('id', editingCoaId);
         if (error) {
@@ -1230,7 +1311,7 @@ export default function Lab() {
         }
       }
 
-      if (form.sampleId) {
+      if (form.sampleId && !keepLive) {
         const sampleRow = samples.find(s => s.id === form.sampleId) || intakeSample;
         const prevMeta =
           sampleRow?.metadata && typeof sampleRow.metadata === 'object' ? sampleRow.metadata : {};
@@ -1277,7 +1358,9 @@ export default function Lab() {
       setMsg({
         type: 'success',
         text: wasRestart
-          ? 'COA restarted and re-issued (private). Send for review when ready.'
+          ? (keepLive
+            ? 'COA updated in place — still live for the client. Changes are on the update log.'
+            : 'COA restarted and re-issued (private). Send for review when ready.')
           : 'COA issued (private). Verify it, then publish for the client.',
         slug: issuedSlug,
       });
@@ -1482,7 +1565,16 @@ export default function Lab() {
                   <ArrowLeft size={14} /> Back to {LAB_TAB_LABELS[returnTab]}
                 </button>
                 <p className="text-xs text-neutral-500">
-                  {editingCoaId ? 'Restarting COA' : 'Issue new COA'}
+                  {editingCoaId
+                    ? (() => {
+                      const editing = coas.find(c => c.id === editingCoaId);
+                      if (!editing) return 'Editing COA';
+                      const st = coaWorkflowStage(editing);
+                      if (st === 'published' || editing.is_public) return 'Editing live published COA';
+                      if (st === 'verified') return 'Editing verified COA';
+                      return 'Restarting COA';
+                    })()
+                    : 'Issue new COA'}
                 </p>
               </div>
               <p className="text-xs text-neutral-500 bg-neutral-50 border border-atlas-border rounded-md px-3 py-2">
@@ -2381,9 +2473,17 @@ export default function Lab() {
               </div>
               <button type="submit" disabled={saving} className="btn-primary w-full gap-2">
                 <CheckCircle size={16} /> {
-                  saving
-                    ? (editingCoaId ? 'Re-issuing…' : 'Issuing…')
-                    : (editingCoaId ? 'Re-issue COA (Private)' : 'Issue COA (Private)')
+                  (() => {
+                    const editing = editingCoaId ? coas.find(c => c.id === editingCoaId) : undefined;
+                    const live = !!editing && (
+                      coaWorkflowStage(editing) === 'published'
+                      || coaWorkflowStage(editing) === 'verified'
+                      || !!editing.is_public
+                    );
+                    if (saving) return editingCoaId ? (live ? 'Saving…' : 'Re-issuing…') : 'Issuing…';
+                    if (!editingCoaId) return 'Issue COA (Private)';
+                    return live ? 'Save COA (keep live)' : 'Re-issue COA (Private)';
+                  })()
                 }
               </button>
             </form>

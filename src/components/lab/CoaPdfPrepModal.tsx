@@ -7,7 +7,7 @@ import {
   readCoaPdfStats,
   saveCoaPdfPrep,
 } from '../../lib/coaImages';
-import { canUpdatePendingPublishedCoa } from '../../lib/coaWorkflow';
+import { canEditLiveCoa, canUpdatePendingPublishedCoa, coaWorkflowStage } from '../../lib/coaWorkflow';
 import { pendingAssayLabels } from '../../lib/coaDisplayPanels';
 import { fetchCoaImageRow } from '../../lib/coaSelect';
 import {
@@ -319,7 +319,14 @@ export default function CoaPdfPrepModal({ coa, sampleMetadata = null, onClose, o
   const contentBreakdown = assay.content_values.join(' · ') || '—';
   const purityBreakdown = assay.purity_values.join(' · ') || '—';
   const pendingUpdate = canUpdatePendingPublishedCoa(coa);
+  const liveEdit = canEditLiveCoa(coa);
   const pendingLabels = pendingUpdate ? pendingAssayLabels(coa.panel_results) : [];
+  const liveStage = coaWorkflowStage(coa);
+  const modalTitle = pendingUpdate
+    ? 'Update pending assays'
+    : liveEdit
+      ? 'Edit certificate'
+      : 'Prepare certificate';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={onClose}>
@@ -329,9 +336,7 @@ export default function CoaPdfPrepModal({ coa, sampleMetadata = null, onClose, o
       >
         <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-atlas-border">
           <div>
-            <h2 className="text-lg font-bold text-black">
-              {pendingUpdate ? 'Update pending assays' : 'Prepare certificate'}
-            </h2>
+            <h2 className="text-lg font-bold text-black">{modalTitle}</h2>
             <p className="text-sm text-neutral-500 mt-0.5">
               {coa.display_name || coa.sample_name}
               {coa.company_name ? ` · ${coa.company_name}` : ''}
@@ -345,10 +350,22 @@ export default function CoaPdfPrepModal({ coa, sampleMetadata = null, onClose, o
         <div className="px-5 py-4 space-y-5">
           {pendingUpdate ? (
             <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm text-amber-950">
-              <p className="font-semibold">Published — finish deferred results without unpublishing.</p>
+              <p className="font-semibold">
+                {liveStage === 'published' ? 'Published' : 'Verified'} — finish deferred results without unpublishing.
+                Pass / fail / pending changes are recorded on the update log.
+              </p>
               {pendingLabels.length > 0 && (
                 <p className="mt-1 text-amber-900">Still pending: {pendingLabels.join(', ')}</p>
               )}
+            </div>
+          ) : liveEdit ? (
+            <div className="rounded-lg border border-sky-300 bg-sky-50 px-3 py-2.5 text-sm text-sky-950">
+              <p className="font-semibold">
+                {liveStage === 'published' ? 'Published' : 'Verified'} — edit results in place.
+              </p>
+              <p className="mt-1 text-sky-900">
+                The certificate stays live. Every pass, fail, or pending change is added to the update log at the bottom of the COA.
+              </p>
             </div>
           ) : (
             <p className="text-sm text-neutral-600">
