@@ -29,6 +29,7 @@ import { formatLabelClaim } from './orderCatalog';
 import {
   appendCoaUpdateLog,
   formatPostIssueUpdateNote,
+  stripCoaSummaryBlobs,
   summarizeCoaContentChanges,
 } from './coaUpdateLog';
 
@@ -674,8 +675,24 @@ export async function saveCoaPdfPrep(
   const watermark = watermarkCompressed || prepWatermark || hydrated.chromatogram_image || '';
   const hplcImage = hplcCompressed || prepHplc || hydrated.hplc_image || '';
 
+  // Kanban / list rows omit result_summary — load it so Prepare doesn't wipe prior keys / update_log.
+  let priorSummary: Record<string, unknown> =
+    (coa.result_summary && typeof coa.result_summary === 'object')
+      ? (coa.result_summary as Record<string, unknown>)
+      : {};
+  if (Object.keys(priorSummary).length === 0) {
+    const { data: summaryRow } = await supabase
+      .from('coas')
+      .select('result_summary')
+      .eq('id', coa.id)
+      .maybeSingle();
+    if (summaryRow?.result_summary && typeof summaryRow.result_summary === 'object') {
+      priorSummary = summaryRow.result_summary as Record<string, unknown>;
+    }
+  }
+
   const baseSummary = {
-    ...((coa.result_summary && typeof coa.result_summary === 'object' ? coa.result_summary : {}) as Record<string, unknown>),
+    ...stripCoaSummaryBlobs(priorSummary),
     avg_net_peptide_content: prep.avg_net_peptide_content.trim(),
     mean_of_vials_tested: prep.mean_of_vials_tested.trim(),
     avg_purity: (prep.avg_purity ?? '').trim(),

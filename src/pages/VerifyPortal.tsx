@@ -13,7 +13,7 @@ import { verifyCoaIntegrity } from '../lib/coaVerify';
 import {
   COA_WORKFLOW_LABELS, CoaWorkflowStage, buildWorkflowStagePatch, coaWorkflowStage,
 } from '../lib/coaWorkflow';
-import { appendCoaUpdateLog } from '../lib/coaUpdateLog';
+import { fetchAndAppendCoaUpdateLog } from '../lib/coaUpdateLog';
 import { COA_LIST_COLUMNS } from '../lib/coaSelect';
 import StaffHeader from '../components/layout/StaffHeader';
 
@@ -191,10 +191,13 @@ export default function VerifyPortal() {
         : targetStage === 'verified' ? 'Verified (signatures 2/2)'
           : null;
     if (stageLogNote) {
-      patch.result_summary = appendCoaUpdateLog(
-        coa.result_summary as Record<string, unknown>,
-        stageLogNote,
-      );
+      const logged = await fetchAndAppendCoaUpdateLog(coa.id, stageLogNote);
+      if (logged.error || !logged.summary) {
+        setMsg({ type: 'error', text: logged.error || 'Could not update the COA change log.' });
+        setSavingId(null);
+        return;
+      }
+      patch.result_summary = logged.summary;
     }
 
     const { error } = await supabase.from('coas').update(patch).eq('id', coa.id);

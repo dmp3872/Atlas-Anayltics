@@ -1,3 +1,4 @@
+import { supabase } from './supabase';
 import { COA } from './types';
 import { resolvePanelPass } from './coaDisplayPanels';
 
@@ -10,6 +11,24 @@ export interface CoaUpdateLogEntry {
 
 /** Keep enough history for deferred assays + later corrections. */
 const MAX_ENTRIES = 24;
+
+const SUMMARY_BLOB_KEYS = [
+  'vial_image',
+  'chromatogram_image',
+  'hplc_image',
+  'company_logo',
+] as const;
+
+/** Drop multi‑MB image blobs before writing result_summary back to Postgres. */
+export function stripCoaSummaryBlobs(
+  summary: Record<string, unknown> | null | undefined,
+): Record<string, unknown> {
+  const base = summary && typeof summary === 'object' ? { ...summary } : {};
+  for (const key of SUMMARY_BLOB_KEYS) {
+    delete base[key];
+  }
+  return base;
+}
 
 export function readCoaUpdateLog(
   summary: Record<string, unknown> | null | undefined,
@@ -34,7 +53,7 @@ export function appendCoaUpdateLog(
   note: string,
   opts?: { at?: string; by?: string },
 ): Record<string, unknown> {
-  const base = summary && typeof summary === 'object' ? { ...summary } : {};
+  const base = stripCoaSummaryBlobs(summary);
   const trimmed = note.trim();
   if (!trimmed) return base;
 
@@ -57,6 +76,29 @@ export function appendCoaUpdateLog(
 
   base.update_log = [...prev, entry].slice(-MAX_ENTRIES);
   return base;
+}
+
+/**
+ * Load the live `result_summary` from the DB, then append a log note.
+ * List/kanban COA rows intentionally omit `result_summary` — never append from those
+ * or the write would wipe the summary down to `{ update_log }`.
+ */
+export async function fetchAndAppendCoaUpdateLog(
+  coaId: string,
+  note: string,
+  opts?: { at?: string; by?: string },
+): Promise<{ summary: Record<string, unknown> | null; error: string | null }> {
+  const { data, error } = await supabase
+    .from('coas')
+    .select('result_summary')
+    .eq('id', coaId)
+    .maybeSingle();
+  if (error) return { summary: null, error: error.message };
+  if (!data) return { summary: null, error: 'COA not found while updating the change log.' };
+  const current = (data.result_summary && typeof data.result_summary === 'object')
+    ? (data.result_summary as Record<string, unknown>)
+    : {};
+  return { summary: appendCoaUpdateLog(current, note, opts), error: null };
 }
 
 function shortPanelLabel(name: string): string {
