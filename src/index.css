@@ -291,6 +291,18 @@
     font-size: 9.5px !important;
   }
 
+  .coa-update-log {
+    padding: 0.2rem 0.4rem !important;
+    margin-bottom: 0.25rem !important;
+    break-inside: avoid;
+  }
+
+  .coa-update-log p,
+  .coa-update-log li {
+    font-size: 8px !important;
+    line-height: 1.25 !important;
+  }
+
   .coa-cert-footer {
     padding: 0.4rem 0.65rem !important;
     margin-top: 0.35rem !important;

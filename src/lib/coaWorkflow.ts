@@ -74,13 +74,19 @@ export function coaHasDirectorSignature(
   return coaSignatureProgress(coa).signed >= 2;
 }
 
-/** Prepare (vial + panel stats) — also allowed on published/verified when assays are still pending. */
+/**
+ * Prepare / quick-edit (vial + panel stats).
+ * Allowed after issue, and on verified/published so chemists can open a live COA and fix results
+ * (including pass / fail / pending) without unpublishing.
+ */
 export function canPrepareCoa(coa: Pick<COA, 'coa_workflow_stage' | 'is_public' | 'panel_results' | 'overall_result'>): boolean {
   const stage = coaWorkflowStage(coa);
-  if (stage === 'issued' || stage === 'awaiting_info' || stage === 'testing_in_progress') return true;
-  // Chemists need a fast path to finish deferred assays (e.g. 14-day sterility) after publish.
-  if ((stage === 'published' || stage === 'verified') && coaHasPendingAssays(coa)) return true;
-  return false;
+  return stage === 'issued'
+    || stage === 'awaiting_info'
+    || stage === 'testing_in_progress'
+    || stage === 'pending_review'
+    || stage === 'verified'
+    || stage === 'published';
 }
 
 /** True when a published/verified COA still needs chemist follow-up on pending assays. */
@@ -89,6 +95,14 @@ export function canUpdatePendingPublishedCoa(
 ): boolean {
   const stage = coaWorkflowStage(coa);
   return (stage === 'published' || stage === 'verified') && coaHasPendingAssays(coa);
+}
+
+/** Published or verified certificates chemists can open and edit in place. */
+export function canEditLiveCoa(
+  coa: Pick<COA, 'coa_workflow_stage' | 'is_public'>,
+): boolean {
+  const stage = coaWorkflowStage(coa);
+  return stage === 'published' || stage === 'verified';
 }
 
 export function workflowStepIndex(stage: CoaWorkflowStage): number {
