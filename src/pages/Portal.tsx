@@ -3,7 +3,7 @@ import { Link, Navigate, useLocation, useNavigate, useSearchParams } from 'react
 import {
   Truck, Copy, Check, X, Search, Download, FileText, ExternalLink,
   CheckCircle, XCircle, Clock, CreditCard, FlaskConical,
-  Shield, Bell, Key, UserPlus, Lock, AlertTriangle, Package, MapPin,
+  Shield, Bell, Key, UserPlus, Lock, AlertTriangle,
   ChevronDown, ChevronUp,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -418,7 +418,6 @@ export default function Portal() {
   const [loading, setLoading] = useState(true);
   const [shippingOpen, setShippingOpen] = useState(true);
   const [copiedAddr, setCopiedAddr] = useState(false);
-  const [copiedEmbedSlug, setCopiedEmbedSlug] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [sampleProduct, setSampleProduct] = useState('all');
@@ -511,14 +510,6 @@ export default function Portal() {
 
   if (!user) return <Navigate to="/auth" replace />;
 
-  function setTab(t: PortalTab) {
-    setParams({ tab: t }, { replace: true });
-    setSearch('');
-    setStatusFilter('all');
-    setSampleProduct('all');
-    setCoaPeptide('all');
-  }
-
   /** Jump from Samples → Orders with that order expanded. */
   function openOrder(order: Order) {
     setSearch('');
@@ -543,14 +534,6 @@ export default function Portal() {
     await navigator.clipboard.writeText(text);
     setCopiedAddr(true);
     setTimeout(() => setCopiedAddr(false), 2000);
-  }
-
-  async function copyCoaEmbed(slug: string) {
-    const embedUrl = `${window.location.origin}/embed/coa/${encodeURIComponent(slug)}`;
-    const code = `<iframe src="${embedUrl}" title="Atlas Analytics Verified COA" width="390" height="780" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" style="border:0;width:100%;max-width:390px;"></iframe>`;
-    await navigator.clipboard.writeText(code);
-    setCopiedEmbedSlug(slug);
-    window.setTimeout(() => setCopiedEmbedSlug(current => (current === slug ? null : current)), 2200);
   }
 
   function toggleNotif(key: keyof NotificationPrefs) {
@@ -971,7 +954,8 @@ export default function Portal() {
                     <button
                       onClick={() => setExpandedOrders(prev => {
                         const next = new Set(prev);
-                        next.has(order.id) ? next.delete(order.id) : next.add(order.id);
+                        if (next.has(order.id)) next.delete(order.id);
+                        else next.add(order.id);
                         return next;
                       })}
                       className="w-full text-left p-5 hover:bg-neutral-50 transition-colors"

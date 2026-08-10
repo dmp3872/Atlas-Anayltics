@@ -5,8 +5,8 @@ import {
   ArrowLeft, Copy, Check, Droplets, Boxes, AlertTriangle, Download,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { COA, PanelResult } from '../lib/types';
-import { formatDate, formatDateTime } from '../lib/utils';
+import { COA } from '../lib/types';
+import { formatDate } from '../lib/utils';
 import { verifyCoaIntegrity } from '../lib/coaVerify';
 import { hydrateCoaImages, readCoaPdfStats, resolveCoaHeaderLogo, resolveCoaWatermark, trimImageWhitespace } from '../lib/coaImages';
 import { partitionCoaPanels, panelStatusLabel, panelStatusToneClass, resolvePanelPass, formatCoaResultDisplay } from '../lib/coaDisplayPanels';
@@ -17,7 +17,7 @@ import { compressImageDataUrl } from '../lib/imageCompress';
 import { coaPngFilename, downloadCoaPngFromElement } from '../lib/coaPdf';
 import { coaHasDirectorSignature, coaSignatureProgress, coaWorkflowStage } from '../lib/coaWorkflow';
 import { useAuth } from '../context/AuthContext';
-import { resolveUserRole, roleHome } from '../lib/roles';
+import { resolveUserRole } from '../lib/roles';
 import Header from '../components/layout/Header';
 import Footer from '../components/layout/Footer';
 import AtlasLogo from '../components/brand/AtlasLogo';
@@ -115,7 +115,7 @@ export default function COADetail() {
           return;
         }
 
-        const hydrated = hydrateCoaImages(data as COA);
+        const hydrated = hydrateCoaImages(data as unknown as COA);
         setCoa(hydrated);
         setLogoWatermark(hydrated.chromatogram_image || '');
         setHplcPhoto(hydrated.hplc_image || '');

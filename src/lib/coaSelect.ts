@@ -74,7 +74,8 @@ export type CoaImageRow = Pick<COA, 'vial_image' | 'chromatogram_image' | 'hplc_
 export async function fetchCoaImageRow(id: string): Promise<CoaImageRow | null> {
   const full = await supabase.from('coas').select(COA_IMAGE_COLUMNS).eq('id', id).maybeSingle();
   if (!full.error) {
-    return full.data ? ({ ...(full.data as CoaImageRow), hplc_image: (full.data as CoaImageRow).hplc_image || '' }) : null;
+    const row = full.data as unknown as CoaImageRow | null;
+    return row ? { ...row, hplc_image: row.hplc_image || '' } : null;
   }
 
   const msg = full.error.message || '';
@@ -89,5 +90,5 @@ export async function fetchCoaImageRow(id: string): Promise<CoaImageRow | null> 
     return null;
   }
   if (!legacy.data) return null;
-  return { ...(legacy.data as CoaImageRow), hplc_image: '' };
+  return { ...(legacy.data as unknown as CoaImageRow), hplc_image: '' };
 }

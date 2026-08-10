@@ -50,7 +50,7 @@ export default function Admin() {
       supabase.from('order_samples').select('*').order('created_at', { ascending: false }),
     ]);
     if (u.data) setUsers(u.data.sort((a, b) => (a.full_name || '').localeCompare(b.full_name || '')));
-    if (c.data) setCoas(c.data);
+    if (c.data) setCoas(c.data as unknown as COA[]);
     if (o.data) setOrders(o.data);
     if (s.data) setSamples(s.data);
     setLoading(false);
