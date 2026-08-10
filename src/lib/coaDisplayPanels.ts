@@ -395,10 +395,10 @@ export function assayResultsFromPanels(
         const t = token.toLowerCase();
         if (/fail|negative|not\s*detected|absent/.test(t) && !/pass/.test(t)) return false;
         if (/pass|confirm|match|positive|detected|present/.test(t)) return true;
-        return identityPanel.pass;
+        return identityPanel.pass ?? true;
       });
     } else {
-      identity = [identityPanel.pass];
+      identity = [identityPanel.pass ?? true];
     }
   }
 

@@ -256,7 +256,7 @@ export default function Lab() {
     }
     if (s.data) setSamples(s.data);
     if (o.data) setOrders(o.data);
-    if (c.data) setCoas((c.data as COA[]).map(hydrateCoaImages));
+    if (c.data) setCoas((c.data as unknown as COA[]).map(hydrateCoaImages));
     setLoading(false);
   }
 
@@ -921,7 +921,7 @@ export default function Lab() {
       return;
     }
 
-    const updatedCoa = hydrateCoaImages({ ...coa, ...(updatedRow as COA) });
+    const updatedCoa = hydrateCoaImages({ ...coa, ...(updatedRow as unknown as COA) });
     if (coaWorkflowStage(updatedCoa) !== targetStage) {
       setMsg({
         type: 'error',

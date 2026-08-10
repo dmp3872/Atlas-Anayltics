@@ -19,7 +19,7 @@ import { coaDigitalPdfFilename, downloadCoaPdfFromElement } from '../lib/coaPdf'
 import { coaHasDirectorSignature, coaSignatureProgress, coaWorkflowStage } from '../lib/coaWorkflow';
 import { sampleIntakeAt } from '../lib/services/orderWorkflow';
 import { useAuth } from '../context/AuthContext';
-import { resolveUserRole, roleHome } from '../lib/roles';
+import { resolveUserRole } from '../lib/roles';
 import Header from '../components/layout/Header';
 import Footer from '../components/layout/Footer';
 import AtlasLogo from '../components/brand/AtlasLogo';
@@ -121,7 +121,7 @@ export default function COADetail() {
           return;
         }
 
-        const hydrated = hydrateCoaImages(data as COA);
+        const hydrated = hydrateCoaImages(data as unknown as COA);
         setCoa(hydrated);
         setLogoWatermark(hydrated.chromatogram_image || '');
         setHplcPhoto(hydrated.hplc_image || '');
@@ -681,7 +681,7 @@ export default function COADetail() {
                     <tr key={`metal-${i}`} className={i % 2 === 0 ? 'bg-white' : 'bg-neutral-50'}>
                       <td className="px-3 py-1 font-medium border-t border-atlas-border">{r.panel_name}</td>
                       <td className="px-3 py-1 text-neutral-600 border-t border-atlas-border">{r.specification || ''}</td>
-                      <td className="px-3 py-1 font-medium border-t border-atlas-border text-black">
+                      <td className={`px-3 py-1 border-t border-atlas-border ${pass === null || !r.result?.trim() ? 'italic text-neutral-500' : 'font-medium text-black'}`}>
                         {resultText}
                       </td>
                       <td className="px-3 py-1 border-t border-atlas-border">

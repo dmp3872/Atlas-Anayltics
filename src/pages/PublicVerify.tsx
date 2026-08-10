@@ -46,7 +46,7 @@ export default function PublicVerify() {
       setQuery(slug);
       verifySlug(slug);
     }
-  }, [searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   async function handleVerify(e: React.FormEvent) {
     e.preventDefault();

@@ -78,7 +78,7 @@ export async function fetchCoaImageRow(id: string): Promise<CoaImageRow | null> 
 
   const full = await supabase.from('coas').select(withSummary).eq('id', id).maybeSingle();
   if (!full.error && full.data) {
-    row = full.data as Record<string, unknown>;
+    row = full.data as unknown as Record<string, unknown>;
   } else {
     const msg = full.error?.message || '';
     if (full.error && !/hplc_image|schema cache|result_summary/i.test(msg)) {
@@ -94,9 +94,10 @@ export async function fetchCoaImageRow(id: string): Promise<CoaImageRow | null> 
         if (legacy.error) console.warn('COA image load failed:', legacy.error.message);
         return null;
       }
-      row = { ...(bare.data as object), hplc_image: '', result_summary: null };
+      row = { ...(bare.data as unknown as object), hplc_image: '', result_summary: null };
     } else {
-      row = { ...(legacy.data as object), hplc_image: (legacy.data as { hplc_image?: string }).hplc_image || '' };
+      const legacyRow = legacy.data as unknown as { hplc_image?: string };
+      row = { ...(legacy.data as unknown as object), hplc_image: legacyRow.hplc_image || '' };
     }
   }
 
