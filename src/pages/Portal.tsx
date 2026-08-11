@@ -1299,24 +1299,52 @@ export default function Portal() {
 
             {/* Widget Tab */}
             {tab === 'widget' && (
-              <div className="card p-6 space-y-4">
-                <h3 className="font-bold flex items-center gap-2"><Shield size={16} /> QR-Verified Digital Certificates</h3>
-                <p className="text-sm text-neutral-600">
-                  Share a verify link that prefills the certificate ID — customers still click Verify themselves.
-                  This is different from the full COA page link (<code className="text-xs bg-neutral-100 px-1 py-0.5 font-mono">/coa/…</code>).
-                </p>
-                <div className="bg-neutral-950 text-brand-400 p-4 rounded-lg font-mono text-xs overflow-x-auto space-y-2">
-                  <p className="text-neutral-500">// Prefill verify tool (user clicks Verify)</p>
-                  <p>{`${window.location.origin}/verify?id=YOUR_COA_ID`}</p>
-                  <p className="text-neutral-500 pt-2">// Full certificate page (opens COA)</p>
-                  <p>{`${window.location.origin}/coa/YOUR_COA_ID`}</p>
+              <div className="space-y-4">
+                <div>
+                  <h1 className="portal-page-title">Share & Verify Links</h1>
+                  <p className="portal-page-subtitle">
+                    Two different links for every certificate — do not treat them as the same.
+                  </p>
                 </div>
-                <button
-                  onClick={() => navigator.clipboard.writeText(`${window.location.origin}/verify?id=YOUR_COA_ID`)}
-                  className="btn-outline text-sm gap-1.5"
-                >
-                  <Copy size={14} /> Copy Verify Link Template
-                </button>
+                <div className="card p-6 space-y-4">
+                  <h3 className="font-bold flex items-center gap-2"><Shield size={16} /> QR-Verified Digital Certificates</h3>
+                  <div className="grid sm:grid-cols-2 gap-3 text-sm">
+                    <div className="p-3 border border-atlas-border bg-neutral-50">
+                      <p className="font-semibold text-black mb-1">Verify autofill link</p>
+                      <p className="text-neutral-600 text-xs leading-relaxed">
+                        Opens the public verify tool with the certificate ID filled in. The recipient must click Verify.
+                      </p>
+                    </div>
+                    <div className="p-3 border border-atlas-border bg-neutral-50">
+                      <p className="font-semibold text-black mb-1">Full COA link</p>
+                      <p className="text-neutral-600 text-xs leading-relaxed">
+                        Opens the certificate page directly. Use this when you want someone to read the full report.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="bg-neutral-950 text-brand-400 p-4 rounded-lg font-mono text-xs overflow-x-auto space-y-2">
+                    <p className="text-neutral-500">// Verify autofill (user clicks Verify)</p>
+                    <p>{`${window.location.origin}/verify?id=YOUR_COA_ID`}</p>
+                    <p className="text-neutral-500 pt-2">// Full certificate page</p>
+                    <p>{`${window.location.origin}/coa/YOUR_COA_ID`}</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => navigator.clipboard.writeText(`${window.location.origin}/verify?id=YOUR_COA_ID`)}
+                      className="btn-primary text-sm gap-1.5"
+                    >
+                      <Copy size={14} /> Copy Verify Link Template
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => navigator.clipboard.writeText(`${window.location.origin}/coa/YOUR_COA_ID`)}
+                      className="btn-outline text-sm gap-1.5"
+                    >
+                      <Copy size={14} /> Copy COA Link Template
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
 

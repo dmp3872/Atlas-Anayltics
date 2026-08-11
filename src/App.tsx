@@ -7,7 +7,6 @@ import Footer from './components/layout/Footer';
 import Landing from './pages/Landing';
 import Auth from './pages/Auth';
 import Pricing from './pages/Pricing';
-import Order from './pages/Order';
 import Portal from './pages/Portal';
 import OrderWizard from './pages/OrderWizard';
 import COADetail from './pages/COADetail';
@@ -19,6 +18,9 @@ import PublicVerify from './pages/PublicVerify';
 import PublicLibrary from './pages/PublicLibrary';
 import Trust from './pages/Trust';
 import Roadmap from './pages/Roadmap';
+import Privacy from './pages/Privacy';
+import Terms from './pages/Terms';
+import Contact from './pages/Contact';
 import Lab from './pages/Lab';
 import Admin from './pages/Admin';
 import VerifyPortal from './pages/VerifyPortal';
@@ -64,7 +66,7 @@ export default function App() {
           <Route path="/auth" element={<Auth />} />
           <Route path="/pricing" element={<PublicLayout><Pricing /></PublicLayout>} />
           <Route path="/order-new" element={<OrderWizard />} />
-          <Route path="/order" element={<PublicLayout><Order /></PublicLayout>} />
+          <Route path="/order" element={<Navigate to="/order-new" replace />} />
           <Route path="/verify" element={<PublicLayout><PublicVerify /></PublicLayout>} />
           <Route path="/coa-library" element={<PublicLayout><PublicLibrary /></PublicLayout>} />
           <Route path="/coa/:slug" element={<PublicLayout><COADetail /></PublicLayout>} />
@@ -72,6 +74,9 @@ export default function App() {
           <Route path="/sample/:sampleId/coa" element={<PublicLayout><SampleCOA /></PublicLayout>} />
           <Route path="/trust" element={<PublicLayout><Trust /></PublicLayout>} />
           <Route path="/roadmap" element={<PublicLayout><Roadmap /></PublicLayout>} />
+          <Route path="/privacy" element={<PublicLayout><Privacy /></PublicLayout>} />
+          <Route path="/terms" element={<PublicLayout><Terms /></PublicLayout>} />
+          <Route path="/contact" element={<PublicLayout><Contact /></PublicLayout>} />
 
           {/* Client portal */}
           <Route path="/dashboard" element={<RoleRoute allow={['client', 'admin']}><Portal /></RoleRoute>} />
@@ -86,8 +91,8 @@ export default function App() {
           {/* Chemist lab console */}
           <Route path="/lab" element={<RoleRoute allow={['chemist', 'admin']}><Lab /></RoleRoute>} />
 
-          {/* Verifier portal */}
-          <Route path="/verify-portal" element={<RoleRoute allow={['verifier', 'admin']}><VerifyPortal /></RoleRoute>} />
+          {/* Verifier / reviewer portal */}
+          <Route path="/verify-portal" element={<RoleRoute allow={['verifier', 'reviewer', 'admin']}><VerifyPortal /></RoleRoute>} />
 
           {/* Admin console */}
           <Route path="/admin" element={<RoleRoute allow={['admin']}><Admin /></RoleRoute>} />

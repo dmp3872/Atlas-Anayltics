@@ -39,7 +39,7 @@ export function roleHome(role?: UserRole | string | null): string {
     case 'admin': return '/admin';
     case 'chemist': return '/lab';
     case 'verifier': return '/verify-portal';
-    case 'reviewer': return '/admin/submissions';
+    case 'reviewer': return '/verify-portal';
     default: return '/dashboard';
   }
 }

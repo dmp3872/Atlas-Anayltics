@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-do
 import {
   LayoutDashboard, FileText, ShoppingCart, FlaskConical, Beaker,
   LogOut, Menu, X, Rocket, User, Key, HelpCircle, Plus,
+  Receipt, CreditCard, Share2, Users,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import AtlasLogo from '../brand/AtlasLogo';
@@ -13,7 +14,14 @@ const MAIN_NAV = [
   { tab: 'coas', href: '/dashboard/coas', icon: FileText, label: 'Your COAs' },
   { tab: 'orders', href: '/dashboard/orders', icon: ShoppingCart, label: 'Your Orders' },
   { tab: 'samples', href: '/dashboard?tab=samples', icon: FlaskConical, label: 'Samples' },
+  { tab: 'invoices', href: '/dashboard?tab=invoices', icon: Receipt, label: 'Invoices' },
+  { tab: 'payments', href: '/dashboard?tab=payments', icon: CreditCard, label: 'Payments' },
   { tab: 'peptide-requests', href: '/dashboard?tab=peptide-requests', icon: Beaker, label: 'Peptide Requests' },
+];
+
+const SHARE_NAV = [
+  { tab: 'widget', href: '/dashboard?tab=widget', icon: Share2, label: 'Share & Verify Links' },
+  { tab: 'team', href: '/dashboard?tab=team', icon: Users, label: 'Team' },
 ];
 
 const ACCOUNT_NAV = [
@@ -67,6 +75,22 @@ export default function ClientPortalLayout({ children }: { children: React.React
 
       <nav className="flex-1 px-3 space-y-0.5 overflow-y-auto">
         {MAIN_NAV.map(item => {
+          const on = current === item.tab;
+          return (
+            <Link
+              key={item.label}
+              to={item.href}
+              onClick={() => setOpen(false)}
+              className={`portal-nav-item ${on ? 'portal-nav-item-active' : ''}`}
+            >
+              <item.icon size={17} />
+              {item.label}
+            </Link>
+          );
+        })}
+
+        <p className="px-3 pt-5 pb-2 text-[10px] font-bold uppercase tracking-widest text-neutral-400">Share</p>
+        {SHARE_NAV.map(item => {
           const on = current === item.tab;
           return (
             <Link

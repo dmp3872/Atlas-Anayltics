@@ -54,7 +54,7 @@ export default function Support() {
             {[
               { q: 'How long does testing take?', a: 'Standard panels take 3–5 business days from receipt. Rush processing reduces this to 1–2 days.' },
               { q: 'Can I add panels after submitting?', a: 'Contact us as soon as possible. If your samples haven\'t been analyzed yet, we can add panels to your order.' },
-              { q: 'How do I share my COA?', a: 'Every AccuMark COA has a permanent URL you can share directly. You can also download a PDF version for archives.' },
+              { q: 'How do I share my COA?', a: 'Copy the COA page link (/coa/…) to open the full certificate, or Copy Verify Link (/verify?id=…) so someone prefills the ID and clicks Verify themselves. QR codes use the verify link. You can also download a PDF.' },
               { q: 'What if my sample fails?', a: 'You\'ll receive a detailed COA with pass/fail callouts for each panel. We do not revise or retract failing results.' },
             ].map(({ q, a }) => (
               <div key={q} className="pb-3 border-b border-atlas-border last:border-0">

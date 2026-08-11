@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { CheckCircle, AlertCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { COA, Order, OrderSample, UserProfile, UserRole, LabPriority } from '../lib/types';
@@ -28,9 +29,25 @@ const SECTION_META: Record<AdminSection, { title: string; subtitle: string }> = 
   users: { title: 'Users & Access', subtitle: 'Manage roles and account access.' },
 };
 
+const ADMIN_SECTIONS = Object.keys(SECTION_META) as AdminSection[];
+
+function parseAdminSection(value: string | null): AdminSection {
+  return ADMIN_SECTIONS.includes(value as AdminSection) ? (value as AdminSection) : 'command';
+}
+
 export default function Admin() {
   const { user } = useAuth();
-  const [section, setSection] = useState<AdminSection>('command');
+  const [params, setParams] = useSearchParams();
+  const section = parseAdminSection(params.get('section'));
+
+  function setSection(next: AdminSection) {
+    setParams((prev) => {
+      const nextParams = new URLSearchParams(prev);
+      if (next === 'command') nextParams.delete('section');
+      else nextParams.set('section', next);
+      return nextParams;
+    }, { replace: true });
+  }
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [coas, setCoas] = useState<COA[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);

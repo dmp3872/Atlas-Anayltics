@@ -23,8 +23,8 @@ const STEPS = [
   {
     icon: Shield,
     title: 'Share verified results',
-    body: 'Every COA includes a QR code and cryptographic hash. Customers can scan or enter the ID at atlasanalyticlab.com/verify.',
-    cta: { label: 'Verification tool', href: '/verify' },
+    body: 'Use a verify link (/verify?id=…) so customers autofill the ID and click Verify themselves — or share the full certificate page (/coa/…). QR codes use the verify autofill link.',
+    cta: { label: 'Share & Verify Links', href: '/dashboard?tab=widget' },
   },
 ];
 

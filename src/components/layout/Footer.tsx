@@ -47,7 +47,7 @@ export default function Footer() {
               <li><Link to="/trust" className="hover:text-brand-400 transition-colors">Why Atlas Analytics</Link></li>
               <li><Link to="/roadmap" className="hover:text-brand-400 transition-colors">Roadmap</Link></li>
               <li><Link to="/auth" state={{ from: '/dashboard' }} className="hover:text-brand-400 transition-colors">Client Portal</Link></li>
-              <li><a href="mailto:labs@atlasanalytics.io" className="hover:text-brand-400 transition-colors">Contact Us</a></li>
+              <li><Link to="/contact" className="hover:text-brand-400 transition-colors">Contact Us</Link></li>
             </ul>
           </div>
 
@@ -75,8 +75,8 @@ export default function Footer() {
         <div className="mt-10 pt-6 border-t border-neutral-800 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-neutral-600">
           <p>&copy; {new Date().getFullYear()} Atlas Analytics. All rights reserved.</p>
           <div className="flex gap-4">
-            <a href="#" className="hover:text-brand-400 transition-colors">Privacy Policy</a>
-            <a href="#" className="hover:text-brand-400 transition-colors">Terms of Service</a>
+            <Link to="/privacy" className="hover:text-brand-400 transition-colors">Privacy Policy</Link>
+            <Link to="/terms" className="hover:text-brand-400 transition-colors">Terms of Service</Link>
           </div>
         </div>
       </div>

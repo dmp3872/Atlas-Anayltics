@@ -54,6 +54,7 @@ export default function Header() {
           </nav>
 
           <div className="hidden md:flex items-center gap-2">
+            <Link to="/order-new" className="btn-primary text-sm py-2">Submit Samples</Link>
             {user ? (
               <div className="relative">
                 <button
@@ -98,10 +99,7 @@ export default function Header() {
                 )}
               </div>
             ) : (
-              <>
-                <Link to="/auth" className="text-sm font-medium text-neutral-400 hover:text-white px-3 py-2">Sign In</Link>
-                <Link to="/auth" state={{ from: '/order-new' }} className="btn-primary text-sm py-2">Submit Samples</Link>
-              </>
+              <Link to="/auth" className="text-sm font-medium text-neutral-400 hover:text-white px-3 py-2">Sign In</Link>
             )}
           </div>
 
@@ -156,12 +154,19 @@ export default function Header() {
             </nav>
 
             <div className="shrink-0 p-4 border-t border-neutral-800 space-y-2 pb-[max(1rem,env(safe-area-inset-bottom))]">
+              <Link
+                to="/order-new"
+                onClick={() => setMobileOpen(false)}
+                className="btn-primary w-full justify-center text-sm gap-2"
+              >
+                Submit Samples <ArrowRight size={16} />
+              </Link>
               {user ? (
                 <>
                   <Link
                     to="/dashboard"
                     onClick={() => setMobileOpen(false)}
-                    className="btn-primary w-full justify-center text-sm"
+                    className="btn-outline w-full justify-center text-sm border-neutral-700 text-neutral-300 hover:bg-neutral-900"
                   >
                     Dashboard
                   </Link>
@@ -174,22 +179,13 @@ export default function Header() {
                   </button>
                 </>
               ) : (
-                <>
-                  <Link
-                    to="/order-new"
-                    onClick={() => setMobileOpen(false)}
-                    className="btn-primary w-full justify-center text-sm gap-2"
-                  >
-                    Submit Samples <ArrowRight size={16} />
-                  </Link>
-                  <Link
-                    to="/auth"
-                    onClick={() => setMobileOpen(false)}
-                    className="btn-outline w-full justify-center text-sm border-neutral-700 text-neutral-300 hover:bg-neutral-900"
-                  >
-                    Sign In
-                  </Link>
-                </>
+                <Link
+                  to="/auth"
+                  onClick={() => setMobileOpen(false)}
+                  className="btn-outline w-full justify-center text-sm border-neutral-700 text-neutral-300 hover:bg-neutral-900"
+                >
+                  Sign In
+                </Link>
               )}
             </div>
           </div>
