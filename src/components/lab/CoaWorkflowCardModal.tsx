@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  ArrowLeft, ArrowRight, Building2, CheckCircle, Clock, Download, ExternalLink,
+  ArrowLeft, ArrowRight, Building2, CheckCircle, ChevronLeft, ChevronRight, Clock, Download, ExternalLink,
   Fingerprint, FlaskConical, Globe, Hash, Phone, Shield, UserCircle2, X,
 } from 'lucide-react';
 import { COA, Order, UserProfile } from '../../lib/types';
@@ -16,6 +16,13 @@ import ResultBadge from '../ui/ResultBadge';
 import WorkflowOrderTools from './WorkflowOrderTools';
 
 type ChemistOpt = { id: string; name: string; role?: string };
+
+export type WorkflowCardNav = {
+  index: number;
+  total: number;
+  onPrev: () => void;
+  onNext: () => void;
+};
 
 type Props = {
   coa: COA;
@@ -43,7 +50,15 @@ type Props = {
   currentUserId?: string | null;
   reviewerOptions: ChemistOpt[];
   isAdmin?: boolean;
+  /** Jira-style previous / next across the workflow board. */
+  nav?: WorkflowCardNav | null;
 };
+
+function isTypingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable;
+}
 
 function MetaRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
   return (
@@ -79,6 +94,7 @@ export default function CoaWorkflowCardModal({
   currentUserId = null,
   reviewerOptions,
   isAdmin = false,
+  nav = null,
 }: Props) {
   const currentStage = coaWorkflowStage(coa);
   const needsPendingUpdate = canUpdatePendingPublishedCoa(coa);
@@ -90,6 +106,9 @@ export default function CoaWorkflowCardModal({
   const etaIso = order ? resolveEtaAt(order) : null;
   const [reviewPick, setReviewPick] = useState(false);
   const [reviewAssignee, setReviewAssignee] = useState('');
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const hasPrev = !!nav && nav.index > 0;
+  const hasNext = !!nav && nav.index < nav.total - 1;
 
   const canSignOff = currentStage === 'pending_review' && (
     !reviewAssigneeId
@@ -98,8 +117,25 @@ export default function CoaWorkflowCardModal({
   );
 
   useEffect(() => {
+    scrollRef.current?.scrollTo({ top: 0 });
+    setReviewPick(false);
+    setReviewAssignee('');
+  }, [coa.id]);
+
+  useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        onClose();
+        return;
+      }
+      if (isTypingTarget(e.target)) return;
+      if ((e.key === 'ArrowLeft' || e.key === 'k' || e.key === 'K') && hasPrev) {
+        e.preventDefault();
+        nav?.onPrev();
+      } else if ((e.key === 'ArrowRight' || e.key === 'j' || e.key === 'J') && hasNext) {
+        e.preventDefault();
+        nav?.onNext();
+      }
     }
     window.addEventListener('keydown', onKey);
     document.body.style.overflow = 'hidden';
@@ -107,23 +143,29 @@ export default function CoaWorkflowCardModal({
       window.removeEventListener('keydown', onKey);
       document.body.style.overflow = '';
     };
-  }, [onClose]);
+  }, [onClose, nav, hasPrev, hasNext]);
 
   async function move(stage: CoaWorkflowStage, opts?: { reviewAssignedTo?: string | null }) {
-    await onMoveCoa(coa, stage, opts);
-    onClose();
+    try {
+      await onMoveCoa(coa, stage, opts);
+      if (hasNext) nav?.onNext();
+      else onClose();
+    } catch {
+      // Keep the card open so the chemist can retry.
+    }
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
       <button type="button" className="absolute inset-0 bg-black/45" aria-label="Close" onClick={onClose} />
       <div
+        ref={scrollRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="coa-card-modal-title"
-        className="relative w-full sm:max-w-lg max-h-[92vh] overflow-y-auto bg-white rounded-t-2xl sm:rounded-xl shadow-2xl border border-atlas-border"
+        className="relative w-full sm:max-w-2xl lg:max-w-3xl max-h-[92vh] overflow-y-auto bg-white rounded-t-2xl sm:rounded-xl shadow-2xl border border-atlas-border"
       >
-        <div className="sticky top-0 z-10 bg-white border-b border-atlas-border px-4 py-3 flex items-start justify-between gap-3">
+        <div className="sticky top-0 z-10 bg-white border-b border-atlas-border px-5 sm:px-6 py-3.5 flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">
               {COA_WORKFLOW_LABELS[currentStage]}
@@ -146,17 +188,51 @@ export default function CoaWorkflowCardModal({
               )}
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-2 rounded-lg text-neutral-500 hover:bg-neutral-100 hover:text-black shrink-0"
-            aria-label="Close"
-          >
-            <X size={18} />
-          </button>
+          <div className="flex items-center gap-1 shrink-0">
+            {nav && nav.total > 1 && (
+              <div className="flex items-center gap-0.5 mr-1 rounded-lg border border-atlas-border bg-neutral-50 p-0.5">
+                <button
+                  type="button"
+                  onClick={nav.onPrev}
+                  disabled={!hasPrev}
+                  className="p-1.5 rounded-md text-neutral-600 hover:bg-white hover:text-black disabled:opacity-30 disabled:pointer-events-none"
+                  aria-label="Previous card"
+                  title="Previous (← or K)"
+                >
+                  <ChevronLeft size={18} />
+                </button>
+                <span className="px-1.5 text-[11px] font-semibold tabular-nums text-neutral-600 min-w-[3.25rem] text-center">
+                  {nav.index + 1} / {nav.total}
+                </span>
+                <button
+                  type="button"
+                  onClick={nav.onNext}
+                  disabled={!hasNext}
+                  className="p-1.5 rounded-md text-neutral-600 hover:bg-white hover:text-black disabled:opacity-30 disabled:pointer-events-none"
+                  aria-label="Next card"
+                  title="Next (→ or J)"
+                >
+                  <ChevronRight size={18} />
+                </button>
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-2 rounded-lg text-neutral-500 hover:bg-neutral-100 hover:text-black"
+              aria-label="Close"
+            >
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
-        <div className="px-4 py-4 space-y-4">
+        <div className="px-5 sm:px-6 py-5 space-y-4">
+          {nav && nav.total > 1 && (
+            <p className="text-[11px] text-neutral-400 -mt-1">
+              Card {nav.index + 1} of {nav.total} on the board · ← → or J / K
+            </p>
+          )}
           {needsPendingUpdate && (
             <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5">
               <p className="text-xs font-bold uppercase tracking-wide text-amber-900 flex items-center gap-1.5">

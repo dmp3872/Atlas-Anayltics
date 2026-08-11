@@ -16,10 +16,14 @@ import { parseSampleMetadata } from '../../lib/coaPanels';
 import { pendingAssayLabels } from '../../lib/coaDisplayPanels';
 import { downloadCoaPdf } from '../../lib/coaPdf';
 import CoaPdfPrepModal from './CoaPdfPrepModal';
-import CoaWorkflowCardModal from './CoaWorkflowCardModal';
+import CoaWorkflowCardModal, { WorkflowCardNav } from './CoaWorkflowCardModal';
 import WorkflowOrderTools from './WorkflowOrderTools';
 import { resolveEtaAt } from '../../lib/etaHeat';
 import ResultBadge from '../ui/ResultBadge';
+
+type BoardNavItem =
+  | { kind: 'coa'; id: string; coa: COA }
+  | { kind: 'pending'; id: string; item: QueueSampleItem };
 
 interface Props {
   coas: COA[];
@@ -321,6 +325,139 @@ function OrderGroupShell({
   );
 }
 
+function PendingCardModal({
+  item,
+  onClose,
+  chemistLabel,
+  onIssueCoa,
+  isAdmin,
+  etaSaving,
+  onSaveOrderEta,
+  nav,
+}: {
+  item: QueueSampleItem;
+  onClose: () => void;
+  chemistLabel: (id: string | null | undefined) => string;
+  onIssueCoa?: (sample: OrderSample) => void;
+  isAdmin?: boolean;
+  etaSaving?: boolean;
+  onSaveOrderEta?: (order: Order, iso: string | null) => void | Promise<void>;
+  nav?: WorkflowCardNav | null;
+}) {
+  const hasPrev = !!nav && nav.index > 0;
+  const hasNext = !!nav && nav.index < nav.total - 1;
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        onClose();
+        return;
+      }
+      const t = e.target;
+      if (t instanceof HTMLElement) {
+        const tag = t.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t.isContentEditable) return;
+      }
+      if ((e.key === 'ArrowLeft' || e.key === 'k' || e.key === 'K') && hasPrev) {
+        e.preventDefault();
+        nav?.onPrev();
+      } else if ((e.key === 'ArrowRight' || e.key === 'j' || e.key === 'J') && hasNext) {
+        e.preventDefault();
+        nav?.onNext();
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = '';
+    };
+  }, [onClose, nav, hasPrev, hasNext]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+      <button type="button" className="absolute inset-0 bg-black/45" aria-label="Close" onClick={onClose} />
+      <div className="relative w-full sm:max-w-2xl lg:max-w-3xl max-h-[90vh] overflow-y-auto bg-white rounded-t-2xl sm:rounded-xl shadow-2xl border border-atlas-border">
+        <div className="sticky top-0 z-10 bg-white border-b border-atlas-border px-5 sm:px-6 py-3.5 flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-sky-700">Awaiting COA</p>
+            <h2 className="text-lg font-bold text-black truncate">
+              {item.sample.display_name || item.sample.sample_name}
+            </h2>
+            <LotLine lot={(parseSampleMetadata(item.sample.metadata).batch_number || '').trim()} />
+          </div>
+          <div className="flex items-center gap-1 shrink-0">
+            {nav && nav.total > 1 && (
+              <div className="flex items-center gap-0.5 mr-1 rounded-lg border border-atlas-border bg-neutral-50 p-0.5">
+                <button
+                  type="button"
+                  onClick={nav.onPrev}
+                  disabled={!hasPrev}
+                  className="p-1.5 rounded-md text-neutral-600 hover:bg-white hover:text-black disabled:opacity-30 disabled:pointer-events-none"
+                  aria-label="Previous card"
+                  title="Previous (← or K)"
+                >
+                  <ChevronLeft size={18} />
+                </button>
+                <span className="px-1.5 text-[11px] font-semibold tabular-nums text-neutral-600 min-w-[3.25rem] text-center">
+                  {nav.index + 1} / {nav.total}
+                </span>
+                <button
+                  type="button"
+                  onClick={nav.onNext}
+                  disabled={!hasNext}
+                  className="p-1.5 rounded-md text-neutral-600 hover:bg-white hover:text-black disabled:opacity-30 disabled:pointer-events-none"
+                  aria-label="Next card"
+                  title="Next (→ or J)"
+                >
+                  <ChevronRight size={18} />
+                </button>
+              </div>
+            )}
+            <button type="button" onClick={onClose} className="p-2 rounded-lg hover:bg-neutral-100 text-neutral-500" aria-label="Close">
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+        <div className="px-5 sm:px-6 py-5 space-y-3">
+          <PriorityBanner priority={item.priority} rush={item.order.rush_processing} compact />
+          <p className="text-sm text-neutral-600">
+            {item.order.company_name || '—'} · {item.order.order_number}
+          </p>
+          <p className="text-sm text-neutral-600 flex items-center gap-1.5">
+            <UserCircle2 size={14} /> {chemistLabel(item.assigned_to)}
+          </p>
+          {onIssueCoa && (
+            <button
+              type="button"
+              onClick={() => {
+                onIssueCoa(item.sample);
+                onClose();
+              }}
+              className="btn-primary w-full justify-center gap-2"
+            >
+              Issue COA <ArrowRight size={14} />
+            </button>
+          )}
+          <WorkflowOrderTools
+            order={item.order}
+            sampleId={item.sample.id}
+            isAdmin={isAdmin}
+            saving={etaSaving}
+            onSaveEta={onSaveOrderEta}
+            defaultOpen
+          />
+          {nav && nav.total > 1 && (
+            <p className="text-[11px] text-neutral-400 text-center pt-1">
+              ← → or J / K to move between cards
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function CoaWorkflowBoard({
   coas, onMoveCoa, movingId, onCoaImagesSaved, pendingSamples = [], onIssueCoa, onRestartCoa,
   onSaveOrderEta, etaSavingOrderId = null,
@@ -519,6 +656,73 @@ export default function CoaWorkflowBoard({
     return out;
   }, [grouped, sortedPending, orders, samples, currentUserId]);
 
+  /** Flat board order (columns left→right, pending then COAs in each bundle) for prev/next. */
+  const boardNavItems = useMemo(() => {
+    const items: BoardNavItem[] = [];
+    for (const stage of COA_WORKFLOW_BOARD_COLUMNS) {
+      for (const bundle of bundlesByStage[stage]) {
+        for (const item of bundle.pending) {
+          items.push({ kind: 'pending', id: item.sample.id, item });
+        }
+        for (const coa of bundle.coas) {
+          items.push({ kind: 'coa', id: coa.id, coa });
+        }
+      }
+    }
+    return items;
+  }, [bundlesByStage]);
+
+  const activeDetailCoa = detailCoa
+    ? (coas.find(c => c.id === detailCoa.id) ?? detailCoa)
+    : null;
+
+  const activeDetailPending = detailPending
+    ? (pendingSamples.find(p => p.sample.id === detailPending.sample.id) ?? detailPending)
+    : null;
+
+  const openNavItem = (item: BoardNavItem) => {
+    if (item.kind === 'coa') {
+      setDetailPending(null);
+      setDetailCoa(item.coa);
+    } else {
+      setDetailCoa(null);
+      setDetailPending(item.item);
+    }
+  };
+
+  const detailNavKey = activeDetailCoa
+    ? `coa:${activeDetailCoa.id}`
+    : activeDetailPending
+      ? `pending:${activeDetailPending.sample.id}`
+      : null;
+
+  const detailNavIndex = detailNavKey
+    ? boardNavItems.findIndex(item =>
+      item.kind === 'coa' ? `coa:${item.id}` === detailNavKey : `pending:${item.id}` === detailNavKey)
+    : -1;
+
+  const cardNav: WorkflowCardNav | null = detailNavIndex >= 0 && boardNavItems.length > 1
+    ? {
+        index: detailNavIndex,
+        total: boardNavItems.length,
+        onPrev: () => {
+          const prev = boardNavItems[detailNavIndex - 1];
+          if (prev) openNavItem(prev);
+        },
+        onNext: () => {
+          const next = boardNavItems[detailNavIndex + 1];
+          if (next) openNavItem(next);
+        },
+      }
+    : detailNavIndex >= 0
+      ? {
+          index: detailNavIndex,
+          total: boardNavItems.length,
+          onPrev: () => undefined,
+          onNext: () => undefined,
+        }
+      : null;
+
   function isGroupExpanded(stage: CoaWorkflowStage, bundleKey: string): boolean {
     return expandedGroups[`${stage}:${bundleKey}`] === true;
   }
@@ -594,8 +798,8 @@ export default function CoaWorkflowBoard({
       </div>
 
       <p className="text-xs text-neutral-500">
-        Click a card to open details, edit ETA/notes, and move the certificate. Drag cards between stages.
-        Multi-peptide orders collapse by order number — expand to work cards.
+        Click a card to open details, edit ETA/notes, and move the certificate. Use ← → or J / K to step through cards like a queue.
+        Drag cards between stages. Multi-peptide orders collapse by order number — expand to work cards.
         Cards marked <strong className="text-sky-800">Assigned to you</strong> are yours.
       </p>
 
@@ -611,9 +815,9 @@ export default function CoaWorkflowBoard({
         />
       )}
 
-      {detailCoa && (
+      {activeDetailCoa && (
         <CoaWorkflowCardModal
-          coa={detailCoa}
+          coa={activeDetailCoa}
           onClose={() => setDetailCoa(null)}
           onMoveCoa={onMoveCoa}
           movingId={movingId}
@@ -623,68 +827,35 @@ export default function CoaWorkflowBoard({
           }}
           onRestartCoa={onRestartCoa}
           onDownloadPdf={coa => { void handleDownloadPdf(coa); }}
-          downloading={downloadingId === detailCoa.id}
+          downloading={downloadingId === activeDetailCoa.id}
           onSaveOrderEta={onSaveOrderEta}
-          etaSaving={!!detailCoa.order_id && etaSavingOrderId === detailCoa.order_id}
-          order={orderForCoa(detailCoa)}
-          client={clientForCoa(detailCoa)}
-          companyName={orderForCoa(detailCoa)?.company_name || detailCoa.company_name || ''}
-          lot={lotForCoa(detailCoa)}
-          testsLabel={testsLabelForCoa(detailCoa) || ''}
-          accession={accessionForCoa(detailCoa)}
+          etaSaving={!!activeDetailCoa.order_id && etaSavingOrderId === activeDetailCoa.order_id}
+          order={orderForCoa(activeDetailCoa)}
+          client={clientForCoa(activeDetailCoa)}
+          companyName={orderForCoa(activeDetailCoa)?.company_name || activeDetailCoa.company_name || ''}
+          lot={lotForCoa(activeDetailCoa)}
+          testsLabel={testsLabelForCoa(activeDetailCoa) || ''}
+          accession={accessionForCoa(activeDetailCoa)}
           chemistLabel={chemistLabel}
-          chemistId={assigneeForCoa(detailCoa)}
+          chemistId={assigneeForCoa(activeDetailCoa)}
           currentUserId={currentUserId}
           reviewerOptions={reviewerOptions}
           isAdmin={isAdmin}
+          nav={cardNav}
         />
       )}
 
-      {detailPending && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <button type="button" className="absolute inset-0 bg-black/45" aria-label="Close" onClick={() => setDetailPending(null)} />
-          <div className="relative w-full sm:max-w-md max-h-[90vh] overflow-y-auto bg-white rounded-t-2xl sm:rounded-xl shadow-2xl border border-atlas-border p-4 space-y-3">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-sky-700">Awaiting COA</p>
-                <h2 className="text-lg font-bold text-black truncate">
-                  {detailPending.sample.display_name || detailPending.sample.sample_name}
-                </h2>
-                <LotLine lot={lotForSample(detailPending.sample)} />
-              </div>
-              <button type="button" onClick={() => setDetailPending(null)} className="p-2 rounded-lg hover:bg-neutral-100 text-neutral-500">
-                <X size={18} />
-              </button>
-            </div>
-            <PriorityBanner priority={detailPending.priority} rush={detailPending.order.rush_processing} compact />
-            <p className="text-sm text-neutral-600">
-              {detailPending.order.company_name || '—'} · {detailPending.order.order_number}
-            </p>
-            <p className="text-sm text-neutral-600 flex items-center gap-1.5">
-              <UserCircle2 size={14} /> {chemistLabel(detailPending.assigned_to)}
-            </p>
-            {onIssueCoa && (
-              <button
-                type="button"
-                onClick={() => {
-                  onIssueCoa(detailPending.sample);
-                  setDetailPending(null);
-                }}
-                className="btn-primary w-full justify-center gap-2"
-              >
-                Issue COA <ArrowRight size={14} />
-              </button>
-            )}
-            <WorkflowOrderTools
-              order={detailPending.order}
-              sampleId={detailPending.sample.id}
-              isAdmin={isAdmin}
-              saving={etaSavingOrderId === detailPending.order.id}
-              onSaveEta={onSaveOrderEta}
-              defaultOpen
-            />
-          </div>
-        </div>
+      {activeDetailPending && (
+        <PendingCardModal
+          item={activeDetailPending}
+          onClose={() => setDetailPending(null)}
+          chemistLabel={chemistLabel}
+          onIssueCoa={onIssueCoa}
+          isAdmin={isAdmin}
+          etaSaving={etaSavingOrderId === activeDetailPending.order.id}
+          onSaveOrderEta={onSaveOrderEta}
+          nav={cardNav}
+        />
       )}
 
       <div className="sticky top-0 z-20 -mx-1 px-1 py-2 bg-neutral-100/95 backdrop-blur-sm border-b border-atlas-border/80 flex items-center justify-between gap-3">
@@ -845,10 +1016,14 @@ export default function CoaWorkflowBoard({
                           key={sample.id}
                           role="button"
                           tabIndex={0}
-                          onClick={() => setDetailPending(item)}
+                          onClick={() => {
+                            setDetailCoa(null);
+                            setDetailPending(item);
+                          }}
                           onKeyDown={e => {
                             if (e.key === 'Enter' || e.key === ' ') {
                               e.preventDefault();
+                              setDetailCoa(null);
                               setDetailPending(item);
                             }
                           }}
@@ -905,6 +1080,7 @@ export default function CoaWorkflowBoard({
                         onDragEnd={handleDragEnd}
                         onClick={() => {
                           if (suppressCardClickRef.current || isMoving) return;
+                          setDetailPending(null);
                           setDetailCoa(coa);
                         }}
                         className={`rounded-lg border bg-white p-3 shadow-sm transition-all select-none ${
