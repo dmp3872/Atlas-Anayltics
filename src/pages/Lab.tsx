@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
   FlaskConical, Plus, Trash2, CheckCircle, AlertCircle, ClipboardList,
-  RefreshCw, ArrowLeft,
+  RefreshCw,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { COA, Company, LabPriority, Order, OrderSample, SampleStatus, UserProfile } from '../lib/types';
@@ -42,6 +42,7 @@ import { formatDate } from '../lib/utils';
 import ReceivingDesk from '../components/lab/ReceivingDesk';
 import MyBenchPanel from '../components/lab/MyBenchPanel';
 import StaffHeader from '../components/layout/StaffHeader';
+import PageBackLink from '../components/ui/PageBackLink';
 import LogoDropzone from '../components/account/LogoDropzone';
 import ChromatogramDataDropzone from '../components/lab/ChromatogramDataDropzone';
 import {
@@ -1562,13 +1563,11 @@ export default function Lab() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <form onSubmit={saveCoa} className="lg:col-span-2 card p-6 space-y-5">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <button
-                  type="button"
+                <PageBackLink
+                  label={`Back to ${LAB_TAB_LABELS[returnTab]}`}
+                  className="mb-0"
                   onClick={() => setTab(returnTab)}
-                  className="inline-flex items-center gap-1.5 text-sm font-medium text-neutral-600 hover:text-brand-700"
-                >
-                  <ArrowLeft size={14} /> Back to {LAB_TAB_LABELS[returnTab]}
-                </button>
+                />
                 <p className="text-xs text-neutral-500">
                   {editingCoaId
                     ? (() => {

@@ -1,16 +1,15 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link, Navigate } from 'react-router-dom';
 import {
-  ArrowLeft, CheckCircle, Clock, Shield, XCircle, FlaskConical,
+  CheckCircle, Clock, Shield, XCircle, FlaskConical,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Order, OrderSample, TestPanel } from '../lib/types';
 import { formatDateTime, SAMPLE_STATUS_LABELS } from '../lib/utils';
 import { expectedPanelNames, sampleProgress } from '../lib/coaPanels';
 import { useAuth } from '../context/AuthContext';
-import Header from '../components/layout/Header';
-import Footer from '../components/layout/Footer';
 import AtlasLogo from '../components/brand/AtlasLogo';
+import PageBackLink from '../components/ui/PageBackLink';
 
 export default function SampleCOA() {
   const { sampleId } = useParams<{ sampleId: string }>();
@@ -63,8 +62,6 @@ export default function SampleCOA() {
   );
 
   if (notFound || !sample) return (
-    <>
-      <Header />
       <div className="min-h-screen bg-neutral-50 flex items-center justify-center px-4">
         <div className="text-center">
           <div className="w-16 h-16 bg-red-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
@@ -75,8 +72,6 @@ export default function SampleCOA() {
           <Link to="/dashboard/orders" className="btn-primary">Back to Orders</Link>
         </div>
       </div>
-      <Footer />
-    </>
   );
 
   const meta = sample.metadata as { batch_number?: string; labeled_content?: string; tests_label?: string } | null;
@@ -97,12 +92,15 @@ export default function SampleCOA() {
     { label: 'Test Package', value: meta?.tests_label || 'Testing package pending' },
   ];
 
+  const ref = typeof document !== 'undefined' ? document.referrer : '';
+  const fromCoas = ref.includes('/dashboard/coas') || ref.includes('tab=coas');
+  const backTo = fromCoas ? '/dashboard/coas' : '/dashboard/orders';
+  const backLabel = fromCoas ? 'Back to My COAs' : 'Back to Orders';
+
   return (
-    <>
-      <Header />
       <div className="min-h-screen bg-white">
         <div className="coa-header-bar">
-          <div className="max-w-4xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="max-w-4xl mx-auto px-4 sm:px-6 py-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="flex items-center gap-4">
               <AtlasLogo variant="light" size="md" />
               {companyLogo && (
@@ -127,9 +125,7 @@ export default function SampleCOA() {
         <div className="coa-gold-divider" />
 
         <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8">
-          <Link to="/dashboard/orders" className="inline-flex items-center gap-1.5 text-neutral-500 hover:text-brand-600 text-sm mb-6 transition-colors">
-            <ArrowLeft size={14} /> Back to Orders
-          </Link>
+          <PageBackLink label={backLabel} to={backTo} preferHistory />
 
           {done ? (
             <div className="flex items-start gap-3 p-4 rounded-lg bg-emerald-50 border border-emerald-200 mb-8">
@@ -217,7 +213,5 @@ export default function SampleCOA() {
           </div>
         </div>
       </div>
-      <Footer />
-    </>
   );
 }

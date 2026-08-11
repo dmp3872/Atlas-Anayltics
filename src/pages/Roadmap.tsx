@@ -1,8 +1,5 @@
 import { Link } from 'react-router-dom';
 import { CheckCircle, Clock, ArrowRight, Zap, FlaskConical } from 'lucide-react';
-import Header from '../components/layout/Header';
-import Footer from '../components/layout/Footer';
-
 const roadmapItems = [
   { status: 'live', label: 'Live', items: [
     { name: 'HPLC Purity Analysis', desc: 'High-performance liquid chromatography with interactive chromatogram viewer' },
@@ -34,11 +31,9 @@ const roadmapItems = [
 
 export default function Roadmap() {
   return (
-    <>
-      <Header />
       <div className="min-h-screen bg-white">
-        <div className="bg-black py-14 px-4">
-          <div className="max-w-4xl mx-auto">
+        <div className="coa-header-bar">
+          <div className="max-w-4xl mx-auto px-4 sm:px-6 py-10">
             <div className="flex items-center gap-3 mb-3">
               <div className="w-8 h-8 bg-brand-600 rounded-lg flex items-center justify-center">
                 <FlaskConical size={16} className="text-white" />
@@ -100,7 +95,5 @@ export default function Roadmap() {
           </div>
         </div>
       </div>
-      <Footer />
-    </>
   );
 }

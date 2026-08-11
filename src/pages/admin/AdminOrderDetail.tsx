@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import {
-  AlertCircle, AlertTriangle, ArrowLeft, ArrowRight, CalendarClock, CheckCircle, CheckCircle2, Clock,
+  AlertCircle, AlertTriangle, ArrowRight, CalendarClock, CheckCircle, CheckCircle2, Clock,
   DollarSign, Fingerprint, Package, PackageCheck, Printer, Zap,
 } from 'lucide-react';
 import StaffHeader from '../../components/layout/StaffHeader';
+import PageBackLink from '../../components/ui/PageBackLink';
 import ActivityLog from '../../components/admin/ActivityLog';
 import PriorityBanner from '../../components/lab/PriorityBanner';
 import PrintPackButton from '../../components/lab/PrintPackButton';
@@ -41,7 +42,6 @@ const ACTIVITY_LABELS: Record<string, string> = {
 
 export default function AdminOrderDetail() {
   const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
   const { user, profile } = useAuth();
   const [order, setOrder] = useState<Order | null>(null);
   const [samples, setSamples] = useState<OrderSample[]>([]);
@@ -299,9 +299,7 @@ export default function AdminOrderDetail() {
       <div className="min-h-screen bg-neutral-50">
         <StaffHeader title="Order Detail" />
         <div className="max-w-4xl mx-auto p-6">
-          <button type="button" onClick={() => navigate('/admin')} className="inline-flex items-center gap-1.5 text-sm text-neutral-500 hover:text-black mb-4">
-            <ArrowLeft size={14} /> Back to admin
-          </button>
+          <PageBackLink label="Back to Admin" to="/admin" />
           <div className="card p-8 text-center text-neutral-500">Order not found.</div>
         </div>
       </div>
@@ -317,9 +315,7 @@ export default function AdminOrderDetail() {
     <div className="min-h-screen bg-neutral-50">
       <StaffHeader title="Order Detail" />
       <div className="max-w-4xl mx-auto p-4 sm:p-6">
-        <button type="button" onClick={() => navigate('/admin')} className="inline-flex items-center gap-1.5 text-sm text-neutral-500 hover:text-black mb-4">
-          <ArrowLeft size={14} /> Back to admin
-        </button>
+        <PageBackLink label="Back to Admin" to="/admin" />
 
         {msg && (
           <div className={`flex items-start gap-2 p-3 rounded-lg border text-sm mb-4 ${

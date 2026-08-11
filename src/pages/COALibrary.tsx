@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { FileText, Search, LayoutGrid, List, CheckCircle, XCircle, Clock, ExternalLink, Shield } from 'lucide-react';
+import { FileText, Search, LayoutGrid, List, ExternalLink, Shield } from 'lucide-react';
 import DashboardLayout from '../components/layout/DashboardLayout';
 import COACard3D from '../components/coa/COACard3D';
 import { useAuth } from '../context/AuthContext';
@@ -8,12 +8,7 @@ import { supabase } from '../lib/supabase';
 import { COA } from '../lib/types';
 import { formatDate } from '../lib/utils';
 import { COA_LIST_COLUMNS } from '../lib/coaSelect';
-
-function ResultBadge({ result }: { result: string }) {
-  if (result === 'pass') return <span className="badge-pass"><CheckCircle size={11} /> Pass</span>;
-  if (result === 'fail') return <span className="badge-fail"><XCircle size={11} /> Fail</span>;
-  return <span className="badge-pending"><Clock size={11} /> Pending</span>;
-}
+import ResultBadge from '../components/ui/ResultBadge';
 
 export default function COALibrary() {
   const { user } = useAuth();

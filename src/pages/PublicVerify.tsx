@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Shield, Search, CheckCircle, XCircle, ExternalLink, AlertCircle, Loader, AlertTriangle } from 'lucide-react';
+import { Shield, Search, CheckCircle, XCircle, ExternalLink, AlertCircle, Loader, AlertTriangle, ShieldCheck } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { COA } from '../lib/types';
 import { formatDateTime } from '../lib/utils';
-import { verifyCoaIntegrity } from '../lib/coaVerify';
-import Header from '../components/layout/Header';
-import Footer from '../components/layout/Footer';
+import { verifyCoaIntegrity, verifyPrefillFromSearchParams } from '../lib/coaVerify';
+import ResultBadge from '../components/ui/ResultBadge';
+import PageBackLink from '../components/ui/PageBackLink';
 
 type VerifyResult = {
   coa: COA;
@@ -15,15 +15,24 @@ type VerifyResult = {
 
 export default function PublicVerify() {
   const [searchParams] = useSearchParams();
-  const [query, setQuery] = useState(searchParams.get('slug') ?? '');
+  const [query, setQuery] = useState(() => verifyPrefillFromSearchParams(searchParams));
   const [result, setResult] = useState<VerifyResult | null | 'not_found'>(null);
   const [loading, setLoading] = useState(false);
+  const [showShieldPop, setShowShieldPop] = useState(false);
+  const prefilled = Boolean(verifyPrefillFromSearchParams(searchParams));
+
+  // Prefill only — never auto-verify. Clicking Verify is required.
+  useEffect(() => {
+    const prefill = verifyPrefillFromSearchParams(searchParams);
+    if (prefill) setQuery(prefill);
+  }, [searchParams]);
 
   async function verifySlug(slug: string) {
     const trimmed = slug.trim();
     if (!trimmed) return;
     setLoading(true);
     setResult(null);
+    setShowShieldPop(false);
 
     const { data } = await supabase
       .from('coas')
@@ -35,18 +44,15 @@ export default function PublicVerify() {
     if (!data) {
       setResult('not_found');
     } else {
-      setResult({ coa: data, status: verifyCoaIntegrity(data) });
+      const status = verifyCoaIntegrity(data);
+      setResult({ coa: data, status });
+      if (status === 'verified' || status === 'legacy') {
+        setShowShieldPop(true);
+        window.setTimeout(() => setShowShieldPop(false), 1200);
+      }
     }
     setLoading(false);
   }
-
-  useEffect(() => {
-    const slug = searchParams.get('slug');
-    if (slug) {
-      setQuery(slug);
-      verifySlug(slug);
-    }
-  }, [searchParams]);
 
   async function handleVerify(e: React.FormEvent) {
     e.preventDefault();
@@ -61,11 +67,21 @@ export default function PublicVerify() {
   };
 
   return (
-    <>
-      <Header />
-      <div className="min-h-screen bg-neutral-50">
+    <div className="min-h-screen bg-neutral-50 relative">
+        {showShieldPop && (
+          <div className="verify-shield-overlay" aria-hidden="true">
+            <div className="verify-shield-burst">
+              <span className="verify-shield-ring" />
+              <span className="verify-shield-ring verify-shield-ring-delay" />
+              <div className="verify-shield-icon">
+                <ShieldCheck size={40} strokeWidth={2.25} />
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="coa-header-bar">
-          <div className="max-w-2xl mx-auto text-center">
+          <div className="max-w-2xl mx-auto px-4 sm:px-6 py-10 text-center">
             <div className="w-12 h-12 border border-brand-500/40 flex items-center justify-center mx-auto mb-5">
               <Shield size={22} className="text-brand-400" />
             </div>
@@ -77,6 +93,7 @@ export default function PublicVerify() {
         </div>
 
         <div className="max-w-2xl mx-auto px-4 sm:px-6 py-10">
+          <PageBackLink label="Back to Home" to="/" />
           <div className="card p-6 mb-6">
             <form onSubmit={handleVerify} className="space-y-4">
               <div>
@@ -85,6 +102,14 @@ export default function PublicVerify() {
                   Found at the bottom of every COA or encoded in the QR code (e.g.{' '}
                   <code className="bg-neutral-100 px-1.5 py-0.5 font-mono text-[11px]">a3f9b2c1d4e5</code>).
                 </p>
+                {prefilled && !result && (
+                  <div className="flex items-start gap-2 p-3 mb-3 bg-brand-50 border border-brand-200 text-xs text-brand-900">
+                    <Shield size={13} className="flex-shrink-0 mt-0.5" />
+                    <p>
+                      Certificate ID pre-filled from your link. Click <span className="font-semibold">Verify</span> to confirm authenticity.
+                    </p>
+                  </div>
+                )}
                 <div className="flex gap-2">
                   <div className="relative flex-1">
                     <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
@@ -94,6 +119,7 @@ export default function PublicVerify() {
                       onChange={e => setQuery(e.target.value)}
                       className="input-field pl-9 font-mono text-sm"
                       placeholder="Enter COA ID"
+                      autoFocus={prefilled}
                     />
                   </div>
                   <button type="submit" disabled={loading || !query.trim()} className="btn-primary px-5 gap-2 shrink-0">
@@ -127,7 +153,7 @@ export default function PublicVerify() {
           )}
 
           {result && result !== 'not_found' && (
-            <div className={`card p-6 ${result.status === 'mismatch' ? 'border-red-300' : 'border-emerald-200'}`}>
+            <div className={`card p-6 ${result.status === 'mismatch' ? 'border-red-300' : 'border-emerald-200'} animate-slide-up`}>
               <div className="flex items-start gap-4">
                 <div className={`w-10 h-10 flex items-center justify-center flex-shrink-0 border ${
                   result.status === 'mismatch' ? 'bg-red-50 border-red-200' : 'bg-emerald-50 border-emerald-200'
@@ -164,13 +190,8 @@ export default function PublicVerify() {
                       <p className="font-medium text-black">{formatDateTime(result.coa.issued_at)}</p>
                     </div>
                     <div>
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">Result</p>
-                      <p className={`font-bold uppercase text-sm ${
-                        result.coa.overall_result === 'pass' ? 'text-atlas-success'
-                          : result.coa.overall_result === 'fail' ? 'text-red-600' : 'text-amber-600'
-                      }`}>
-                        {result.coa.overall_result}
-                      </p>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 mb-1">Result</p>
+                      <ResultBadge result={result.coa.overall_result} />
                     </div>
                     {result.coa.purity_percent != null && (
                       <div>
@@ -215,8 +236,6 @@ export default function PublicVerify() {
             ))}
           </div>
         </div>
-      </div>
-      <Footer />
-    </>
+    </div>
   );
 }

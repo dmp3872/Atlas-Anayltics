@@ -204,7 +204,7 @@ export default function EmbeddedCOA() {
           <p className="mt-1 text-sm text-neutral-500">
             This certificate is private, unpublished, or no longer available.
           </p>
-          <Link to={`/verify?slug=${encodeURIComponent(slug)}`} className="btn-outline mt-4 inline-flex text-sm">
+          <Link to={`/verify?id=${encodeURIComponent(slug)}`} className="btn-outline mt-4 inline-flex text-sm">
             Verify certificate
           </Link>
         </div>

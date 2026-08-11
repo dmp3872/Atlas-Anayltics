@@ -10,7 +10,6 @@ import AtlasLogo from '../brand/AtlasLogo';
 
 const navItems = [
   { href: '/dashboard', icon: LayoutDashboard, label: 'Overview' },
-  { href: '/dashboard/submissions', icon: FlaskConical, label: 'Submissions' },
   { href: '/dashboard/orders', icon: ShoppingCart, label: 'Orders' },
   { href: '/dashboard/coas', icon: FileText, label: 'My COAs' },
   { href: '/dashboard/api', icon: Key, label: 'API Keys' },
@@ -68,11 +67,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       <div className="px-3 pb-4 border-t border-atlas-border pt-3">
         <Link
-          to="/dashboard/submissions/new"
+          to="/order-new"
           className="flex items-center justify-center gap-2 w-full py-2.5 btn-primary text-sm mb-3"
         >
           <FlaskConical size={15} />
-          New Submission
+          Submit Sample
         </Link>
         {isStaff && (
           <Link

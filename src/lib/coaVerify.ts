@@ -30,6 +30,16 @@ export function verifyCoaIntegrity(coa: COA): VerifyStatus {
   return 'mismatch';
 }
 
+/**
+ * Shareable verify link — prefills the Certificate ID only.
+ * User must click Verify (does not open the full COA or auto-run verification).
+ * Distinct from the certificate URL: `/coa/:slug`.
+ */
 export function verifyUrl(slug: string): string {
-  return `${window.location.origin}/verify?slug=${encodeURIComponent(slug)}`;
+  return `${window.location.origin}/verify?id=${encodeURIComponent(slug)}`;
+}
+
+/** Prefill value from verify query params (`id`, legacy `slug` / `coa`). */
+export function verifyPrefillFromSearchParams(params: URLSearchParams): string {
+  return (params.get('id') ?? params.get('coa') ?? params.get('slug') ?? '').trim();
 }

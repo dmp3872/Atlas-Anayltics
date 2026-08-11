@@ -1,15 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
 import {
-  ArrowLeft, ArrowRight, Building2, CalendarClock, CheckCircle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp,
-  Clock, Download, ExternalLink, Fingerprint, FlaskConical, Globe, GripVertical, Hash, Loader, MessageCircle, Phone,
-  Save, Shield, UserCircle2, XCircle,
+  ArrowRight, Building2, ChevronDown, ChevronLeft, ChevronRight, ChevronUp,
+  Clock, FlaskConical, Globe, GripVertical, Hash, MessageCircle, Shield, UserCircle2, X,
 } from 'lucide-react';
 import { COA, Order, OrderSample, UserProfile } from '../../lib/types';
 import { formatDate } from '../../lib/utils';
 import {
   COA_WORKFLOW_BOARD_COLUMNS, COA_WORKFLOW_LABELS, COA_WORKFLOW_STEPS,
-  CoaWorkflowStage, canEditLiveCoa, canPrepareCoa, canReturnCoaToTesting, canUpdatePendingPublishedCoa,
+  CoaWorkflowStage, canUpdatePendingPublishedCoa,
   coaSignatureProgress, coaWorkflowStage,
 } from '../../lib/coaWorkflow';
 import { LAB_PRIORITY_STYLES, QueueSampleItem, testsLabelForSample } from '../../lib/labQueue';
@@ -18,8 +16,10 @@ import { parseSampleMetadata } from '../../lib/coaPanels';
 import { pendingAssayLabels } from '../../lib/coaDisplayPanels';
 import { downloadCoaPdf } from '../../lib/coaPdf';
 import CoaPdfPrepModal from './CoaPdfPrepModal';
-import OrderNotesThread from '../order/OrderNotesThread';
+import CoaWorkflowCardModal from './CoaWorkflowCardModal';
+import WorkflowOrderTools from './WorkflowOrderTools';
 import { resolveEtaAt } from '../../lib/etaHeat';
+import ResultBadge from '../ui/ResultBadge';
 
 interface Props {
   coas: COA[];
@@ -48,13 +48,6 @@ interface Props {
   currentUserId?: string | null;
   /** Show admin order detail link on ETA/Notes panel. */
   isAdmin?: boolean;
-}
-
-function ResultBadge({ result }: { result?: COA['overall_result'] }) {
-  if (result === 'pass') return <span className="badge-pass"><CheckCircle size={10} /> Pass</span>;
-  if (result === 'fail') return <span className="badge-fail"><XCircle size={10} /> Fail</span>;
-  if (result === 'pending') return <span className="badge-pending"><Clock size={10} /> Pending</span>;
-  return null;
 }
 
 function accessionForCoa(coa: COA): { label: string; value: string } | null {
@@ -328,119 +321,6 @@ function OrderGroupShell({
   );
 }
 
-/** Compact ETA + notes drawer on a workflow card (stops drag when interacting). */
-function WorkflowOrderTools({
-  order,
-  sampleId,
-  onSaveEta,
-  saving = false,
-  isAdmin = false,
-}: {
-  order: Order;
-  sampleId?: string | null;
-  onSaveEta?: (order: Order, iso: string | null) => void | Promise<void>;
-  saving?: boolean;
-  isAdmin?: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const etaIso = resolveEtaAt(order);
-  const dateValue = etaIso ? etaIso.slice(0, 10) : '';
-  const [draft, setDraft] = useState(dateValue);
-
-  useEffect(() => {
-    setDraft(dateValue);
-  }, [dateValue, order.id]);
-
-  return (
-    <div
-      className="border-t border-atlas-border pt-2"
-      onClick={e => e.stopPropagation()}
-      onMouseDown={e => e.stopPropagation()}
-      onDragStart={e => e.preventDefault()}
-    >
-      <button
-        type="button"
-        onClick={() => setOpen(v => !v)}
-        className="w-full flex items-center justify-between gap-2 text-left rounded-md border border-atlas-border bg-neutral-50 hover:bg-neutral-100 px-2 py-1.5"
-      >
-        <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-neutral-800 min-w-0">
-          <CalendarClock size={12} className="text-brand-700 flex-shrink-0" />
-          <span className="truncate">ETA / Notes</span>
-          {etaIso ? (
-            <span className="font-mono font-medium text-brand-900 truncate">{formatDate(etaIso)}</span>
-          ) : (
-            <span className="text-neutral-400 font-normal">Not set</span>
-          )}
-        </span>
-        {open ? <ChevronUp size={14} className="text-neutral-400 flex-shrink-0" /> : <ChevronDown size={14} className="text-neutral-400 flex-shrink-0" />}
-      </button>
-
-      {open && (
-        <div className="mt-2 space-y-2 rounded-md border border-brand-200 bg-brand-50/40 p-2">
-          {onSaveEta && (
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-bold uppercase tracking-wide text-neutral-500">Ready by</label>
-              <div className="flex gap-1.5">
-                <input
-                  type="date"
-                  value={draft}
-                  onChange={e => setDraft(e.target.value)}
-                  className="input-field py-1 text-xs flex-1 min-w-0"
-                />
-                <button
-                  type="button"
-                  disabled={saving || !draft}
-                  onClick={() => {
-                    const iso = draft ? new Date(`${draft}T17:00:00`).toISOString() : null;
-                    void onSaveEta(order, iso);
-                  }}
-                  className="btn-primary text-[11px] py-1 px-2 gap-1"
-                  title="Save ETA"
-                >
-                  {saving ? <Loader size={11} className="animate-spin" /> : <Save size={11} />}
-                  Save
-                </button>
-              </div>
-              {etaIso && (
-                <button
-                  type="button"
-                  disabled={saving}
-                  onClick={() => {
-                    setDraft('');
-                    void onSaveEta(order, null);
-                  }}
-                  className="text-[10px] font-semibold text-neutral-500 hover:text-red-600"
-                >
-                  Clear ETA
-                </button>
-              )}
-            </div>
-          )}
-
-          {isAdmin && (
-            <Link
-              to={`/admin/orders/${order.id}`}
-              className="inline-flex items-center gap-1 text-[11px] font-semibold text-brand-700 hover:underline"
-              draggable={false}
-            >
-              <ExternalLink size={11} /> Open order detail
-            </Link>
-          )}
-
-          <div className="rounded-md border border-atlas-border bg-white overflow-hidden">
-            <OrderNotesThread
-              orderId={order.id}
-              sampleId={sampleId ?? null}
-              compact
-              allowActions
-            />
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 export default function CoaWorkflowBoard({
   coas, onMoveCoa, movingId, onCoaImagesSaved, pendingSamples = [], onIssueCoa, onRestartCoa,
   onSaveOrderEta, etaSavingOrderId = null,
@@ -452,14 +332,15 @@ export default function CoaWorkflowBoard({
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [overStage, setOverStage] = useState<CoaWorkflowStage | null>(null);
   const [prepCoa, setPrepCoa] = useState<COA | null>(null);
+  const [detailCoa, setDetailCoa] = useState<COA | null>(null);
+  const [detailPending, setDetailPending] = useState<QueueSampleItem | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
-  const [reviewPickFor, setReviewPickFor] = useState<string | null>(null);
-  const [reviewAssignee, setReviewAssignee] = useState('');
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
   /** `${stage}:${bundle.key}` → expanded. Multi-COA orders start collapsed. */
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+  const suppressCardClickRef = useRef(false);
 
   function updateBoardScrollHints() {
     const el = boardScrollRef.current;
@@ -650,10 +531,11 @@ export default function CoaWorkflowBoard({
   function handleDragStart(e: React.DragEvent, coaId: string) {
     const target = e.target as HTMLElement | null;
     // Let buttons/inputs/selects work normally; don't start a card drag from them.
-    if (target?.closest('button, select, input, textarea, label')) {
+    if (target?.closest('button, select, input, textarea, label, a')) {
       e.preventDefault();
       return;
     }
+    suppressCardClickRef.current = true;
     e.dataTransfer.setData('text/plain', coaId);
     e.dataTransfer.setData('text/coa-id', coaId);
     e.dataTransfer.effectAllowed = 'move';
@@ -663,6 +545,8 @@ export default function CoaWorkflowBoard({
   function handleDragEnd() {
     setDraggingId(null);
     setOverStage(null);
+    // Avoid opening the detail modal after a drag.
+    window.setTimeout(() => { suppressCardClickRef.current = false; }, 0);
   }
 
   function handleDragOver(e: React.DragEvent, stage: CoaWorkflowStage) {
@@ -710,15 +594,9 @@ export default function CoaWorkflowBoard({
       </div>
 
       <p className="text-xs text-neutral-500">
-        After issue, send the certificate to <strong className="text-violet-800">Pending Review</strong> and assign a
-        lab director or chemist for the second signature (shows <strong>1/2</strong>). After they sign off it becomes
-        Verified (2/2), then Published. Multi-peptide orders collapse by order number — expand to work cards.
-        Open <strong>ETA / Notes</strong> on any card (or order group) to update the client-visible ready
-        date or leave staff/client notes. Drag or use <strong>Back to testing</strong> to rework an issued COA, then
-        <strong> Restart COA</strong> to edit results and re-issue. Cards marked <strong className="text-sky-800">Assigned to you</strong> are yours.
-        Chemists can <strong>Publish now</strong> from any stage to override stopping points when needed.
-        Published / verified cards stay editable — use <strong>Edit COA</strong> (or amber <strong>Update pending</strong>
-        when deferred assays remain). Changes are written to the certificate update log without unpublishing.
+        Click a card to open details, edit ETA/notes, and move the certificate. Drag cards between stages.
+        Multi-peptide orders collapse by order number — expand to work cards.
+        Cards marked <strong className="text-sky-800">Assigned to you</strong> are yours.
       </p>
 
       {prepCoa && (
@@ -728,8 +606,85 @@ export default function CoaWorkflowBoard({
           onSaved={updated => {
             onCoaImagesSaved?.(updated);
             setPrepCoa(null);
+            setDetailCoa(prev => (prev && prev.id === updated.id ? updated : prev));
           }}
         />
+      )}
+
+      {detailCoa && (
+        <CoaWorkflowCardModal
+          coa={detailCoa}
+          onClose={() => setDetailCoa(null)}
+          onMoveCoa={onMoveCoa}
+          movingId={movingId}
+          onPrepare={coa => {
+            setDetailCoa(null);
+            setPrepCoa(coa);
+          }}
+          onRestartCoa={onRestartCoa}
+          onDownloadPdf={coa => { void handleDownloadPdf(coa); }}
+          downloading={downloadingId === detailCoa.id}
+          onSaveOrderEta={onSaveOrderEta}
+          etaSaving={!!detailCoa.order_id && etaSavingOrderId === detailCoa.order_id}
+          order={orderForCoa(detailCoa)}
+          client={clientForCoa(detailCoa)}
+          companyName={orderForCoa(detailCoa)?.company_name || detailCoa.company_name || ''}
+          lot={lotForCoa(detailCoa)}
+          testsLabel={testsLabelForCoa(detailCoa) || ''}
+          accession={accessionForCoa(detailCoa)}
+          chemistLabel={chemistLabel}
+          chemistId={assigneeForCoa(detailCoa)}
+          currentUserId={currentUserId}
+          reviewerOptions={reviewerOptions}
+          isAdmin={isAdmin}
+        />
+      )}
+
+      {detailPending && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+          <button type="button" className="absolute inset-0 bg-black/45" aria-label="Close" onClick={() => setDetailPending(null)} />
+          <div className="relative w-full sm:max-w-md max-h-[90vh] overflow-y-auto bg-white rounded-t-2xl sm:rounded-xl shadow-2xl border border-atlas-border p-4 space-y-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-sky-700">Awaiting COA</p>
+                <h2 className="text-lg font-bold text-black truncate">
+                  {detailPending.sample.display_name || detailPending.sample.sample_name}
+                </h2>
+                <LotLine lot={lotForSample(detailPending.sample)} />
+              </div>
+              <button type="button" onClick={() => setDetailPending(null)} className="p-2 rounded-lg hover:bg-neutral-100 text-neutral-500">
+                <X size={18} />
+              </button>
+            </div>
+            <PriorityBanner priority={detailPending.priority} rush={detailPending.order.rush_processing} compact />
+            <p className="text-sm text-neutral-600">
+              {detailPending.order.company_name || '—'} · {detailPending.order.order_number}
+            </p>
+            <p className="text-sm text-neutral-600 flex items-center gap-1.5">
+              <UserCircle2 size={14} /> {chemistLabel(detailPending.assigned_to)}
+            </p>
+            {onIssueCoa && (
+              <button
+                type="button"
+                onClick={() => {
+                  onIssueCoa(detailPending.sample);
+                  setDetailPending(null);
+                }}
+                className="btn-primary w-full justify-center gap-2"
+              >
+                Issue COA <ArrowRight size={14} />
+              </button>
+            )}
+            <WorkflowOrderTools
+              order={detailPending.order}
+              sampleId={detailPending.sample.id}
+              isAdmin={isAdmin}
+              saving={etaSavingOrderId === detailPending.order.id}
+              onSaveEta={onSaveOrderEta}
+              defaultOpen
+            />
+          </div>
+        </div>
       )}
 
       <div className="sticky top-0 z-20 -mx-1 px-1 py-2 bg-neutral-100/95 backdrop-blur-sm border-b border-atlas-border/80 flex items-center justify-between gap-3">
@@ -884,50 +839,40 @@ export default function CoaWorkflowBoard({
                       const mine = !!currentUserId && assignedTo === currentUserId;
                       const pStyles = LAB_PRIORITY_STYLES[priority];
                       const lot = lotForSample(sample);
+                      const etaIso = resolveEtaAt(order);
                       return (
                         <article
                           key={sample.id}
-                          className={`rounded-lg border bg-white shadow-sm overflow-hidden ${pStyles.border} ${
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => setDetailPending(item)}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              setDetailPending(item);
+                            }
+                          }}
+                          className={`rounded-lg border bg-white shadow-sm overflow-hidden cursor-pointer hover:shadow-md transition-shadow ${pStyles.border} ${
                             mine ? 'ring-2 ring-sky-400 border-sky-300' : ''
                           }`}
                         >
                           <PriorityBanner priority={priority} rush={order.rush_processing} compact />
-                          <div className="p-3">
-                          {mine && (
-                            <div className="mb-1.5">
-                              <AssignedToYouBadge />
+                          <div className="p-3 space-y-1">
+                            <div className="flex items-start justify-between gap-2">
+                              <p className="font-medium text-sm text-black leading-snug truncate">
+                                {sample.display_name || sample.sample_name}
+                              </p>
+                              <ChevronRight size={14} className="text-neutral-300 shrink-0 mt-0.5" />
                             </div>
-                          )}
-                          <p className="font-medium text-sm text-black leading-snug truncate">
-                            {sample.display_name || sample.sample_name}
-                          </p>
-                          <LotLine lot={lot} />
-                          {showOrderToolsOnCards ? (
-                            <p className="text-xs text-neutral-500 mt-0.5 truncate">
-                              {order.company_name || '—'} · {order.order_number}
-                            </p>
-                          ) : null}
-                          <p className={`text-xs mt-1 flex items-center gap-1 ${mine ? 'text-sky-800 font-semibold' : 'text-neutral-400'}`}>
-                            <UserCircle2 size={11} /> {chemistLabel(assignedTo)}
-                          </p>
-                          {onIssueCoa && (
-                            <button
-                              type="button"
-                              onClick={() => onIssueCoa(sample)}
-                              className="btn-primary text-xs py-1.5 gap-1 justify-center w-full mt-2"
-                            >
-                              Issue COA <ArrowRight size={11} />
-                            </button>
-                          )}
-                          {showOrderToolsOnCards ? (
-                            <WorkflowOrderTools
-                              order={order}
-                              sampleId={sample.id}
-                              isAdmin={isAdmin}
-                              saving={etaSavingOrderId === order.id}
-                              onSaveEta={onSaveOrderEta}
-                            />
-                          ) : null}
+                            <LotLine lot={lot} />
+                            {showOrderToolsOnCards ? (
+                              <p className="text-xs text-neutral-500 truncate">
+                                {order.company_name || '—'}
+                                {etaIso ? ` · ETA ${formatDate(etaIso)}` : ''}
+                              </p>
+                            ) : null}
+                            {mine && <AssignedToYouBadge />}
+                            <p className="text-[11px] text-sky-800 font-semibold">Awaiting COA · tap to open</p>
                           </div>
                         </article>
                       );
@@ -937,17 +882,12 @@ export default function CoaWorkflowBoard({
                     const currentStage = coaWorkflowStage(coa);
                     const isDragging = draggingId === coa.id;
                     const isMoving = movingId === coa.id;
-                    const client = clientForCoa(coa);
                     const order = orderForCoa(coa);
                     const companyName = order?.company_name || coa.company_name;
-                    const accession = accessionForCoa(coa);
-                    const testsLabel = testsLabelForCoa(coa);
                     const lot = lotForCoa(coa);
-                    const isAwaitingInfo = currentStage === 'awaiting_info';
                     const assignee = assigneeForCoa(coa);
                     const reviewAssigneeId = coa.review_assigned_to ?? null;
                     const needsPendingUpdate = canUpdatePendingPublishedCoa(coa);
-                    const canLiveEdit = canEditLiveCoa(coa);
                     const pendingLabels = needsPendingUpdate
                       ? pendingAssayLabels(coa.panel_results)
                       : [];
@@ -955,11 +895,7 @@ export default function CoaWorkflowBoard({
                       assignee === currentUserId || reviewAssigneeId === currentUserId
                     );
                     const sig = coaSignatureProgress(coa);
-                    const canSignOff = currentStage === 'pending_review' && (
-                      !reviewAssigneeId
-                      || reviewAssigneeId === currentUserId
-                      || reviewerOptions.some(r => r.id === currentUserId && (r.role === 'admin' || r.role === 'reviewer'))
-                    );
+                    const etaIso = order ? resolveEtaAt(order) : null;
 
                     return (
                       <article
@@ -967,9 +903,13 @@ export default function CoaWorkflowBoard({
                         draggable={!isMoving}
                         onDragStart={e => handleDragStart(e, coa.id)}
                         onDragEnd={handleDragEnd}
+                        onClick={() => {
+                          if (suppressCardClickRef.current || isMoving) return;
+                          setDetailCoa(coa);
+                        }}
                         className={`rounded-lg border bg-white p-3 shadow-sm transition-all select-none ${
-                          isDragging ? 'opacity-40 scale-[0.98]' : 'hover:shadow-md'
-                        } ${isMoving ? 'opacity-60 pointer-events-none' : 'cursor-grab active:cursor-grabbing'} ${
+                          isDragging ? 'opacity-40 scale-[0.98]' : 'hover:shadow-md hover:border-brand-300'
+                        } ${isMoving ? 'opacity-60 pointer-events-none' : 'cursor-pointer'} ${
                           needsPendingUpdate
                             ? 'ring-2 ring-amber-400 border-amber-300'
                             : mine
@@ -978,346 +918,50 @@ export default function CoaWorkflowBoard({
                         }`}
                       >
                         <div className="flex items-start gap-2">
-                          <GripVertical size={14} className="text-neutral-300 flex-shrink-0 mt-0.5" />
-                          <div className="min-w-0 flex-1 space-y-1.5">
+                          <span
+                            className="text-neutral-300 flex-shrink-0 mt-0.5 cursor-grab active:cursor-grabbing"
+                            title="Drag to move stage"
+                          >
+                            <GripVertical size={14} />
+                          </span>
+                          <div className="min-w-0 flex-1 space-y-1">
                             {needsPendingUpdate && (
-                              <div className="rounded-md border border-amber-300 bg-amber-50 px-2 py-1.5">
-                                <p className="text-[11px] font-bold uppercase tracking-wide text-amber-900 flex items-center gap-1">
-                                  <Clock size={11} className="flex-shrink-0" />
-                                  Pending assays — update results
-                                </p>
-                                {pendingLabels.length > 0 && (
-                                  <p className="text-[11px] text-amber-800 mt-0.5 truncate">
-                                    {pendingLabels.join(' · ')}
-                                  </p>
-                                )}
-                              </div>
+                              <p className="text-[10px] font-bold uppercase tracking-wide text-amber-800 flex items-center gap-1 truncate">
+                                <Clock size={10} className="flex-shrink-0" />
+                                Pending{pendingLabels[0] ? `: ${pendingLabels[0]}` : ' assays'}
+                              </p>
                             )}
                             <div className="flex items-center justify-between gap-2">
                               <p className="font-medium text-sm text-black leading-snug truncate">
                                 {coa.display_name || coa.sample_name}
                               </p>
-                              <ResultBadge result={coa.overall_result} />
+                              <div className="flex items-center gap-1 shrink-0">
+                                <ResultBadge result={coa.overall_result} />
+                                <ChevronRight size={14} className="text-neutral-300" />
+                              </div>
                             </div>
-
                             <LotLine lot={lot} />
-
-                            {order && showOrderToolsOnCards && (
-                              <WorkflowOrderTools
-                                order={order}
-                                sampleId={coa.sample_id}
-                                isAdmin={isAdmin}
-                                saving={etaSavingOrderId === order.id}
-                                onSaveEta={onSaveOrderEta}
-                              />
-                            )}
-
-                            {mine && <AssignedToYouBadge />}
-
-                            {(currentStage === 'pending_review' || currentStage === 'verified' || currentStage === 'published' || currentStage === 'issued') && (
-                              <span className={`inline-flex items-center text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${
-                                sig.signed >= 2
-                                  ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
-                                  : sig.signed === 1
-                                    ? 'border-violet-300 bg-violet-50 text-violet-800'
-                                    : 'border-neutral-200 bg-neutral-50 text-neutral-600'
-                              }`}>
-                                {sig.label}
-                              </span>
-                            )}
-
-                            {isAwaitingInfo && (
-                              <div className="rounded-md border border-amber-300 bg-amber-100/80 px-2 py-1.5 space-y-0.5">
-                                <p className="text-xs font-bold text-amber-900 flex items-center gap-1 truncate">
-                                  <Building2 size={11} className="flex-shrink-0" /> {companyName || 'Unknown company'}
-                                </p>
-                                <p className="text-xs text-amber-800 flex items-center gap-1 truncate">
-                                  <UserCircle2 size={11} className="flex-shrink-0" />
-                                  {client?.full_name || 'Unknown contact'}
-                                </p>
-                                {client?.phone && (
-                                  <p className="text-xs text-amber-800 flex items-center gap-1 truncate">
-                                    <Phone size={11} className="flex-shrink-0" /> {client.phone}
-                                  </p>
-                                )}
-                              </div>
-                            )}
-
-                            {!isAwaitingInfo && showOrderToolsOnCards && (
-                              <>
-                                <p className="text-xs text-neutral-500 truncate flex items-center gap-1">
-                                  <Building2 size={11} className="text-neutral-400 flex-shrink-0" /> {companyName || '—'}
-                                </p>
-                                <p className="text-xs text-neutral-500 truncate flex items-center gap-1">
-                                  <UserCircle2 size={11} className="text-neutral-400 flex-shrink-0" />
-                                  {client?.full_name || 'Unknown contact'}
-                                  {client?.phone && <span className="text-neutral-400"> · {client.phone}</span>}
-                                </p>
-                              </>
-                            )}
-
-                            {assignee && (
-                              <p className={`text-xs flex items-center gap-1 ${assignee === currentUserId ? 'text-sky-800 font-semibold' : 'text-neutral-500'}`}>
-                                <UserCircle2 size={11} /> Chemist: {chemistLabel(assignee)}
-                              </p>
-                            )}
-
-                            {currentStage === 'pending_review' && (
-                              <p className={`text-xs flex items-center gap-1 ${reviewAssigneeId === currentUserId ? 'text-violet-800 font-semibold' : 'text-neutral-500'}`}>
-                                <Shield size={11} /> Reviewer: {chemistLabel(reviewAssigneeId)}
-                              </p>
-                            )}
-
-                            <div className="flex flex-wrap gap-x-2.5 gap-y-0.5 text-[11px] text-neutral-500">
-                              {order && showOrderToolsOnCards && (
-                                <span className="flex items-center gap-1">
-                                  <Hash size={10} className="text-neutral-400" /> {order.order_number}
-                                </span>
-                              )}
-                              {accession && (
-                                <span className="flex items-center gap-1 font-mono" title={accession.label}>
-                                  <Fingerprint size={10} className="text-neutral-400" />
-                                  {accession.label} {accession.value}
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              {mine && <AssignedToYouBadge />}
+                              {(currentStage === 'pending_review' || currentStage === 'verified' || currentStage === 'published' || currentStage === 'issued') && (
+                                <span className={`inline-flex items-center text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${
+                                  sig.signed >= 2
+                                    ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
+                                    : sig.signed === 1
+                                      ? 'border-violet-300 bg-violet-50 text-violet-800'
+                                      : 'border-neutral-200 bg-neutral-50 text-neutral-600'
+                                }`}>
+                                  {sig.label}
                                 </span>
                               )}
                             </div>
-
-                            {testsLabel && (
-                              <p className="text-[11px] text-neutral-400 truncate">Tests: {testsLabel}</p>
+                            {showOrderToolsOnCards && (
+                              <p className="text-xs text-neutral-500 truncate">
+                                {companyName || '—'}
+                                {etaIso ? ` · ETA ${formatDate(etaIso)}` : ''}
+                              </p>
                             )}
-
-                            <p className="text-[11px] text-neutral-400">{formatDate(coa.issued_at)}</p>
                           </div>
-                        </div>
-
-                        <div className="flex flex-wrap gap-2 pt-2 mt-2 border-t border-atlas-border">
-                          {needsPendingUpdate && (
-                            <button
-                              type="button"
-                              onClick={e => {
-                                e.stopPropagation();
-                                setPrepCoa(coa);
-                              }}
-                              className="btn-primary text-xs py-1 px-2 gap-1"
-                              title="Update pending assay results without unpublishing — changes are logged"
-                            >
-                              <FlaskConical size={11} /> Update pending
-                            </button>
-                          )}
-                          {canLiveEdit && !needsPendingUpdate && (
-                            <button
-                              type="button"
-                              onClick={e => {
-                                e.stopPropagation();
-                                setPrepCoa(coa);
-                              }}
-                              className="btn-primary text-xs py-1 px-2 gap-1"
-                              title="Open and edit this live COA without unpublishing — pass/fail/pending changes are logged"
-                            >
-                              <FlaskConical size={11} /> Edit COA
-                            </button>
-                          )}
-                          {canPrepareCoa(coa) && !needsPendingUpdate && !canLiveEdit && (
-                            <button
-                              type="button"
-                              onClick={e => {
-                                e.stopPropagation();
-                                setPrepCoa(coa);
-                              }}
-                              className="btn-outline text-xs py-1 px-2 gap-1"
-                            >
-                              Prepare
-                            </button>
-                          )}
-                          {canLiveEdit && onRestartCoa && (
-                            <button
-                              type="button"
-                              onClick={e => {
-                                e.stopPropagation();
-                                onRestartCoa(coa);
-                              }}
-                              disabled={!!movingId}
-                              className="btn-outline text-xs py-1 px-2 gap-1"
-                              title="Open full Issue form — stays published/verified and logs every change"
-                            >
-                              Full edit
-                            </button>
-                          )}
-                          <Link
-                            to={`/coa/${coa.slug}`}
-                            draggable={false}
-                            className="btn-outline text-xs py-1 px-2 gap-1"
-                            onClick={e => e.stopPropagation()}
-                            onDragStart={e => e.preventDefault()}
-                          >
-                            <ExternalLink size={11} /> Open
-                          </Link>
-                          <button
-                            type="button"
-                            disabled={downloadingId === coa.id}
-                            className="btn-outline text-xs py-1 px-2 gap-1"
-                            onClick={e => {
-                              e.stopPropagation();
-                              void handleDownloadPdf(coa);
-                            }}
-                          >
-                            <Download size={11} />
-                            {downloadingId === coa.id ? 'Saving…' : 'Download PDF'}
-                          </button>
-
-                          {currentStage === 'issued' && (
-                            reviewPickFor === coa.id ? (
-                              <div className="w-full space-y-1.5" onClick={e => e.stopPropagation()}>
-                                <select
-                                  value={reviewAssignee}
-                                  onChange={e => setReviewAssignee(e.target.value)}
-                                  className="input-field text-xs py-1.5"
-                                >
-                                  <option value="">Assign lab director / chemist…</option>
-                                  {reviewerOptions.map(r => (
-                                    <option key={r.id} value={r.id}>
-                                      {r.name}{r.role ? ` (${r.role})` : ''}
-                                    </option>
-                                  ))}
-                                </select>
-                                <div className="flex gap-1.5">
-                                  <button
-                                    type="button"
-                                    disabled={!reviewAssignee || !!movingId}
-                                    onClick={() => {
-                                      void onMoveCoa(coa, 'pending_review', { reviewAssignedTo: reviewAssignee });
-                                      setReviewPickFor(null);
-                                      setReviewAssignee('');
-                                    }}
-                                    className="btn-secondary text-xs py-1 px-2 gap-1 flex-1"
-                                  >
-                                    <Shield size={11} /> Send (1/2)
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => { setReviewPickFor(null); setReviewAssignee(''); }}
-                                    className="btn-outline text-xs py-1 px-2"
-                                  >
-                                    Cancel
-                                  </button>
-                                </div>
-                              </div>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={e => {
-                                  e.stopPropagation();
-                                  setReviewPickFor(coa.id);
-                                  setReviewAssignee('');
-                                }}
-                                disabled={!!movingId}
-                                className="btn-secondary text-xs py-1 px-2 gap-1"
-                              >
-                                <Shield size={11} /> Send for review
-                              </button>
-                            )
-                          )}
-
-                          {currentStage === 'testing_in_progress' && (
-                            <>
-                              {onRestartCoa && (
-                                <button
-                                  type="button"
-                                  onClick={e => {
-                                    e.stopPropagation();
-                                    onRestartCoa(coa);
-                                  }}
-                                  disabled={!!movingId}
-                                  className="btn-primary text-xs py-1 px-2 gap-1"
-                                  title="Open Issue COA with this certificate's values and re-issue"
-                                >
-                                  <FlaskConical size={11} /> Restart COA
-                                </button>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() => void onMoveCoa(coa, 'issued')}
-                                disabled={!!movingId}
-                                className="btn-secondary text-xs py-1 px-2 gap-1"
-                              >
-                                <ArrowRight size={11} /> Return to Issued
-                              </button>
-                            </>
-                          )}
-
-                          {canReturnCoaToTesting(currentStage) && (
-                            <button
-                              type="button"
-                              onClick={() => void onMoveCoa(coa, 'testing_in_progress')}
-                              disabled={!!movingId}
-                              className="btn-outline text-xs py-1 px-2 gap-1"
-                              title="Move back to Testing in Progress to rework or restart this COA"
-                            >
-                              <ArrowLeft size={11} /> Back to testing
-                            </button>
-                          )}
-
-                          {isAwaitingInfo && (
-                            <button
-                              type="button"
-                              onClick={() => void onMoveCoa(coa, 'issued')}
-                              disabled={!!movingId}
-                              className="btn-secondary text-xs py-1 px-2 gap-1"
-                            >
-                              <ArrowLeft size={11} /> Back to Issued
-                            </button>
-                          )}
-
-                          {currentStage === 'pending_review' && canSignOff && (
-                            <button
-                              type="button"
-                              onClick={() => void onMoveCoa(coa, 'verified')}
-                              disabled={!!movingId}
-                              className="btn-primary text-xs py-1 px-2 gap-1"
-                            >
-                              <CheckCircle size={11} /> Sign off (2/2)
-                            </button>
-                          )}
-
-                          {currentStage === 'verified' && (
-                            <button
-                              type="button"
-                              onClick={() => void onMoveCoa(coa, 'published')}
-                              disabled={!!movingId}
-                              className="btn-primary text-xs py-1 px-2 gap-1"
-                            >
-                              <Globe size={11} /> Publish
-                            </button>
-                          )}
-
-                          {(currentStage === 'issued' || currentStage === 'pending_review' || currentStage === 'awaiting_info') && (
-                            <button
-                              type="button"
-                              onClick={() => void onMoveCoa(coa, 'published')}
-                              disabled={!!movingId}
-                              className="btn-secondary text-xs py-1 px-2 gap-1 border-emerald-300 text-emerald-800 hover:bg-emerald-50"
-                              title="Override workflow stopping points and publish immediately"
-                            >
-                              <Globe size={11} /> Publish now
-                            </button>
-                          )}
-
-                          {currentStage === 'published' && !needsPendingUpdate && (
-                            <span className="text-xs text-emerald-700 font-medium flex items-center gap-1">
-                              <CheckCircle size={12} /> Client visible · editable
-                            </span>
-                          )}
-                          {currentStage === 'verified' && !needsPendingUpdate && (
-                            <span className="text-xs text-sky-800 font-medium flex items-center gap-1">
-                              <CheckCircle size={12} /> Verified · editable
-                            </span>
-                          )}
-                          {(currentStage === 'published' || currentStage === 'verified') && needsPendingUpdate && (
-                            <span className="text-xs text-amber-800 font-medium flex items-center gap-1">
-                              <Globe size={12} />
-                              {currentStage === 'published' ? 'Published · awaiting assay finish' : 'Verified · awaiting assay finish'}
-                            </span>
-                          )}
                         </div>
                       </article>
                     );

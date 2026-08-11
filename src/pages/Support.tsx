@@ -1,11 +1,12 @@
 import { Mail, MessageCircle, FileText, Phone } from 'lucide-react';
-import DashboardLayout from '../components/layout/DashboardLayout';
+import ClientPortalLayout from '../components/layout/ClientPortalLayout';
 
 export default function Support() {
   return (
-    <DashboardLayout>
+    <ClientPortalLayout>
       <div className="max-w-2xl">
-        <h1 className="text-2xl font-bold text-slate-900 mb-6">Support</h1>
+        <h1 className="portal-page-title mb-2">Support</h1>
+        <p className="portal-page-subtitle mb-6">Get help with orders, COAs, and account questions.</p>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-8">
           {[
@@ -16,16 +17,16 @@ export default function Support() {
               <div className="w-10 h-10 bg-brand-50 rounded-xl flex items-center justify-center mb-4">
                 <item.icon size={20} className="text-brand-600" />
               </div>
-              <h3 className="font-semibold text-slate-900 mb-1">{item.title}</h3>
-              <p className="text-slate-700 text-sm font-medium">{item.desc}</p>
-              <p className="text-xs text-slate-500 mb-4">{item.sub}</p>
+              <h3 className="font-semibold text-black mb-1">{item.title}</h3>
+              <p className="text-neutral-700 text-sm font-medium">{item.desc}</p>
+              <p className="text-xs text-neutral-500 mb-4">{item.sub}</p>
               <a href={item.href} className="btn-outline text-sm w-full justify-center">{item.label}</a>
             </div>
           ))}
         </div>
 
         <div className="card p-6">
-          <h2 className="font-semibold text-slate-900 mb-4 flex items-center gap-2">
+          <h2 className="font-semibold text-black mb-4 flex items-center gap-2">
             <MessageCircle size={17} /> Send a Message
           </h2>
           <form className="space-y-4" onSubmit={e => { e.preventDefault(); alert('Message sent! We\'ll get back to you within 1 business day.'); }}>
@@ -34,7 +35,7 @@ export default function Support() {
               <input type="text" className="input-field" placeholder="e.g., Question about my order ACC-20240115-1234" />
             </div>
             <div>
-              <label className="label">Order Number <span className="text-slate-400 font-normal">(optional)</span></label>
+              <label className="label">Order Number <span className="text-neutral-400 font-normal normal-case tracking-normal">(optional)</span></label>
               <input type="text" className="input-field" placeholder="ACC-XXXXXXXX-XXXX" />
             </div>
             <div>
@@ -45,8 +46,8 @@ export default function Support() {
           </form>
         </div>
 
-        <div className="card p-6 mt-5 bg-slate-50">
-          <h3 className="font-semibold text-slate-900 mb-4 flex items-center gap-2">
+        <div className="card p-6 mt-5 bg-neutral-50">
+          <h3 className="font-semibold text-black mb-4 flex items-center gap-2">
             <FileText size={15} /> Quick Help
           </h3>
           <div className="space-y-3">
@@ -56,14 +57,14 @@ export default function Support() {
               { q: 'How do I share my COA?', a: 'Every AccuMark COA has a permanent URL you can share directly. You can also download a PDF version for archives.' },
               { q: 'What if my sample fails?', a: 'You\'ll receive a detailed COA with pass/fail callouts for each panel. We do not revise or retract failing results.' },
             ].map(({ q, a }) => (
-              <div key={q} className="pb-3 border-b border-slate-200 last:border-0">
-                <p className="font-medium text-slate-900 text-sm">{q}</p>
-                <p className="text-sm text-slate-500 mt-1">{a}</p>
+              <div key={q} className="pb-3 border-b border-atlas-border last:border-0">
+                <p className="font-medium text-black text-sm">{q}</p>
+                <p className="text-sm text-neutral-500 mt-1">{a}</p>
               </div>
             ))}
           </div>
         </div>
       </div>
-    </DashboardLayout>
+    </ClientPortalLayout>
   );
 }

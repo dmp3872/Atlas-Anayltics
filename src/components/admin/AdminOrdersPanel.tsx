@@ -166,9 +166,7 @@ export default function AdminOrdersPanel({
               key={f.id}
               type="button"
               onClick={() => setFilter(f.id)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md border ${
-                filter === f.id ? 'bg-black text-white border-black' : 'border-atlas-border'
-              }`}
+              className={`filter-chip ${filter === f.id ? 'filter-chip-active' : ''}`}
             >
               {f.label}
             </button>

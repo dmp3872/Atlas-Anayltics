@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useSearchParams } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { UserRole } from './lib/types';
 import { roleHome, resolveUserRole } from './lib/roles';
@@ -25,6 +25,10 @@ import VerifyPortal from './pages/VerifyPortal';
 import AdminOrderDetail from './pages/admin/AdminOrderDetail';
 
 function PublicLayout({ children }: { children: React.ReactNode }) {
+  const [params] = useSearchParams();
+  // COA PDF/export iframes must not paint site chrome.
+  const hideChrome = params.get('export') === '1' || params.get('print') === '1';
+  if (hideChrome) return <>{children}</>;
   return (
     <>
       <Header />
@@ -61,19 +65,20 @@ export default function App() {
           <Route path="/pricing" element={<PublicLayout><Pricing /></PublicLayout>} />
           <Route path="/order-new" element={<OrderWizard />} />
           <Route path="/order" element={<PublicLayout><Order /></PublicLayout>} />
-          <Route path="/verify" element={<PublicVerify />} />
-          <Route path="/coa-library" element={<PublicLibrary />} />
-          <Route path="/coa/:slug" element={<COADetail />} />
+          <Route path="/verify" element={<PublicLayout><PublicVerify /></PublicLayout>} />
+          <Route path="/coa-library" element={<PublicLayout><PublicLibrary /></PublicLayout>} />
+          <Route path="/coa/:slug" element={<PublicLayout><COADetail /></PublicLayout>} />
           <Route path="/embed/coa/:slug" element={<EmbeddedCOA />} />
-          <Route path="/sample/:sampleId/coa" element={<SampleCOA />} />
-          <Route path="/trust" element={<Trust />} />
-          <Route path="/roadmap" element={<Roadmap />} />
+          <Route path="/sample/:sampleId/coa" element={<PublicLayout><SampleCOA /></PublicLayout>} />
+          <Route path="/trust" element={<PublicLayout><Trust /></PublicLayout>} />
+          <Route path="/roadmap" element={<PublicLayout><Roadmap /></PublicLayout>} />
 
           {/* Client portal */}
           <Route path="/dashboard" element={<RoleRoute allow={['client', 'admin']}><Portal /></RoleRoute>} />
           <Route path="/dashboard/orders" element={<RoleRoute allow={['client', 'admin']}><Portal /></RoleRoute>} />
           <Route path="/dashboard/coas" element={<RoleRoute allow={['client', 'admin']}><Portal /></RoleRoute>} />
           <Route path="/dashboard/api" element={<RoleRoute allow={['client', 'admin']}><APIKeys /></RoleRoute>} />
+          <Route path="/support" element={<RoleRoute allow={['client', 'admin']}><Support /></RoleRoute>} />
 
           {/* Kyle submission workflow — client (superseded by unified orders) */}
           <Route path="/dashboard/submissions/*" element={<Navigate to="/dashboard/orders" replace />} />
@@ -93,7 +98,6 @@ export default function App() {
           <Route path="/admin/submissions/:id" element={<Navigate to="/admin" replace />} />
 
           <Route path="/account" element={<Navigate to="/dashboard?tab=account" replace />} />
-          <Route path="/support" element={<Support />} />
         </Routes>
       </AuthProvider>
     </BrowserRouter>

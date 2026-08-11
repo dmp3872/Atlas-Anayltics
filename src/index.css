@@ -29,6 +29,15 @@
   .btn-ghost {
     @apply inline-flex items-center justify-center gap-2 px-4 py-2 text-neutral-600 font-medium rounded-md hover:bg-neutral-100 hover:text-black transition-colors duration-150;
   }
+  .btn-back {
+    @apply inline-flex items-center gap-1.5 text-sm font-medium text-neutral-500 hover:text-brand-600 transition-colors;
+  }
+  .filter-chip {
+    @apply inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-md border border-atlas-border bg-white text-neutral-700 hover:bg-neutral-50 transition-colors;
+  }
+  .filter-chip-active {
+    @apply bg-black text-white border-black hover:bg-neutral-800 hover:text-white;
+  }
   .card {
     @apply bg-white rounded-lg border border-atlas-border;
   }
@@ -78,6 +87,9 @@
   .status-received {
     @apply bg-neutral-100 text-neutral-700;
   }
+  .status-awaiting_sample {
+    @apply bg-neutral-100 text-neutral-700;
+  }
   .status-processing {
     @apply bg-brand-100 text-brand-800;
   }
@@ -90,8 +102,18 @@
   .status-complete {
     @apply bg-emerald-100 text-atlas-success;
   }
+  .status-cancelled {
+    @apply bg-red-50 text-red-700;
+  }
+  .status-badge {
+    @apply inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold;
+  }
+  /* Shared black app chrome (public, staff, order wizard) */
   .coa-header-bar {
-    @apply bg-black text-white px-6 py-5;
+    @apply bg-black text-white;
+  }
+  .app-header-inner {
+    @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-4 h-14;
   }
   .coa-table-header {
     @apply bg-black text-brand-500 text-xs font-semibold uppercase tracking-wider;
@@ -604,6 +626,95 @@
 }
 .coa-workflow-board-scroll::-webkit-scrollbar-thumb:hover {
   background: #737373;
+}
+
+/* Public verify — success shield burst */
+@keyframes verify-shield-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.35);
+  }
+  55% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+  78% {
+    transform: scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes verify-shield-fade {
+  0%,
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes verify-ring-expand {
+  0% {
+    opacity: 0.55;
+    transform: scale(0.65);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.75);
+  }
+}
+
+.verify-shield-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  animation: verify-shield-fade 1.15s ease-out forwards;
+}
+
+.verify-shield-burst {
+  position: relative;
+  width: 5.5rem;
+  height: 5.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.verify-shield-icon {
+  position: relative;
+  z-index: 1;
+  width: 4.5rem;
+  height: 4.5rem;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: linear-gradient(160deg, #34d399 0%, #059669 55%, #047857 100%);
+  box-shadow:
+    0 0 0 3px rgba(16, 185, 129, 0.25),
+    0 12px 28px rgba(5, 150, 105, 0.35);
+  animation: verify-shield-pop 0.55s cubic-bezier(0.22, 1.2, 0.36, 1) both;
+}
+
+.verify-shield-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  border: 2px solid #34d399;
+  animation: verify-ring-expand 0.7s ease-out both;
+}
+
+.verify-shield-ring-delay {
+  animation-delay: 0.12s;
 }
 
 @layer utilities {

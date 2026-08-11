@@ -64,9 +64,7 @@ export default function QueueFilters({ values, onChange, companies, hasCurrentUs
                 key={chip.id}
                 type="button"
                 onClick={() => onChange({ priority: chip.id })}
-                className={`px-2.5 py-1 text-xs font-medium rounded-full border ${
-                  values.priority === chip.id ? 'bg-black text-white border-black' : 'border-atlas-border text-neutral-600 hover:border-neutral-400'
-                }`}
+                className={`filter-chip ${values.priority === chip.id ? 'filter-chip-active' : ''}`}
               >
                 {chip.label}
               </button>
@@ -83,9 +81,7 @@ export default function QueueFilters({ values, onChange, companies, hasCurrentUs
                   key={chip.id}
                   type="button"
                   onClick={() => onChange({ assignment: chip.id })}
-                  className={`px-2.5 py-1 text-xs font-medium rounded-full border ${
-                    values.assignment === chip.id ? 'bg-black text-white border-black' : 'border-atlas-border text-neutral-600 hover:border-neutral-400'
-                  }`}
+                  className={`filter-chip ${values.assignment === chip.id ? 'filter-chip-active' : ''}`}
                 >
                   {chip.label}
                 </button>

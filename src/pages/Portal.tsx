@@ -43,14 +43,11 @@ import { COA_LIST_COLUMNS } from '../lib/coaSelect';
 import CoaReadyCelebration from '../components/coa/CoaReadyCelebration';
 import OrderBrandingEditor from '../components/portal/OrderBrandingEditor';
 import { fetchSeenCoaCelebrations, markCoaCelebrationSeen } from '../lib/orderMessages';
+import ResultBadge from '../components/ui/ResultBadge';
+import OrderStatusBadge from '../components/ui/OrderStatusBadge';
+import EmptyState from '../components/ui/EmptyState';
 
 type PortalTab = 'home' | 'getting-started' | 'peptide-requests' | 'coas' | 'samples' | 'orders' | 'invoices' | 'payments' | 'account' | 'widget' | 'team';
-
-function ResultBadge({ result }: { result: string }) {
-  if (result === 'pass') return <span className="badge-pass"><CheckCircle size={10} /> Pass</span>;
-  if (result === 'fail') return <span className="badge-fail"><XCircle size={10} /> Fail</span>;
-  return <span className="badge-pending"><Clock size={10} /> Pending</span>;
-}
 
 function CoaPublicationBadge({ coa }: { coa: COA }) {
   if (coa.is_public && coa.coa_workflow_stage === 'published') {
@@ -745,7 +742,10 @@ export default function Portal() {
         )}
 
         {loading && !['home', 'getting-started', 'peptide-requests'].includes(tab) ? (
-          <div className="card p-12 text-center text-neutral-500">Loading…</div>
+          <div className="card p-12 text-center">
+            <div className="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+            <p className="text-sm text-neutral-500">Loading your portal…</p>
+          </div>
         ) : (
           <>
             {tab === 'home' && (
@@ -766,11 +766,14 @@ export default function Portal() {
                 </div>
                 <div className="card overflow-hidden">
                   {filteredCoas.length === 0 ? (
-                    <div className="p-12 text-center">
-                      <FileText size={32} className="mx-auto mb-3 text-neutral-300" />
-                      <p className="font-medium">No certificates yet</p>
-                      <Link to="/order-new" className="btn-primary text-sm mt-4 inline-flex">Submit a Sample</Link>
-                    </div>
+                    <EmptyState
+                      icon={FileText}
+                      title="No certificates yet"
+                      description="When your samples finish testing, signed COAs will appear here."
+                      actionLabel="Submit a Sample"
+                      actionTo="/order-new"
+                      className="border-0 rounded-none shadow-none"
+                    />
                   ) : (
                     <div className="overflow-x-auto">
                       <table className="portal-data-table w-full text-sm">
@@ -833,20 +836,21 @@ export default function Portal() {
             {tab === 'samples' && (
               <div className="space-y-5">
                 <div>
-                  <h2 className="text-2xl sm:text-3xl font-bold text-black">Your Samples</h2>
-                  <p className="text-sm text-neutral-500 mt-1">
+                  <h1 className="portal-page-title">Your Samples</h1>
+                  <p className="portal-page-subtitle">
                     Track every sample submitted to Atlas Analytics. Completed results show in green and red; tests still in progress show as Pending.
                   </p>
                 </div>
                 <div className="card overflow-hidden">
                   {filteredSamples.length === 0 ? (
-                    <div className="p-12 text-center">
-                      <FlaskConical size={32} className="mx-auto mb-3 text-neutral-300" />
-                      <p className="font-medium">{samples.length === 0 ? 'No samples yet' : 'No samples match your search'}</p>
-                      {samples.length === 0 && (
-                        <Link to="/order-new" className="btn-primary text-sm mt-4 inline-flex">Submit a Sample</Link>
-                      )}
-                    </div>
+                    <EmptyState
+                      icon={FlaskConical}
+                      title={samples.length === 0 ? 'No samples yet' : 'No samples match your search'}
+                      description={samples.length === 0 ? 'Submit samples for testing to start tracking results here.' : 'Try a different search or product filter.'}
+                      actionLabel={samples.length === 0 ? 'Submit a Sample' : undefined}
+                      actionTo={samples.length === 0 ? '/order-new' : undefined}
+                      className="border-0 rounded-none shadow-none"
+                    />
                   ) : (
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
@@ -943,9 +947,21 @@ export default function Portal() {
 
             {/* Orders Tab */}
             {tab === 'orders' && (
-              <div className="space-y-3">
+              <div className="space-y-5">
+                <div>
+                  <h1 className="portal-page-title">Your Orders</h1>
+                  <p className="portal-page-subtitle">
+                    Track submission status, shipping, and sample progress for each order.
+                  </p>
+                </div>
                 {filteredOrders.length === 0 ? (
-                  <div className="card p-12 text-center"><Link to="/order-new" className="btn-primary text-sm">New Order</Link></div>
+                  <EmptyState
+                    icon={Truck}
+                    title="No orders yet"
+                    description="Submit samples for testing to create your first order."
+                    actionLabel="Submit a Sample"
+                    actionTo="/order-new"
+                  />
                 ) : filteredOrders.map(order => {
                   const orderSamples = samples.filter(s => s.order_id === order.id);
                   const expanded = expandedOrders.has(order.id);
@@ -972,7 +988,7 @@ export default function Portal() {
                         </div>
                         <div className="text-right">
                           <p className="font-bold">{formatCurrency(order.total)}</p>
-                          <span className="text-xs font-semibold uppercase text-brand-700">{ORDER_STATUS_LABELS[order.status]}</span>
+                          <div className="mt-1"><OrderStatusBadge status={order.status} /></div>
                           {(order.estimated_ready_at || order.due_at) && order.status !== 'complete' && order.status !== 'cancelled' && (
                             <p className="mt-1 text-[11px] text-neutral-500">
                               Est. ready {formatDate(order.estimated_ready_at || order.due_at || '')}
@@ -1285,15 +1301,21 @@ export default function Portal() {
             {tab === 'widget' && (
               <div className="card p-6 space-y-4">
                 <h3 className="font-bold flex items-center gap-2"><Shield size={16} /> QR-Verified Digital Certificates</h3>
-                <p className="text-sm text-neutral-600">Embed COA verification on your product pages. Every certificate includes a scannable verification link.</p>
-                <div className="bg-neutral-950 text-brand-400 p-4 rounded-lg font-mono text-xs overflow-x-auto">
-                  {`<iframe src="${window.location.origin}/verify?embed=1" width="100%" height="120" frameborder="0"></iframe>`}
+                <p className="text-sm text-neutral-600">
+                  Share a verify link that prefills the certificate ID — customers still click Verify themselves.
+                  This is different from the full COA page link (<code className="text-xs bg-neutral-100 px-1 py-0.5 font-mono">/coa/…</code>).
+                </p>
+                <div className="bg-neutral-950 text-brand-400 p-4 rounded-lg font-mono text-xs overflow-x-auto space-y-2">
+                  <p className="text-neutral-500">// Prefill verify tool (user clicks Verify)</p>
+                  <p>{`${window.location.origin}/verify?id=YOUR_COA_ID`}</p>
+                  <p className="text-neutral-500 pt-2">// Full certificate page (opens COA)</p>
+                  <p>{`${window.location.origin}/coa/YOUR_COA_ID`}</p>
                 </div>
                 <button
-                  onClick={() => navigator.clipboard.writeText(`<iframe src="${window.location.origin}/verify?embed=1" width="100%" height="120" frameborder="0"></iframe>`)}
+                  onClick={() => navigator.clipboard.writeText(`${window.location.origin}/verify?id=YOUR_COA_ID`)}
                   className="btn-outline text-sm gap-1.5"
                 >
-                  <Copy size={14} /> Copy Embed Code
+                  <Copy size={14} /> Copy Verify Link Template
                 </button>
               </div>
             )}

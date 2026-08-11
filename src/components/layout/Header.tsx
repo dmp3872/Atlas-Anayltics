@@ -31,96 +31,93 @@ export default function Header() {
 
   return (
     <>
-      <header className="sticky top-0 z-50 bg-black border-b border-neutral-800">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-20">
-            <Link to="/" onClick={() => setMobileOpen(false)} className="flex items-center shrink-0 h-full py-1">
-              <AtlasLogo variant="light" size="header" />
-            </Link>
+      <header className="coa-header-bar sticky top-0 z-50 border-b border-neutral-800 no-print">
+        <div className="app-header-inner">
+          <Link to="/" onClick={() => setMobileOpen(false)} className="flex items-center shrink-0">
+            <AtlasLogo variant="light" size="sm" />
+          </Link>
 
-            <nav className="hidden md:flex items-center gap-1">
-              {navLinks.map((link) => (
-                <Link
-                  key={link.href}
-                  to={link.href}
-                  className={`px-3 py-2 text-sm font-medium transition-colors ${
-                    isActive(link.href)
-                      ? 'text-brand-400'
-                      : 'text-neutral-400 hover:text-white'
-                  }`}
+          <nav className="hidden md:flex items-center gap-1">
+            {navLinks.map((link) => (
+              <Link
+                key={link.href}
+                to={link.href}
+                className={`px-3 py-2 text-sm font-medium transition-colors ${
+                  isActive(link.href)
+                    ? 'text-brand-400'
+                    : 'text-neutral-400 hover:text-white'
+                }`}
+              >
+                {link.label}
+              </Link>
+            ))}
+          </nav>
+
+          <div className="hidden md:flex items-center gap-2">
+            {user ? (
+              <div className="relative">
+                <button
+                  onClick={() => setUserMenuOpen(!userMenuOpen)}
+                  className="flex items-center gap-2 px-3 py-1.5 hover:bg-neutral-900 transition-colors rounded-md"
                 >
-                  {link.label}
-                </Link>
-              ))}
-            </nav>
-
-            <div className="hidden md:flex items-center gap-2">
-              {user ? (
-                <div className="relative">
-                  <button
-                    onClick={() => setUserMenuOpen(!userMenuOpen)}
-                    className="flex items-center gap-2 px-3 py-1.5 hover:bg-neutral-900 transition-colors rounded-md"
-                  >
-                    <div className="w-7 h-7 bg-brand-500 rounded-full flex items-center justify-center">
-                      <span className="text-black text-xs font-bold">
-                        {user.email?.[0].toUpperCase()}
-                      </span>
-                    </div>
-                    <span className="text-sm font-medium text-neutral-300 max-w-[120px] truncate">{user.email}</span>
-                    <ChevronDown size={14} className="text-neutral-500" />
-                  </button>
-                  {userMenuOpen && (
-                    <div className="absolute right-0 top-full mt-1 w-52 bg-white rounded-lg shadow-lg border border-atlas-border py-1 z-50">
-                      <Link
-                        to="/dashboard"
-                        onClick={() => setUserMenuOpen(false)}
-                        className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-neutral-700 hover:bg-neutral-50"
-                      >
-                        <LayoutDashboard size={15} />
-                        Dashboard
-                      </Link>
-                      <Link
-                        to="/account"
-                        onClick={() => setUserMenuOpen(false)}
-                        className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-neutral-700 hover:bg-neutral-50"
-                      >
-                        <User size={15} />
-                        Account Settings
-                      </Link>
-                      <div className="border-t border-neutral-100 my-1" />
-                      <button
-                        onClick={() => { signOut(); setUserMenuOpen(false); }}
-                        className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-red-600 hover:bg-red-50"
-                      >
-                        <LogOut size={15} />
-                        Sign Out
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <>
-                  <Link to="/auth" className="text-sm font-medium text-neutral-400 hover:text-white px-3 py-2">Sign In</Link>
-                  <Link to="/auth" state={{ from: '/order-new' }} className="btn-primary text-sm py-2">Submit Samples</Link>
-                </>
-              )}
-            </div>
-
-            <button
-              type="button"
-              className="md:hidden p-2 -mr-2 text-neutral-400 hover:text-white"
-              onClick={() => setMobileOpen(true)}
-              aria-label="Open menu"
-            >
-              <Menu size={22} />
-            </button>
+                  <div className="w-7 h-7 bg-brand-500 rounded-full flex items-center justify-center">
+                    <span className="text-black text-xs font-bold">
+                      {user.email?.[0].toUpperCase()}
+                    </span>
+                  </div>
+                  <span className="text-sm font-medium text-neutral-300 max-w-[120px] truncate">{user.email}</span>
+                  <ChevronDown size={14} className="text-neutral-500" />
+                </button>
+                {userMenuOpen && (
+                  <div className="absolute right-0 top-full mt-1 w-52 bg-white rounded-lg shadow-lg border border-atlas-border py-1 z-50">
+                    <Link
+                      to="/dashboard"
+                      onClick={() => setUserMenuOpen(false)}
+                      className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-neutral-700 hover:bg-neutral-50"
+                    >
+                      <LayoutDashboard size={15} />
+                      Dashboard
+                    </Link>
+                    <Link
+                      to="/account"
+                      onClick={() => setUserMenuOpen(false)}
+                      className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-neutral-700 hover:bg-neutral-50"
+                    >
+                      <User size={15} />
+                      Account Settings
+                    </Link>
+                    <div className="border-t border-neutral-100 my-1" />
+                    <button
+                      onClick={() => { signOut(); setUserMenuOpen(false); }}
+                      className="flex items-center gap-2.5 w-full px-4 py-2.5 text-sm text-red-600 hover:bg-red-50"
+                    >
+                      <LogOut size={15} />
+                      Sign Out
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <>
+                <Link to="/auth" className="text-sm font-medium text-neutral-400 hover:text-white px-3 py-2">Sign In</Link>
+                <Link to="/auth" state={{ from: '/order-new' }} className="btn-primary text-sm py-2">Submit Samples</Link>
+              </>
+            )}
           </div>
+
+          <button
+            type="button"
+            className="md:hidden p-2 -mr-2 text-neutral-400 hover:text-white"
+            onClick={() => setMobileOpen(true)}
+            aria-label="Open menu"
+          >
+            <Menu size={22} />
+          </button>
         </div>
       </header>
 
-      {/* Mobile drawer — full screen, separate from page content */}
       {mobileOpen && (
-        <div className="fixed inset-0 z-[100] md:hidden">
+        <div className="fixed inset-0 z-[100] md:hidden no-print">
           <button
             type="button"
             className="absolute inset-0 bg-black/70"
@@ -128,8 +125,8 @@ export default function Header() {
             onClick={() => setMobileOpen(false)}
           />
           <div className="absolute inset-y-0 right-0 w-full max-w-sm bg-black border-l border-neutral-800 flex flex-col shadow-2xl">
-            <div className="flex items-center justify-between px-4 h-20 border-b border-neutral-800 shrink-0">
-              <AtlasLogo variant="light" size="header" />
+            <div className="flex items-center justify-between px-4 h-14 border-b border-neutral-800 shrink-0">
+              <AtlasLogo variant="light" size="sm" />
               <button
                 type="button"
                 onClick={() => setMobileOpen(false)}

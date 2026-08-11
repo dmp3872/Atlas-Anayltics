@@ -1,22 +1,17 @@
 import { Link } from 'react-router-dom';
 import { Shield, AlertTriangle, FileX, Search, Lock, CheckCircle, ArrowRight, FlaskConical } from 'lucide-react';
-import Header from '../components/layout/Header';
-import Footer from '../components/layout/Footer';
-
 export default function Trust() {
   return (
-    <>
-      <Header />
       <div className="min-h-screen bg-white">
-        <div className="bg-black py-16 px-4">
-          <div className="max-w-3xl mx-auto text-center">
+        <div className="coa-header-bar">
+          <div className="max-w-3xl mx-auto px-4 sm:px-6 py-12 text-center">
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-brand-500/30 bg-brand-500/10 text-brand-400 text-xs font-medium mb-6">
               <Shield size={13} /> Why Third-Party Testing Matters
             </div>
-            <h1 className="text-4xl sm:text-5xl font-bold text-white mb-4 leading-tight">
+            <h1 className="text-3xl sm:text-4xl font-bold text-white mb-4 leading-tight">
               The trust problem in peptide testing
             </h1>
-            <p className="text-slate-400 text-lg leading-relaxed">
+            <p className="text-neutral-400 text-base leading-relaxed">
               Most COAs in the peptide space are either easily fabricated, impossible to verify, or issued by labs with financial ties to the manufacturers they're testing.
             </p>
           </div>
@@ -24,7 +19,7 @@ export default function Trust() {
 
         <div className="max-w-4xl mx-auto px-4 sm:px-6 py-16 space-y-16">
           <section>
-            <h2 className="text-2xl font-bold text-slate-900 mb-6">The three trust failures</h2>
+            <h2 className="text-2xl font-bold text-neutral-900 mb-6">The three trust failures</h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {[
                 {
@@ -50,8 +45,8 @@ export default function Trust() {
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-4 ${item.color}`}>
                     <item.icon size={20} />
                   </div>
-                  <h3 className="font-semibold text-slate-900 mb-2">{item.title}</h3>
-                  <p className="text-sm text-slate-500 leading-relaxed">{item.desc}</p>
+                  <h3 className="font-semibold text-neutral-900 mb-2">{item.title}</h3>
+                  <p className="text-sm text-neutral-500 leading-relaxed">{item.desc}</p>
                 </div>
               ))}
             </div>
@@ -62,7 +57,7 @@ export default function Trust() {
               <div className="w-10 h-10 bg-brand-600 rounded-xl flex items-center justify-center">
                 <FlaskConical size={20} className="text-white" />
               </div>
-              <h2 className="text-2xl font-bold text-slate-900">How Atlas Analytics solves each problem</h2>
+              <h2 className="text-2xl font-bold text-neutral-900">How Atlas Analytics solves each problem</h2>
             </div>
             <div className="space-y-4">
               {[
@@ -89,7 +84,7 @@ export default function Trust() {
                     </div>
                     <div>
                       <p className="text-xs font-semibold text-red-500 mb-1">Problem: {item.problem}</p>
-                      <p className="text-sm text-slate-700 leading-relaxed">{item.solution}</p>
+                      <p className="text-sm text-neutral-700 leading-relaxed">{item.solution}</p>
                     </div>
                   </div>
                 </div>
@@ -97,8 +92,8 @@ export default function Trust() {
             </div>
           </section>
 
-          <section className="bg-slate-50 rounded-2xl p-8">
-            <h2 className="text-2xl font-bold text-slate-900 mb-6">Our commitments</h2>
+          <section className="bg-neutral-50 rounded-2xl p-8">
+            <h2 className="text-2xl font-bold text-neutral-900 mb-6">Our commitments</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {[
                 'No financial relationships with manufacturers',
@@ -110,7 +105,7 @@ export default function Trust() {
                 'ISO 17025 accreditation in progress',
                 'Results are final — we do not revise passing COAs',
               ].map((item) => (
-                <div key={item} className="flex items-center gap-3 text-sm text-slate-700">
+                <div key={item} className="flex items-center gap-3 text-sm text-neutral-700">
                   <CheckCircle size={16} className="text-brand-500 flex-shrink-0" />
                   {item}
                 </div>
@@ -120,19 +115,17 @@ export default function Trust() {
 
           <section className="text-center bg-black rounded-2xl p-10">
             <h2 className="text-2xl font-bold text-white mb-3">Ready to get verified results?</h2>
-            <p className="text-slate-400 mb-6">No minimums. No contracts. First order 50% off.</p>
+            <p className="text-neutral-400 mb-6">No minimums. No contracts. First order 50% off.</p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <Link to="/order-new" className="btn-primary gap-2">
                 Submit Samples <ArrowRight size={16} />
               </Link>
-              <Link to="/verify" className="inline-flex items-center justify-center gap-2 px-5 py-2.5 border border-neutral-700 text-slate-300 font-medium rounded-lg hover:bg-slate-800 transition-colors">
+              <Link to="/verify" className="inline-flex items-center justify-center gap-2 px-5 py-2.5 border border-neutral-700 text-neutral-300 font-medium rounded-lg hover:bg-neutral-800 transition-colors">
                 Verify a COA
               </Link>
             </div>
           </section>
         </div>
       </div>
-      <Footer />
-    </>
   );
 }

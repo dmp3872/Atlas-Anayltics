@@ -126,9 +126,7 @@ export default function AdminCoaRegistry({ coas, onSave }: Props) {
             key={f}
             type="button"
             onClick={() => setFilter(f)}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md border capitalize ${
-              filter === f ? 'bg-black text-white border-black' : 'border-atlas-border'
-            }`}
+            className={`filter-chip capitalize ${filter === f ? 'filter-chip-active' : ''}`}
           >
             {f === 'pipeline' ? 'In workflow' : f}
           </button>

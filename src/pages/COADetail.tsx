@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
-import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useParams, Link, useSearchParams } from 'react-router-dom';
 import {
   Shield, CheckCircle, XCircle,
-  ArrowLeft, Copy, Check, Droplets, Boxes, AlertTriangle, Download,
+  Copy, Check, Droplets, Boxes, AlertTriangle, Download,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { COA } from '../lib/types';
 import { formatDate } from '../lib/utils';
-import { verifyCoaIntegrity } from '../lib/coaVerify';
+import { verifyCoaIntegrity, verifyUrl } from '../lib/coaVerify';
 import { hydrateCoaImages, prepareVialImage, readCoaPdfStats, resolveCoaHeaderLogo, resolveCoaWatermark } from '../lib/coaImages';
 import { matrixTypeFromSampleMetadata } from '../lib/coaPanels';
 import { partitionCoaPanels, panelStatusLabel, panelStatusToneClass, resolvePanelPass, formatCoaResultDisplay } from '../lib/coaDisplayPanels';
@@ -20,9 +20,8 @@ import { coaHasDirectorSignature, coaSignatureProgress, coaWorkflowStage } from 
 import { sampleIntakeAt } from '../lib/services/orderWorkflow';
 import { useAuth } from '../context/AuthContext';
 import { resolveUserRole } from '../lib/roles';
-import Header from '../components/layout/Header';
-import Footer from '../components/layout/Footer';
 import AtlasLogo from '../components/brand/AtlasLogo';
+import PageBackLink from '../components/ui/PageBackLink';
 import InteractiveChromatogram from '../components/coa/InteractiveChromatogram';
 import CoaQrCode from '../components/coa/CoaQrCode';
 import { chromatogramNoteForSample } from '../lib/coaCompoundNotes';
@@ -76,11 +75,9 @@ function IntegrityBadge({ status }: { status: ReturnType<typeof verifyCoaIntegri
 
 export default function COADetail() {
   const { slug } = useParams<{ slug: string }>();
-  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const autoPrint = searchParams.get('print') === '1';
   const exportMode = searchParams.get('export') === '1';
-  const hideChrome = autoPrint || exportMode;
   const { user, profile, loading: authLoading } = useAuth();
   const role = resolveUserRole(profile, user?.email);
   const isStaff = role === 'chemist' || role === 'admin' || role === 'verifier' || role === 'reviewer';
@@ -88,6 +85,7 @@ export default function COADetail() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [copiedVerify, setCopiedVerify] = useState(false);
   const [logoWatermark, setLogoWatermark] = useState('');
   const [hplcPhoto, setHplcPhoto] = useState('');
   const [clientLogo, setClientLogo] = useState('');
@@ -294,6 +292,13 @@ export default function COADetail() {
     setTimeout(() => setCopied(false), 2000);
   }
 
+  async function copyVerifyLink() {
+    if (!coa?.slug) return;
+    await navigator.clipboard.writeText(verifyUrl(coa.slug));
+    setCopiedVerify(true);
+    setTimeout(() => setCopiedVerify(false), 2000);
+  }
+
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center bg-white">
       <div className="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
@@ -301,8 +306,6 @@ export default function COADetail() {
   );
 
   if (notFound) return (
-    <>
-      <div className="no-print"><Header /></div>
       <div className="min-h-screen bg-neutral-50 flex items-center justify-center px-4">
         <div className="text-center">
           <XCircle size={28} className="text-red-500 mx-auto mb-4" />
@@ -310,8 +313,6 @@ export default function COADetail() {
           <Link to="/verify" className="btn-primary">Try Verification Tool</Link>
         </div>
       </div>
-      <div className="no-print"><Footer /></div>
-    </>
   );
 
   if (!coa) return null;
@@ -326,26 +327,20 @@ export default function COADetail() {
     ),
   );
   const isOwner = !!user && user.id === coa.user_id;
-  const backFallback = isStaff
-    ? '/lab?tab=workflow'
-    : isOwner
-      ? '/dashboard/coas'
-      : '/coa-library';
-  const backLabel = isStaff
-    ? 'Back to Lab Console'
-    : isOwner
-      ? 'Back to My COAs'
-      : 'Public Library';
-
-  function goBack() {
-    const ref = document.referrer;
-    const sameOrigin = !!ref && ref.startsWith(window.location.origin);
-    if (sameOrigin && window.history.length > 1) {
-      navigate(-1);
-      return;
-    }
-    navigate(backFallback);
-  }
+  const backFallback = role === 'verifier'
+    ? '/verify-portal'
+    : isStaff
+      ? '/lab?tab=workflow'
+      : isOwner
+        ? '/dashboard/coas'
+        : '/coa-library';
+  const backLabel = role === 'verifier'
+    ? 'Back to Verify Portal'
+    : isStaff
+      ? 'Back to Lab Console'
+      : isOwner
+        ? 'Back to My COAs'
+        : 'Back to COA Library';
 
   const integrity = verifyCoaIntegrity(coa);
   const stats = readCoaPdfStats(coa);
@@ -449,10 +444,6 @@ export default function COADetail() {
   })();
 
   return (
-    <>
-      {!hideChrome && (
-        <div className="no-print"><Header /></div>
-      )}
       <div className="min-h-screen bg-white coa-print-root flex flex-col">
         <div className="coa-header-bar">
           <div className="max-w-4xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -506,13 +497,7 @@ export default function COADetail() {
 
         <div className="max-w-4xl mx-auto px-4 sm:px-6 py-4 coa-print-body flex-1 flex flex-col w-full">
           <div className="flex items-center justify-between gap-3 mb-3 no-print">
-            <button
-              type="button"
-              onClick={goBack}
-              className="inline-flex items-center gap-1.5 text-neutral-500 hover:text-brand-600 text-sm"
-            >
-              <ArrowLeft size={14} /> {backLabel}
-            </button>
+            <PageBackLink label={backLabel} to={backFallback} preferHistory className="mb-0" />
             <div className="flex items-center gap-2 flex-wrap justify-end">
               <IntegrityBadge status={integrity} />
               {isOwner && !coa.is_public && (
@@ -826,17 +811,18 @@ export default function COADetail() {
               <Download size={16} /> {downloadingPdf ? 'Saving…' : 'Download PDF'}
             </button>
             <button type="button" onClick={copyLink} className="btn-outline flex-1 gap-2 justify-center">
-              {copied ? <><Check size={16} className="text-atlas-success" /> Copied</> : <><Copy size={16} /> Copy Link</>}
+              {copied ? <><Check size={16} className="text-atlas-success" /> Copied</> : <><Copy size={16} /> Copy COA Link</>}
             </button>
-            <Link to={`/verify?slug=${encodeURIComponent(coa.slug)}`} className="btn-primary flex-1 gap-2 justify-center">
+            <button type="button" onClick={() => void copyVerifyLink()} className="btn-outline flex-1 gap-2 justify-center">
+              {copiedVerify
+                ? <><Check size={16} className="text-atlas-success" /> Verify Link Copied</>
+                : <><Shield size={16} /> Copy Verify Link</>}
+            </button>
+            <Link to={`/verify?id=${encodeURIComponent(coa.slug)}`} className="btn-primary flex-1 gap-2 justify-center">
               <Shield size={16} /> Verify
             </Link>
           </div>
         </div>
       </div>
-      {!hideChrome && (
-        <div className="no-print"><Footer /></div>
-      )}
-    </>
   );
 }

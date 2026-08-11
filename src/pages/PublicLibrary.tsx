@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, Shield, CheckCircle, XCircle, Clock, ExternalLink, FileText } from 'lucide-react';
+import { Search, Shield, ExternalLink, FileText } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { COA } from '../lib/types';
 import { formatDate } from '../lib/utils';
-import Header from '../components/layout/Header';
-import Footer from '../components/layout/Footer';
+import ResultBadge from '../components/ui/ResultBadge';
+import EmptyState from '../components/ui/EmptyState';
 
 export default function PublicLibrary() {
   const [coas, setCoas] = useState<COA[]>([]);
@@ -32,20 +32,12 @@ export default function PublicLibrary() {
     c.batch_number?.toLowerCase().includes(search.toLowerCase())
   );
 
-  function ResultBadge({ result }: { result: string }) {
-    if (result === 'pass') return <span className="badge-pass"><CheckCircle size={11} /> Pass</span>;
-    if (result === 'fail') return <span className="badge-fail"><XCircle size={11} /> Fail</span>;
-    return <span className="badge-pending"><Clock size={11} /> Pending</span>;
-  }
-
   return (
-    <>
-      <Header />
-      <div className="min-h-screen bg-slate-50">
-        <div className="bg-black py-14 px-4">
-          <div className="max-w-5xl mx-auto">
-            <h1 className="text-4xl font-bold text-white mb-2">Public COA Library</h1>
-            <p className="text-slate-400 text-lg mb-6">Browse all publicly available AccuMark certificates of analysis.</p>
+      <div className="min-h-screen bg-neutral-50">
+        <div className="coa-header-bar">
+          <div className="max-w-5xl mx-auto px-4 sm:px-6 py-10">
+            <h1 className="text-3xl font-bold text-white mb-2">Public COA Library</h1>
+            <p className="text-neutral-400 text-base mb-6">Browse all publicly available AccuMark certificates of analysis.</p>
             <div className="relative max-w-xl">
               <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
               <input
@@ -61,7 +53,7 @@ export default function PublicLibrary() {
 
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-10">
           <div className="flex items-center justify-between mb-5">
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-neutral-500">
               {loading ? 'Loading...' : `${filtered.length} certificate${filtered.length !== 1 ? 's' : ''}`}
             </p>
             <Link to="/verify" className="flex items-center gap-1.5 text-sm text-brand-600 font-medium hover:text-brand-700">
@@ -71,16 +63,16 @@ export default function PublicLibrary() {
 
           {loading ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {[...Array(9)].map((_, i) => <div key={i} className="h-36 bg-slate-100 rounded-xl animate-pulse" />)}
+              {[...Array(9)].map((_, i) => <div key={i} className="h-36 bg-neutral-100 rounded-lg animate-pulse" />)}
             </div>
           ) : filtered.length === 0 ? (
-            <div className="text-center py-20">
-              <FileText size={40} className="mx-auto mb-4 text-slate-300" />
-              <p className="font-medium text-slate-900 mb-1">No certificates found</p>
-              <p className="text-sm text-slate-500">
-                {coas.length === 0 ? 'The public library is currently empty.' : 'Try adjusting your search.'}
-              </p>
-            </div>
+            <EmptyState
+              icon={FileText}
+              title="No certificates found"
+              description={coas.length === 0 ? 'The public library is currently empty.' : 'Try adjusting your search.'}
+              actionLabel="Verify a COA"
+              actionTo="/verify"
+            />
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {filtered.map((coa) => (
@@ -91,11 +83,11 @@ export default function PublicLibrary() {
                     </div>
                     <ResultBadge result={coa.overall_result} />
                   </div>
-                  <h3 className="font-semibold text-slate-900 mb-1 truncate">{coa.display_name || coa.sample_name}</h3>
-                  {coa.company_name && <p className="text-xs text-slate-500 mb-2 truncate">{coa.company_name}</p>}
-                  <div className="flex items-center justify-between mt-3 text-xs text-slate-500">
+                  <h3 className="font-semibold text-black mb-1 truncate">{coa.display_name || coa.sample_name}</h3>
+                  {coa.company_name && <p className="text-xs text-neutral-500 mb-2 truncate">{coa.company_name}</p>}
+                  <div className="flex items-center justify-between mt-3 text-xs text-neutral-500">
                     <div className="flex items-center gap-3">
-                      {coa.purity_percent && <span className="font-semibold text-slate-700">{coa.purity_percent}% purity</span>}
+                      {coa.purity_percent && <span className="font-semibold text-neutral-700">{coa.purity_percent}% purity</span>}
                       <span>{formatDate(coa.issued_at)}</span>
                     </div>
                     <ExternalLink size={12} className="text-brand-500 group-hover:text-brand-600" />
@@ -106,7 +98,5 @@ export default function PublicLibrary() {
           )}
         </div>
       </div>
-      <Footer />
-    </>
   );
 }

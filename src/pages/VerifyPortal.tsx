@@ -16,6 +16,7 @@ import {
 import { fetchAndAppendCoaUpdateLog } from '../lib/coaUpdateLog';
 import { COA_LIST_COLUMNS } from '../lib/coaSelect';
 import StaffHeader from '../components/layout/StaffHeader';
+import ResultBadge from '../components/ui/ResultBadge';
 
 type CompanyProfile = {
   name: string;
@@ -46,11 +47,6 @@ function StageIcon({ stage }: { stage: CoaWorkflowStage }) {
   }
 }
 
-function ResultBadge({ result }: { result: string }) {
-  if (result === 'pass') return <span className="badge-pass"><CheckCircle size={10} /> Pass</span>;
-  if (result === 'fail') return <span className="badge-fail"><XCircle size={10} /> Fail</span>;
-  return <span className="badge-pending"><Clock size={10} /> Pending</span>;
-}
 
 function normalizeCompanyName(name: string) {
   return name.trim().toLowerCase();

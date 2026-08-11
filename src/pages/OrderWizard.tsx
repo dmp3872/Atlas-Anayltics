@@ -477,18 +477,18 @@ export default function OrderWizard() {
   if (success) {
     return (
       <div className="min-h-screen bg-neutral-100 flex flex-col">
-        <header className="coa-header-bar sticky top-0 z-30 border-b border-neutral-800">
-          <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
+        <header className="coa-header-bar sticky top-0 z-30 border-b border-neutral-800 no-print">
+          <div className="app-header-inner max-w-6xl">
             <button type="button" onClick={() => navigate(homePath)} className="text-left">
               <AtlasLogo variant="light" size="sm" />
             </button>
-            <p className="font-bold text-white hidden sm:block">Order Confirmation</p>
+            <p className="font-bold text-white text-sm hidden sm:block">Order Confirmation</p>
             <button
               type="button"
               onClick={() => navigate(homePath)}
-              className="text-sm text-neutral-400 hover:text-white"
+              className="btn-back text-neutral-400 hover:text-white"
             >
-              {role === 'client' ? 'Dashboard' : 'Home'}
+              {role === 'client' ? '← Dashboard' : '← Home'}
             </button>
           </div>
         </header>
@@ -511,15 +511,15 @@ export default function OrderWizard() {
 
   return (
     <div className="min-h-screen bg-neutral-100 flex flex-col">
-      <header className="coa-header-bar sticky top-0 z-30 border-b border-neutral-800">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
+      <header className="coa-header-bar sticky top-0 z-30 border-b border-neutral-800 no-print">
+        <div className="app-header-inner max-w-6xl relative">
           <Link to="/dashboard"><AtlasLogo variant="light" size="sm" /></Link>
           <div className="absolute left-1/2 -translate-x-1/2 text-center hidden sm:block">
-            <p className="font-bold leading-tight text-white">Submit Samples for Testing</p>
+            <p className="font-bold leading-tight text-white text-sm">Submit Samples for Testing</p>
             <p className="text-[11px] text-neutral-500">Client Portal</p>
           </div>
           <div className="flex items-center gap-2 sm:gap-4 ml-auto">
-            <Link to="/dashboard" className="text-sm text-neutral-400 hover:text-white flex items-center gap-1">
+            <Link to="/dashboard" className="btn-back text-neutral-400 hover:text-white">
               <ArrowLeft size={14} /> <span className="hidden sm:inline">Dashboard</span>
             </Link>
             <div className="flex items-center gap-2 pl-2 border-l border-neutral-700">
@@ -711,5 +711,6 @@ export default function OrderWizard() {
     </div>
   );
 }
+
 
 

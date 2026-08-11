@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Key, Plus, Trash2, Copy, Check, Eye, EyeOff, AlertCircle, ExternalLink } from 'lucide-react';
-import DashboardLayout from '../components/layout/DashboardLayout';
+import ClientPortalLayout from '../components/layout/ClientPortalLayout';
+import EmptyState from '../components/ui/EmptyState';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { ApiKey } from '../lib/types';
@@ -93,12 +94,12 @@ export default function APIKeys() {
   }
 
   return (
-    <DashboardLayout>
+    <ClientPortalLayout>
       <div className="max-w-3xl">
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">API Keys</h1>
-            <p className="text-slate-500 text-sm mt-0.5">Manage keys for WooCommerce integration and AccuVerify badge embedding.</p>
+            <h1 className="portal-page-title">API Keys</h1>
+            <p className="portal-page-subtitle">Manage keys for WooCommerce integration and AccuVerify badge embedding.</p>
           </div>
           <button onClick={() => setShowCreate(true)} className="btn-primary text-sm gap-1.5">
             <Plus size={15} /> New Key
@@ -115,7 +116,7 @@ export default function APIKeys() {
               </div>
             </div>
             <div className="flex items-center gap-2 bg-white rounded-lg border border-amber-200 px-4 py-3">
-              <code className="flex-1 text-sm font-mono text-slate-700 break-all">{newKeyPlaintext}</code>
+              <code className="flex-1 text-sm font-mono text-neutral-700 break-all">{newKeyPlaintext}</code>
               <button onClick={() => copyKey(newKeyPlaintext)} className="flex-shrink-0 p-1.5 hover:bg-amber-100 rounded text-amber-700">
                 {copied ? <Check size={16} className="text-emerald-500" /> : <Copy size={16} />}
               </button>
@@ -128,7 +129,7 @@ export default function APIKeys() {
 
         {showCreate && (
           <div className="card p-5 mb-5 border-brand-200 bg-brand-50">
-            <h3 className="font-semibold text-slate-900 mb-3">Create New API Key</h3>
+            <h3 className="font-semibold text-neutral-900 mb-3">Create New API Key</h3>
             <div className="flex gap-3">
               <input
                 type="text"
@@ -146,16 +147,16 @@ export default function APIKeys() {
           </div>
         )}
 
-        <div className="card p-5 mb-6 bg-slate-50 border-slate-200">
-          <h3 className="font-semibold text-slate-900 mb-2 flex items-center gap-2">
+        <div className="card p-5 mb-6 bg-neutral-50 border-neutral-200">
+          <h3 className="font-semibold text-neutral-900 mb-2 flex items-center gap-2">
             <ExternalLink size={15} /> WooCommerce / AccuVerify Embed
           </h3>
-          <p className="text-sm text-slate-600 mb-3">
+          <p className="text-sm text-neutral-600 mb-3">
             Use your API key to embed an AccuVerify badge on product pages or integrate with WooCommerce.
           </p>
-          <div className="bg-white rounded-lg border border-slate-200 p-4">
-            <p className="text-xs font-semibold text-slate-500 uppercase mb-2">Embed Code</p>
-            <code className="text-xs text-slate-700 font-mono break-all">
+          <div className="bg-white rounded-lg border border-neutral-200 p-4">
+            <p className="text-xs font-semibold text-neutral-500 uppercase mb-2">Embed Code</p>
+            <code className="text-xs text-neutral-700 font-mono break-all">
               {`<script src="https://atlasanalytics.io/embed/verify.js" data-key="YOUR_API_KEY" data-coa="COA_SLUG"></script>`}
             </code>
           </div>
@@ -163,37 +164,36 @@ export default function APIKeys() {
 
         {loading ? (
           <div className="space-y-3">
-            {[...Array(2)].map((_, i) => <div key={i} className="h-20 bg-slate-100 rounded-xl animate-pulse" />)}
+            {[...Array(2)].map((_, i) => <div key={i} className="h-20 bg-neutral-100 rounded-xl animate-pulse" />)}
           </div>
         ) : keys.length === 0 ? (
-          <div className="card p-12 text-center">
-            <Key size={32} className="mx-auto mb-3 text-slate-300" />
-            <p className="font-medium text-slate-900 mb-1">No API keys yet</p>
-            <p className="text-sm text-slate-500 mb-4">Create your first key to start integrating Atlas Analytics.</p>
-            <button onClick={() => setShowCreate(true)} className="btn-primary text-sm gap-1.5">
-              <Plus size={15} /> Create API Key
-            </button>
-          </div>
+          <EmptyState
+            icon={Key}
+            title="No API keys yet"
+            description="Create your first key to start integrating Atlas Analytics."
+            actionLabel="Create API Key"
+            onAction={() => setShowCreate(true)}
+          />
         ) : (
           <div className="space-y-3">
             {keys.map((apiKey) => (
               <div key={apiKey.id} className="card p-5">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex items-center gap-3 flex-1 min-w-0">
-                    <div className="w-9 h-9 bg-slate-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                      <Key size={17} className="text-slate-500" />
+                    <div className="w-9 h-9 bg-neutral-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                      <Key size={17} className="text-neutral-500" />
                     </div>
                     <div className="min-w-0">
-                      <p className="font-semibold text-slate-900">{apiKey.label}</p>
+                      <p className="font-semibold text-neutral-900">{apiKey.label}</p>
                       <div className="flex items-center gap-2 mt-1">
-                        <code className="text-xs font-mono text-slate-500">
+                        <code className="text-xs font-mono text-neutral-500">
                           {visibleKeys.has(apiKey.id) ? apiKey.key_prefix + '•'.repeat(20) : apiKey.key_prefix + '•'.repeat(20)}
                         </code>
-                        <button onClick={() => toggleVisible(apiKey.id)} className="text-slate-400 hover:text-slate-600">
+                        <button onClick={() => toggleVisible(apiKey.id)} className="text-neutral-400 hover:text-neutral-600">
                           {visibleKeys.has(apiKey.id) ? <EyeOff size={13} /> : <Eye size={13} />}
                         </button>
                       </div>
-                      <p className="text-xs text-slate-400 mt-0.5">
+                      <p className="text-xs text-neutral-400 mt-0.5">
                         Created {formatDateTime(apiKey.created_at)}
                         {apiKey.last_used_at && ` · Last used ${formatDateTime(apiKey.last_used_at)}`}
                       </p>
@@ -205,7 +205,7 @@ export default function APIKeys() {
                     </span>
                     <button
                       onClick={() => deleteKey(apiKey.id)}
-                      className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                      className="p-2 text-neutral-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                     >
                       <Trash2 size={15} />
                     </button>
@@ -216,6 +216,6 @@ export default function APIKeys() {
           </div>
         )}
       </div>
-    </DashboardLayout>
+    </ClientPortalLayout>
   );
 }
