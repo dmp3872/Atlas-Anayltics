@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { BarChart3, Clock, FlaskConical, TrendingUp } from 'lucide-react';
 import { COA, Order, OrderSample } from '../../lib/types';
 import {
-  averageDailyIntake, dailySampleIntake, intakeSparklineMax,
+  averageDailyIntake, DailyIntakePoint, dailySampleIntake, intakeSparklineMax,
   testTurnaroundStats, testVolumeStats,
 } from '../../lib/labAnalytics';
 import { buildQueueItems } from '../../lib/labQueue';
@@ -11,6 +11,78 @@ interface Props {
   samples: OrderSample[];
   orders: Order[];
   coas: COA[];
+}
+
+const CHART_HEIGHT_PX = 160;
+
+function IntakeBarChart({ points, max }: { points: DailyIntakePoint[]; max: number }) {
+  const yTicks = useMemo(() => {
+    const top = Math.max(1, max);
+    if (top <= 2) return [0, 1, 2].filter(n => n <= top);
+    if (top <= 5) return [0, Math.ceil(top / 2), top];
+    return [0, Math.round(top / 2), top];
+  }, [max]);
+
+  return (
+    <div className="flex gap-2 pt-4">
+      <div className="flex flex-col justify-between h-[160px] shrink-0 pr-1 text-[10px] tabular-nums text-neutral-400 text-right w-5 self-end mb-[22px]">
+        {[...yTicks].reverse().map(tick => (
+          <span key={tick}>{tick}</span>
+        ))}
+      </div>
+
+      <div className="flex-1 min-w-0">
+        <div className="relative h-[160px] border-b border-l border-atlas-border">
+          {yTicks.slice(1).map(tick => (
+            <div
+              key={tick}
+              className="absolute left-0 right-0 border-t border-dashed border-neutral-200 pointer-events-none"
+              style={{ bottom: `${(tick / max) * 100}%` }}
+            />
+          ))}
+
+          <div className="absolute inset-0 flex items-end gap-px sm:gap-0.5 px-0.5">
+            {points.map(point => {
+              const heightPx = point.count > 0
+                ? Math.max(4, Math.round((point.count / max) * CHART_HEIGHT_PX))
+                : 0;
+              return (
+                <div
+                  key={point.date}
+                  className="flex-1 min-w-0 h-full flex items-end justify-center group"
+                  title={`${point.label}: ${point.count} sample${point.count === 1 ? '' : 's'}`}
+                >
+                  <div className="relative w-full max-w-[14px]" style={{ height: `${heightPx}px` }}>
+                    {point.count > 0 && (
+                      <span className="absolute left-1/2 -translate-x-1/2 -top-3.5 text-[9px] font-semibold text-brand-800 tabular-nums leading-none whitespace-nowrap">
+                        {point.count}
+                      </span>
+                    )}
+                    {point.count > 0 && (
+                      <div className="w-full h-full rounded-t bg-brand-500 group-hover:bg-brand-600 transition-colors" />
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="flex gap-px sm:gap-0.5 px-0.5 mt-1.5">
+          {points.map((point, i) => {
+            const show = i === 0 || i === points.length - 1 || i % 5 === 0;
+            return (
+              <div key={point.date} className="flex-1 min-w-0 text-center">
+                <span className={`text-[8px] text-neutral-400 block truncate ${show ? '' : 'invisible'}`}>
+                  {point.label}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function OpsDashboard({ samples, orders, coas }: Props) {
@@ -42,21 +114,7 @@ export default function OpsDashboard({ samples, orders, coas }: Props) {
         <div className="card p-5">
           <h3 className="font-bold text-black mb-1">Sample intake — last 30 days</h3>
           <p className="text-xs text-neutral-500 mb-4">New samples received per day</p>
-          <div className="flex items-end gap-1 h-40">
-            {intake.map(point => (
-              <div key={point.date} className="flex-1 flex flex-col items-center gap-1 min-w-0">
-                <span className="text-[9px] text-neutral-500 tabular-nums">{point.count || ''}</span>
-                <div
-                  className="w-full rounded-t bg-brand-500/90 min-h-[2px] transition-all"
-                  style={{ height: `${Math.max(2, (point.count / maxIntake) * 100)}%` }}
-                  title={`${point.label}: ${point.count} samples`}
-                />
-                <span className="text-[8px] text-neutral-400 truncate w-full text-center hidden sm:block">
-                  {point.label.replace(' ', '\u00a0')}
-                </span>
-              </div>
-            ))}
-          </div>
+          <IntakeBarChart points={intake} max={maxIntake} />
         </div>
 
         <div className="card p-5">
