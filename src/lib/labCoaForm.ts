@@ -510,12 +510,33 @@ export function resolveCasNumber(
   return '';
 }
 
-/** Normalizes a free-typed mg amount into "10.0 mg" (always includes a decimal). */
-export function formatMgAmount(raw: string): string {
-  const numeric = raw.trim().replace(/\s*mg\s*$/i, '').trim();
+/** Normalizes claim/result quantity units for COA display (IU stays IU, not mg). */
+export function normalizeClaimUnit(unit?: string | null): string {
+  const u = (unit || '').trim();
+  if (!u || /^other$/i.test(u)) return 'mg';
+  if (/^iu$/i.test(u)) return 'IU';
+  if (/^ml$/i.test(u)) return 'mL';
+  if (/^(ug|µg)$/i.test(u)) return 'mcg';
+  return u;
+}
+
+const QUANTITY_UNIT_SUFFIX_RE = /\s*(?:mg|mcg|µg|ug|g|mL|ml|IU|iu)\s*$/i;
+
+/** Strip a trailing quantity unit (mg / IU / mcg / …) from a typed amount. */
+export function stripQuantityUnit(raw: string): string {
+  return (raw || '').trim().replace(QUANTITY_UNIT_SUFFIX_RE, '').trim();
+}
+
+/**
+ * Normalizes a free-typed quantity into "10.0 mg" / "5000.0 IU" (always includes a decimal).
+ * Uses the selected label-claim unit so HCG and similar assays can show IU instead of mg.
+ */
+export function formatMgAmount(raw: string, unit: string = 'mg'): string {
+  const u = normalizeClaimUnit(unit);
+  const numeric = stripQuantityUnit(raw);
   if (!numeric) return '';
   const formatted = formatCoaDecimal(numeric);
-  return formatted ? `${formatted} mg` : '';
+  return formatted ? `${formatted} ${u}` : '';
 }
 
 /**
@@ -613,9 +634,9 @@ export function formatCoaDecimal(raw: string | number): string {
   return (Math.round(n * 10) / 10).toFixed(1);
 }
 
-/** Joins conformity row net-content amounts into one comma-separated string, e.g. "10 mg, 10.1 mg". */
-export function joinConformityMg(rows: ConformityPeptideRow[]): string {
-  return rows.map(r => formatMgAmount(r.netContent)).filter(Boolean).join(', ');
+/** Joins conformity row net-content amounts into one comma-separated string, e.g. "10.0 mg, 10.1 mg". */
+export function joinConformityMg(rows: ConformityPeptideRow[], unit: string = 'mg'): string {
+  return rows.map(r => formatMgAmount(r.netContent, unit)).filter(Boolean).join(', ');
 }
 
 /** Joins conformity row net-purity amounts into one comma-separated string, e.g. "9.8%, 9.7%". */
@@ -778,11 +799,13 @@ export function buildLabResultsFromCoa(
       if (!name) return null;
       const parts = (p.result || '')
         .split(',')
-        .map(s => s.trim().replace(/\s*mg\s*$/i, '').trim())
+        .map(s => stripQuantityUnit(s.trim()))
         .filter(Boolean);
       return {
         name,
-        claimMg: (p.specification || '').replace(/^label claim:?\s*/i, '').replace(/\s*mg\s*$/i, '').trim(),
+        claimMg: stripQuantityUnit(
+          (p.specification || '').replace(/^label claim:?\s*/i, ''),
+        ),
         parts,
       };
     })
@@ -825,7 +848,7 @@ export function buildLabResultsFromCoa(
     for (let i = 1; i <= maxExtraTotals; i += 1) {
       conformityPeptides.push({
         name: `Total (vial ${i + 1})`,
-        netContent: (netParts[i] || '').replace(/\s*mg\s*$/i, '').trim(),
+        netContent: stripQuantityUnit(netParts[i] || ''),
         netPurity: purityParts[i] || '',
       });
     }
@@ -921,7 +944,7 @@ export function buildLabResultsFromCoa(
   return {
     ...base,
     identification: idPanel?.result?.trim() || base.identification,
-    netContent: primaryNet.replace(/\s*mg$/i, '').trim() || primaryNet,
+    netContent: stripQuantityUnit(primaryNet) || primaryNet,
     netPurity: primaryPurity,
     assayMethod: parseAssayMethod(
       summary.assay_method
@@ -958,9 +981,10 @@ export function labResultsToPanelResults(
   claim?: { labeledContent?: string; labelClaimUnit?: string },
 ): PanelResult[] {
   const isBlend = results.blendPeptides.some(r => r.name.trim());
+  const claimUnit = normalizeClaimUnit(claim?.labelClaimUnit);
   const claimLabel = formatLabelClaim(
     (claim?.labeledContent || '').trim(),
-    ((claim?.labelClaimUnit || 'mg').trim() || 'mg'),
+    claimUnit,
   );
   const method = results.assayMethod || 'hplc_uv_vis';
   const methodLabel = ASSAY_METHOD_LABELS[method];
@@ -976,7 +1000,7 @@ export function labResultsToPanelResults(
       specification: isBlend
         ? 'Total peptide content'
         : (claimLabel ? `Label claim: ${claimLabel}` : 'Label claim'),
-      result: formatMgAmount(results.netContent) || results.netContent,
+      result: formatMgAmount(results.netContent, claimUnit) || results.netContent,
       pass: !!results.netContent.trim(),
     },
     {
@@ -990,17 +1014,19 @@ export function labResultsToPanelResults(
   for (const row of results.blendPeptides) {
     const name = row.name.trim();
     if (!name) continue;
-    const claim = row.claimMg.trim();
-    const contentParts = [formatMgAmount(row.netContent)].filter(Boolean);
+    const claimAmt = row.claimMg.trim();
+    const contentParts = [formatMgAmount(row.netContent, claimUnit)].filter(Boolean);
     for (const c of results.conformityPeptides) {
       if (isBlendTotalConformityRow(c.name)) continue;
       if (c.name.trim().toLowerCase() !== name.toLowerCase()) continue;
-      const formatted = formatMgAmount(c.netContent);
+      const formatted = formatMgAmount(c.netContent, claimUnit);
       if (formatted) contentParts.push(formatted);
     }
     rows.push({
       panel_name: blendContentPanelName(name),
-      specification: claim ? `Label claim: ${claim} mg` : 'Label claim',
+      specification: claimAmt
+        ? `Label claim: ${formatLabelClaim(claimAmt, claimUnit)}`
+        : 'Label claim',
       result: contentParts.join(', '),
       pass: contentParts.length > 0,
     });
@@ -1139,18 +1165,22 @@ function formatMeanNumber(values: number[]): string {
   return formatCoaDecimal(mean);
 }
 
-function collectContentPurityParts(results: LabCoaResults): {
+function collectContentPurityParts(
+  results: LabCoaResults,
+  unit: string = 'mg',
+): {
   contentParts: string[];
   purityParts: string[];
 } {
   const contentParts: string[] = [];
   const purityParts: string[] = [];
-  const asMg = (v: string) => formatMgAmount(v);
+  const claimUnit = normalizeClaimUnit(unit);
+  const asQty = (v: string) => formatMgAmount(v, claimUnit);
   const asPct = (v: string) => formatPurityPercent(v);
 
   // Primary assay fields = first vial tested. Conformity rows = additional measured vials
   // only (never seed them from label claim — that inflated averages for single-vial COAs).
-  if (results.netContent.trim()) contentParts.push(asMg(results.netContent));
+  if (results.netContent.trim()) contentParts.push(asQty(results.netContent));
   if (results.netPurity.trim()) purityParts.push(asPct(results.netPurity));
 
   const isBlend = results.blendPeptides.some(r => r.name.trim());
@@ -1165,11 +1195,11 @@ function collectContentPurityParts(results: LabCoaResults): {
       // Only explicit "Total …" rows (or unknown names) contribute to vial totals/purity.
       const nameKey = row.name.trim().toLowerCase();
       if (blendNames.has(nameKey) && !isBlendTotalConformityRow(row.name)) continue;
-      if (row.netContent.trim()) contentParts.push(asMg(row.netContent));
+      if (row.netContent.trim()) contentParts.push(asQty(row.netContent));
       if (row.netPurity.trim()) purityParts.push(asPct(row.netPurity));
       continue;
     }
-    if (row.netContent.trim()) contentParts.push(asMg(row.netContent));
+    if (row.netContent.trim()) contentParts.push(asQty(row.netContent));
     if (row.netPurity.trim()) purityParts.push(asPct(row.netPurity));
   }
   return { contentParts, purityParts };
@@ -1184,16 +1214,20 @@ export type AssayAverages = {
 };
 
 /** Mean net peptide content / purity from Issue COA assay + conformity rows. */
-export function computeLabAssayAverages(results: LabCoaResults): AssayAverages {
-  const { contentParts, purityParts } = collectContentPurityParts(results);
+export function computeLabAssayAverages(
+  results: LabCoaResults,
+  unit: string = 'mg',
+): AssayAverages {
+  const claimUnit = normalizeClaimUnit(unit);
+  const { contentParts, purityParts } = collectContentPurityParts(results, claimUnit);
   const contentNums = contentParts.flatMap(parseNumericTokens);
   const purityNums = purityParts.flatMap(parseNumericTokens).map(clampPurityPercent);
-  const meanMg = formatMeanNumber(contentNums);
+  const meanQty = formatMeanNumber(contentNums);
   const meanPct = formatMeanNumber(purityNums);
   const vialCount = Math.max(contentParts.length, purityParts.length, contentNums.length ? 1 : 0);
 
   return {
-    avg_net_peptide_content: meanMg ? `${meanMg} mg` : '',
+    avg_net_peptide_content: meanQty ? `${meanQty} ${claimUnit}` : '',
     avg_purity: meanPct ? `${meanPct}%` : '',
     mean_of_vials_tested: vialCount > 0 ? String(vialCount) : '',
     content_values: contentParts,
@@ -1208,6 +1242,9 @@ export function computeAssayAveragesFromPanels(
   summary?: Record<string, unknown> | null,
 ): AssayAverages {
   const hydrated = hydrateMultiVialPanelResults(panels, summary);
+  const claimUnit = normalizeClaimUnit(
+    typeof summary?.label_claim_unit === 'string' ? summary.label_claim_unit : 'mg',
+  );
   const net = hydrated.find(p => /net content|peptide content/i.test(p.panel_name) && !/^blend content\b/i.test(p.panel_name));
   const pur = hydrated.find(p => /net purity|^purity\b/i.test(p.panel_name));
   const contentParts = (net?.result || '')
@@ -1220,12 +1257,16 @@ export function computeAssayAveragesFromPanels(
     .filter(Boolean);
   const contentNums = contentParts.flatMap(parseNumericTokens);
   const purityNums = purityParts.flatMap(parseNumericTokens).map(clampPurityPercent);
-  const meanMg = formatMeanNumber(contentNums);
+  const meanQty = formatMeanNumber(contentNums);
   const meanPct = formatMeanNumber(purityNums);
   const vialCount = Math.max(contentParts.length, purityParts.length, contentNums.length ? 1 : 0);
 
+  // Prefer unit already present on measured results (e.g. "5000.0 IU") over summary fallback.
+  const unitFromResult = contentParts[0]?.match(/\b(mg|mcg|µg|ug|g|mL|ml|IU|iu)\b/i)?.[1];
+  const displayUnit = unitFromResult ? normalizeClaimUnit(unitFromResult) : claimUnit;
+
   return {
-    avg_net_peptide_content: meanMg ? `${meanMg} mg` : '',
+    avg_net_peptide_content: meanQty ? `${meanQty} ${displayUnit}` : '',
     avg_purity: meanPct
       ? `${meanPct}%`
       : (purityPercent != null && Number.isFinite(purityPercent) ? `${purityPercent}%` : ''),
