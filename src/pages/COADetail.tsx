@@ -832,7 +832,7 @@ export default function COADetail() {
                 onClick={() => setBrandModalOpen(true)}
                 className="btn-outline flex-1 gap-2 justify-center"
               >
-                <Building2 size={16} /> Get branded copy · $50
+                <Building2 size={16} /> Additional COA $50
               </button>
             )}
             <button

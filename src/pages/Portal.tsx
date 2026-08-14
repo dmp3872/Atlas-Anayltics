@@ -846,7 +846,7 @@ export default function Portal() {
                                         onClick={() => setBrandCoa(coa)}
                                         className="btn-ghost text-[11px] py-1 px-2 gap-1 inline-flex text-brand-700"
                                       >
-                                        <Building2 size={11} /> Brand · $50
+                                        <Building2 size={11} /> Additional COA $50
                                       </button>
                                     )}
                                   </div>
