@@ -579,7 +579,7 @@ export default function CoaPdfPrepModal({ coa, sampleMetadata = null, onClose, o
                   value={avgNetPeptide}
                   onChange={e => setAvgNetPeptide(e.target.value)}
                   className="input-field"
-                  placeholder="e.g. 12.4 mg"
+                  placeholder={`e.g. 12.4 ${labelClaimUnit || 'mg'}`}
                 />
               </div>
               <div>

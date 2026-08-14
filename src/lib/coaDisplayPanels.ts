@@ -1,15 +1,27 @@
 import { PanelResult } from './types';
 
-function normalizeContent(raw: string): string {
+const QTY_UNIT_RE = /mg|mcg|µg|ug|g|mL|ml|IU|iu/i;
+
+function displayQtyUnit(unit?: string): string {
+  const u = (unit || 'mg').trim();
+  if (/^iu$/i.test(u)) return 'IU';
+  if (/^ml$/i.test(u)) return 'mL';
+  if (/^(ug|µg)$/i.test(u)) return 'mcg';
+  return u || 'mg';
+}
+
+/** Normalize quantity tokens; preserve IU/mcg/etc. Bare numbers default to `defaultUnit` (usually mg). */
+function normalizeContent(raw: string, defaultUnit: string = 'mg'): string {
   const t = raw.trim();
   if (!t) return '';
-  // "20.5mg" / "20 mg" / "20.5" / "20" → "20.5 mg" / "20.0 mg"
-  const m = t.match(/^(-?\d+(?:\.\d+)?)\s*(mg)?$/i);
+  const m = t.match(new RegExp(`^(-?\\d+(?:\\.\\d+)?)\\s*(${QTY_UNIT_RE.source})?$`, 'i'));
   if (m) {
     const n = Number(m[1]);
-    if (Number.isFinite(n)) return `${(Math.round(n * 10) / 10).toFixed(1)} mg`;
+    if (Number.isFinite(n)) {
+      return `${(Math.round(n * 10) / 10).toFixed(1)} ${displayQtyUnit(m[2] || defaultUnit)}`;
+    }
   }
-  return t.replace(/(\d)\s*mg\b/i, '$1 mg');
+  return t.replace(/(\d)\s*(mg|mcg|µg|ug|g|mL|ml|IU|iu)\b/gi, (_, d, u) => `${d} ${displayQtyUnit(u)}`);
 }
 
 function normalizePurity(raw: string): string {
@@ -37,7 +49,7 @@ export function parseConformityResult(result: string): { content: string; purity
       if (/%/.test(part)) purity = normalizePurity(part);
       else if (content) purity = normalizePurity(part);
       else content = normalizeContent(part);
-    } else if (/mg/i.test(part) || /^\d+(\.\d+)?$/.test(part)) {
+    } else if (QTY_UNIT_RE.test(part) || /^\d+(\.\d+)?$/.test(part)) {
       content = normalizeContent(part);
     } else if (!content) {
       content = part;
@@ -48,10 +60,13 @@ export function parseConformityResult(result: string): { content: string; purity
 
   // Single token with both pieces jammed together (rare)
   if (!content && !purity && raw) {
-    const combo = raw.match(/(-?\d+(?:\.\d+)?)\s*mg.*?(-?\d+(?:\.\d+)?)\s*%?/i);
+    const combo = raw.match(new RegExp(
+      `(-?\\d+(?:\\.\\d+)?)\\s*(${QTY_UNIT_RE.source}).*?(-?\\d+(?:\\.\\d+)?)\\s*%?`,
+      'i',
+    ));
     if (combo) {
-      content = normalizeContent(`${combo[1]} mg`);
-      purity = normalizePurity(combo[2]);
+      content = normalizeContent(`${combo[1]} ${combo[2]}`);
+      purity = normalizePurity(combo[3]);
     }
   }
 
@@ -245,7 +260,7 @@ export function panelStatusToneClass(pass: boolean | null): string {
   return 'text-neutral-500';
 }
 
-/** Ensure mg / % tokens on COA result strings include a decimal (10 mg → 10.0 mg).
+/** Ensure quantity / % tokens on COA result strings include a decimal (10 mg → 10.0 mg, 5000 IU → 5000.0 IU).
  *  Max reportable purity (99.8%) is shown as "99.8% + 0.18%" in Results.
  */
 export function formatCoaResultDisplay(raw: string): string {
@@ -254,10 +269,19 @@ export function formatCoaResultDisplay(raw: string): string {
     .split(/\s*,\s*/)
     .map(part => {
       const t = part.trim();
-      const mg = t.match(/^(-?\d+(?:\.\d+)?)\s*mg$/i);
-      if (mg) {
-        const n = Number(mg[1]);
-        if (Number.isFinite(n)) return `${(Math.round(n * 10) / 10).toFixed(1)} mg`;
+      const qty = t.match(/^(-?\d+(?:\.\d+)?)\s*(mg|mcg|µg|ug|g|mL|ml|IU|iu)$/i);
+      if (qty) {
+        const n = Number(qty[1]);
+        if (Number.isFinite(n)) {
+          const unit = qty[2].toLowerCase() === 'iu'
+            ? 'IU'
+            : qty[2].toLowerCase() === 'ml'
+              ? 'mL'
+              : qty[2].toLowerCase() === 'ug' || qty[2] === 'µg'
+                ? 'mcg'
+                : qty[2];
+          return `${(Math.round(n * 10) / 10).toFixed(1)} ${unit}`;
+        }
       }
       // Purity with optional uncertainty already attached.
       const pctUnc = t.match(/^(-?\d+(?:\.\d+)?)\s*%\s*([+±]\s*0\.?18\s*%)$/i);

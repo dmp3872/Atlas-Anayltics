@@ -1101,7 +1101,10 @@ export default function Lab() {
       const receivedAtIso = formReceivedAt || intakeAt || new Date().toISOString();
       const receivedDate = formatDate(receivedAtIso);
       const receivedByName = form.receivedBy.trim();
-      const assayAverages = computeLabAssayAverages(labResults);
+      const assayAverages = computeLabAssayAverages(
+        labResults,
+        form.labelClaimUnit.trim() || linkedMeta?.label_claim_unit || 'mg',
+      );
       const avgPurityNum = parsePurityPercent(assayAverages.avg_purity);
       const storedPurity = avgPurityNum ?? purityNum;
       // Chemist-assigned LIMS ID wins; fall back to sample LIMS ID or allocate YYMM-XXXXXX.
@@ -1976,7 +1979,9 @@ export default function Lab() {
                         value={labResults.netContent}
                         onChange={e => updateResults({ netContent: e.target.value })}
                         className="input-field"
-                        placeholder={labResults.blendPeptides.length > 0 ? 'Total measured mg for the blend' : 'Measured mg — not label claim'}
+                        placeholder={labResults.blendPeptides.length > 0
+                          ? `Total measured ${form.labelClaimUnit || 'mg'} for the blend`
+                          : `Measured ${form.labelClaimUnit || 'mg'} — not label claim`}
                       />
                     </div>
                     <div>
@@ -2058,7 +2063,7 @@ export default function Lab() {
                               />
                             </div>
                             <div className="col-span-3">
-                              <label className="text-[10px] font-semibold uppercase tracking-wide text-neutral-400">Claim (mg)</label>
+                              <label className="text-[10px] font-semibold uppercase tracking-wide text-neutral-400">Claim ({form.labelClaimUnit || 'mg'})</label>
                               <input
                                 value={row.claimMg}
                                 onChange={e => updateResults({
@@ -2080,7 +2085,7 @@ export default function Lab() {
                                   )),
                                 })}
                                 className="input-field py-1.5 text-sm mt-0.5"
-                                placeholder="Measured mg"
+                                placeholder={`Measured ${form.labelClaimUnit || 'mg'}`}
                               />
                             </div>
                             <button
@@ -2305,7 +2310,7 @@ export default function Lab() {
                                       value={labResults.conformityPeptides[group.totalIdx].netContent}
                                       onChange={e => updateConformityPeptide(group.totalIdx!, { netContent: e.target.value })}
                                       className="input-field py-1.5 text-sm mt-0.5"
-                                      placeholder="Measured mg"
+                                      placeholder={`Measured ${form.labelClaimUnit || 'mg'}`}
                                     />
                                   </div>
                                   <div className="col-span-3">
@@ -2354,7 +2359,7 @@ export default function Lab() {
                                       />
                                     </div>
                                     <div className="col-span-3">
-                                      <label className="text-[10px] font-semibold uppercase tracking-wide text-neutral-400">Claim (mg)</label>
+                                      <label className="text-[10px] font-semibold uppercase tracking-wide text-neutral-400">Claim ({form.labelClaimUnit || 'mg'})</label>
                                       <input
                                         value={claim}
                                         readOnly
@@ -2368,7 +2373,7 @@ export default function Lab() {
                                         value={row.netContent}
                                         onChange={e => updateConformityPeptide(i, { netContent: e.target.value })}
                                         className="input-field py-1.5 text-sm mt-0.5"
-                                        placeholder="Measured mg"
+                                        placeholder={`Measured ${form.labelClaimUnit || 'mg'}`}
                                       />
                                     </div>
                                     <button
