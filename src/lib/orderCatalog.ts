@@ -276,6 +276,8 @@ export function packageCardMeta(id: string) {
 
 export const CONFORMITY_PRICE = 50;
 export const MULTI_BRAND_PRICE = 100;
+/** Post-issue branded COA copy (client portal / COA detail). */
+export const POST_ISSUE_BRAND_FEE = 50;
 export const RUSH_PRICE_PER_SAMPLE = 75;
 export const MAX_BRANDS_PER_SAMPLE = 5;
 export const MAX_BLEND_COMPONENTS = 4;

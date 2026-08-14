@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Shield, CheckCircle, XCircle,
-  ArrowLeft, Copy, Check, Droplets, Boxes, AlertTriangle, Download,
+  ArrowLeft, Copy, Check, Droplets, Boxes, AlertTriangle, Download, Building2,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { COA } from '../lib/types';
@@ -25,6 +25,8 @@ import InteractiveChromatogram from '../components/coa/InteractiveChromatogram';
 import CoaQrCode from '../components/coa/CoaQrCode';
 import { chromatogramNoteForSample } from '../lib/coaCompoundNotes';
 import { formatCoaUpdateLogDate, readCoaUpdateLog } from '../lib/coaUpdateLog';
+import { coaAllowsBrandedCopy } from '../lib/coaProfile';
+import BrandedCoaPurchaseModal from '../components/coa/BrandedCoaPurchaseModal';
 
 function footerDate(iso: string): string {
   const d = new Date(iso);
@@ -75,7 +77,7 @@ export default function COADetail() {
   const autoPrint = searchParams.get('print') === '1';
   const exportMode = searchParams.get('export') === '1';
   const hideChrome = autoPrint || exportMode;
-  const { user, profile, loading: authLoading } = useAuth();
+  const { user, profile, loading: authLoading, refreshProfile } = useAuth();
   const role = resolveUserRole(profile, user?.email);
   const isStaff = role === 'chemist' || role === 'admin' || role === 'verifier' || role === 'reviewer';
   const [coa, setCoa] = useState<COA | null>(null);
@@ -86,6 +88,7 @@ export default function COADetail() {
   const [hplcPhoto, setHplcPhoto] = useState('');
   const [clientLogo, setClientLogo] = useState('');
   const [downloadingPng, setDownloadingPng] = useState(false);
+  const [brandModalOpen, setBrandModalOpen] = useState(false);
 
   useEffect(() => {
     if (!slug) return;
@@ -496,7 +499,13 @@ export default function COADetail() {
                   <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">Average Net Peptide Content</p>
                   <p className="text-xl font-bold text-black mt-0.5 tabular-nums">
                     {stats.avg_net_peptide_content
-                      || (coa.purity_percent ? `${(Number(coa.purity_percent) * 0.1).toFixed(1)} mg` : '—')}
+                      || (coa.purity_percent
+                        ? `${(Number(coa.purity_percent) * 0.1).toFixed(1)} ${
+                          typeof summary.label_claim_unit === 'string' && summary.label_claim_unit.trim()
+                            ? summary.label_claim_unit.trim()
+                            : 'mg'
+                        }`
+                        : '—')}
                   </p>
                   <p className="text-[11px] text-neutral-500 mt-0.5">
                     Mean of {vialsTested !== '—' ? vialsTested : '—'} vials tested
@@ -736,6 +745,15 @@ export default function COADetail() {
           </div>
 
           <div className="flex flex-col sm:flex-row gap-3 mt-6 no-print">
+            {isOwner && !hideChrome && coaAllowsBrandedCopy(coa) && (
+              <button
+                type="button"
+                onClick={() => setBrandModalOpen(true)}
+                className="btn-outline flex-1 gap-2 justify-center"
+              >
+                <Building2 size={16} /> Get branded copy · $50
+              </button>
+            )}
             <button
               type="button"
               onClick={() => void downloadPng()}
@@ -755,6 +773,20 @@ export default function COADetail() {
       </div>
       {!hideChrome && (
         <div className="no-print"><Footer /></div>
+      )}
+      {isOwner && user && brandModalOpen && (
+        <BrandedCoaPurchaseModal
+          open={brandModalOpen}
+          coa={coa}
+          userId={user.id}
+          prepaidBalance={profile?.prepaid_balance ?? 0}
+          onClose={() => setBrandModalOpen(false)}
+          onPurchased={(slug) => {
+            setBrandModalOpen(false);
+            void refreshProfile();
+            navigate(`/coa/${slug}`);
+          }}
+        />
       )}
     </>
   );
