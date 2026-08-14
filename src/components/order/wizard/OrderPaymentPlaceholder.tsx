@@ -10,8 +10,15 @@ interface Props {
   method: SimulatedPaymentMethod;
   onMethodChange: (method: SimulatedPaymentMethod) => void;
   onPaidChange: (paid: boolean) => void;
-  /** Card only: after a successful simulated charge, also submit the order. */
+  /** After simulated card charge, submit (order wizard). */
   onCardPayAndSubmit?: () => Promise<void>;
+  /** After simulated card or crypto authorization (branded COA, etc.). */
+  onAuthorized?: () => Promise<void>;
+  description?: string;
+  paidDescription?: string;
+  payButtonLabel?: string;
+  processingLabel?: string;
+  footerNote?: string;
 }
 
 const CRYPTO_ASSETS = ['USDC', 'USDT', 'BTC', 'ETH'] as const;
@@ -24,6 +31,12 @@ export default function OrderPaymentPlaceholder({
   onMethodChange,
   onPaidChange,
   onCardPayAndSubmit,
+  onAuthorized,
+  description,
+  paidDescription,
+  payButtonLabel,
+  processingLabel,
+  footerNote,
 }: Props) {
   const [name, setName] = useState('');
   const [number, setNumber] = useState('');
@@ -64,6 +77,8 @@ export default function OrderPaymentPlaceholder({
       await new Promise(r => setTimeout(r, 700));
       if (onCardPayAndSubmit) {
         await onCardPayAndSubmit();
+      } else if (onAuthorized) {
+        await onAuthorized();
       } else {
         onPaidChange(true);
       }
@@ -82,9 +97,18 @@ export default function OrderPaymentPlaceholder({
     }
 
     setProcessing(true);
-    await new Promise(r => setTimeout(r, 700));
-    setProcessing(false);
-    onPaidChange(true);
+    try {
+      await new Promise(r => setTimeout(r, 700));
+      if (onAuthorized) {
+        await onAuthorized();
+      } else {
+        onPaidChange(true);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not authorize payment.');
+    } finally {
+      setProcessing(false);
+    }
   }
 
   if (paid) {
@@ -97,8 +121,12 @@ export default function OrderPaymentPlaceholder({
           <div className="min-w-0 flex-1">
             <p className="font-bold text-black">Payment authorized</p>
             <p className="text-sm text-neutral-600 mt-0.5">
-              Simulated {method === 'crypto' ? `${asset} crypto` : 'card'} payment of{' '}
-              {formatCurrency(amount)} succeeded. You can submit this order.
+              {paidDescription || (
+                <>
+                  Simulated {method === 'crypto' ? `${asset} crypto` : 'card'} payment of{' '}
+                  {formatCurrency(amount)} succeeded. You can submit this order.
+                </>
+              )}
             </p>
             <p className="text-[11px] text-neutral-500 mt-2 flex items-center gap-1">
               <Lock size={11} />
@@ -130,7 +158,7 @@ export default function OrderPaymentPlaceholder({
             Payment
           </h3>
           <p className="text-sm text-neutral-500 mt-1">
-            Pay {formatCurrency(amount)} to unlock order submission. Live Stripe / crypto checkout comes later.
+            {description || `Pay ${formatCurrency(amount)} to unlock order submission. Live Stripe / crypto checkout comes later.`}
           </p>
         </div>
         <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800 bg-amber-100 px-2 py-1 rounded">
@@ -272,18 +300,17 @@ export default function OrderPaymentPlaceholder({
         onClick={() => void (method === 'crypto' ? simulateCryptoPay() : simulateCardPay())}
       >
         {processing
-          ? method === 'card'
-            ? 'Paying & submitting…'
-            : 'Authorizing…'
-          : method === 'crypto'
-            ? `Simulate ${asset} payment · ${formatCurrency(amount)}`
-            : `Pay & submit order · ${formatCurrency(amount)}`}
+          ? (processingLabel || (method === 'card' ? 'Paying & submitting…' : 'Authorizing…'))
+          : payButtonLabel
+            || (method === 'crypto'
+              ? `Simulate ${asset} payment · ${formatCurrency(amount)}`
+              : `Pay & submit order · ${formatCurrency(amount)}`)}
       </button>
       <p className="text-[11px] text-neutral-500 flex items-center gap-1">
         <Lock size={11} />
-        {method === 'card'
+        {footerNote || (method === 'card'
           ? 'Simulated card charge — submits the laboratory order automatically.'
-          : 'No real transfer — simulate crypto payment, then submit below.'}
+          : 'No real transfer — simulate crypto payment, then submit below.')}
       </p>
     </div>
   );

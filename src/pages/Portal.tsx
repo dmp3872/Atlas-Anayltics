@@ -4,7 +4,7 @@ import {
   Truck, Copy, Check, X, Search, Download, FileText, ExternalLink,
   CheckCircle, XCircle, Clock, CreditCard, FlaskConical,
   Shield, Bell, Key, UserPlus, Lock, AlertTriangle,
-  ChevronDown, ChevronUp,
+  ChevronDown, ChevronUp, Building2,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
@@ -41,7 +41,9 @@ import { hydrateCoaImages } from '../lib/coaImages';
 import { hydrateMultiVialPanelResults } from '../lib/labCoaForm';
 import { COA_LIST_COLUMNS } from '../lib/coaSelect';
 import CoaReadyCelebration from '../components/coa/CoaReadyCelebration';
+import BrandedCoaPurchaseModal from '../components/coa/BrandedCoaPurchaseModal';
 import OrderBrandingEditor from '../components/portal/OrderBrandingEditor';
+import { coaAllowsBrandedCopy } from '../lib/coaProfile';
 import { fetchSeenCoaCelebrations, markCoaCelebrationSeen } from '../lib/orderMessages';
 
 type PortalTab = 'home' | 'getting-started' | 'peptide-requests' | 'coas' | 'samples' | 'orders' | 'invoices' | 'payments' | 'account' | 'widget' | 'team';
@@ -426,6 +428,7 @@ export default function Portal() {
   const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
   const [discardingOrderId, setDiscardingOrderId] = useState<string | null>(null);
   const [celebrationCoa, setCelebrationCoa] = useState<COA | null>(null);
+  const [brandCoa, setBrandCoa] = useState<COA | null>(null);
 
   const [promoCode, setPromoCode] = useState('');
   const [promoMsg, setPromoMsg] = useState('');
@@ -668,6 +671,20 @@ export default function Portal() {
           onClose={() => setCelebrationCoa(null)}
         />
       )}
+      {brandCoa && user && (
+        <BrandedCoaPurchaseModal
+          open
+          coa={brandCoa}
+          userId={user.id}
+          prepaidBalance={profile?.prepaid_balance ?? 0}
+          onClose={() => setBrandCoa(null)}
+          onPurchased={(slug) => {
+            setBrandCoa(null);
+            void refreshProfile();
+            navigate(`/coa/${slug}`);
+          }}
+        />
+      )}
       <div className="space-y-6">
         {orderDraft && tab === 'home' && (
           <div className="card p-4 flex flex-wrap items-center justify-between gap-3 border-brand-300 bg-brand-50">
@@ -809,6 +826,11 @@ export default function Portal() {
                                   <p className="font-semibold text-black text-sm leading-snug">
                                     {coa.display_name || coa.sample_name}
                                   </p>
+                                  {coa.company_name ? (
+                                    <p className="text-[11px] text-neutral-500 mt-0.5 truncate">
+                                      {coa.company_name}
+                                    </p>
+                                  ) : null}
                                   <p className="text-[11px] text-neutral-500 mt-0.5 font-mono">
                                     {coa.accession_number || coa.slug.slice(0, 14)}
                                     {order?.order_number ? ` · ${order.order_number}` : ''}
@@ -828,12 +850,23 @@ export default function Portal() {
                                   {formatDate(coa.issued_at)}
                                 </td>
                                 <td className="px-4 py-3 text-right whitespace-nowrap">
-                                  <Link
-                                    to={`/coa/${coa.slug}`}
-                                    className="btn-outline text-[11px] py-1 px-2 gap-1 inline-flex"
-                                  >
-                                    <ExternalLink size={11} /> Open
-                                  </Link>
+                                  <div className="inline-flex flex-col items-end gap-1">
+                                    <Link
+                                      to={`/coa/${coa.slug}`}
+                                      className="btn-outline text-[11px] py-1 px-2 gap-1 inline-flex"
+                                    >
+                                      <ExternalLink size={11} /> Open
+                                    </Link>
+                                    {coaAllowsBrandedCopy(coa) && (
+                                      <button
+                                        type="button"
+                                        onClick={() => setBrandCoa(coa)}
+                                        className="btn-ghost text-[11px] py-1 px-2 gap-1 inline-flex text-brand-700"
+                                      >
+                                        <Building2 size={11} /> Brand · $50
+                                      </button>
+                                    )}
+                                  </div>
                                 </td>
                               </tr>
                             );

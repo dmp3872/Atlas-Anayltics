@@ -106,3 +106,51 @@ export async function saveCoaProfile(
 export function defaultCompany(companies: Company[]): Company | undefined {
   return companies.find(c => c.is_default) ?? companies[0];
 }
+
+export function coaAllowsBrandedCopy(coa: {
+  coa_workflow_stage?: string | null;
+  issued_at?: string | null;
+}): boolean {
+  const stage = coa.coa_workflow_stage || '';
+  if (['issued', 'pending_review', 'verified', 'published'].includes(stage)) return true;
+  return Boolean(coa.issued_at);
+}
+
+export type BrandedCoaPaymentMethod = 'card' | 'crypto' | 'prepaid';
+
+export interface BrandedCoaCloneResult {
+  id: string;
+  slug: string;
+  company_name: string;
+  fee: number;
+}
+
+/** Clone an issued COA onto another of the owner's COA profiles after the $50 fee. */
+export async function purchaseBrandedCoaCopy(opts: {
+  sourceCoaId: string;
+  companyId: string;
+  paymentMethod: BrandedCoaPaymentMethod;
+}): Promise<BrandedCoaCloneResult> {
+  const { data, error } = await supabase.rpc('clone_coa_for_brand', {
+    p_source_coa_id: opts.sourceCoaId,
+    p_company_id: opts.companyId,
+    p_payment_method: opts.paymentMethod,
+  });
+  if (error) {
+    const missing = /could not find the function|schema cache/i.test(error.message);
+    throw new Error(
+      missing
+        ? 'Branded COA checkout is not enabled on this database yet. Ask Atlas to apply the clone_coa_for_brand migration.'
+        : error.message,
+    );
+  }
+  const row = (data ?? {}) as Record<string, unknown>;
+  const slug = typeof row.slug === 'string' ? row.slug : '';
+  if (!slug) throw new Error('Could not create the branded COA.');
+  return {
+    id: String(row.id ?? ''),
+    slug,
+    company_name: typeof row.company_name === 'string' ? row.company_name : '',
+    fee: typeof row.fee === 'number' ? row.fee : 50,
+  };
+}
