@@ -321,7 +321,7 @@ export default function Pricing() {
 
                   <div className="w-full flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-4 rounded-lg border-2 border-atlas-border bg-white mt-3">
                     <div className="min-w-0">
-                      <p className="font-medium text-black text-sm">Branded COA copy</p>
+                      <p className="font-medium text-black text-sm">Additional COA</p>
                       <p className="text-xs text-neutral-500 mt-0.5">
                         After results are issued, buy extra brand versions from Your COAs — same assays, your other logo.
                       </p>
