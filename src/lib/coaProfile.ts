@@ -131,6 +131,52 @@ export async function purchaseBrandedCoaCopy(opts: {
   companyId: string;
   paymentMethod: BrandedCoaPaymentMethod;
 }): Promise<BrandedCoaCloneResult> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const token = sessionData.session?.access_token;
+  if (!token) throw new Error('Sign in to purchase an additional COA.');
+
+  // Prefer the Vercel API (service-role clone). Local Vite has no /api — fall through to RPC.
+  try {
+    const res = await fetch('/api/clone-coa-for-brand', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        sourceCoaId: opts.sourceCoaId,
+        companyId: opts.companyId,
+        paymentMethod: opts.paymentMethod,
+      }),
+    });
+    const contentType = res.headers.get('content-type') || '';
+    const isJson = contentType.includes('application/json');
+    // Local Vite serves the SPA HTML for unknown /api paths — treat as "no API".
+    if (isJson && res.status !== 404) {
+      const payload = await res.json().catch(() => ({})) as Record<string, unknown>;
+      if (!res.ok) {
+        throw new Error(
+          typeof payload.error === 'string' && payload.error.trim()
+            ? payload.error
+            : 'Could not create the branded COA.',
+        );
+      }
+      const slug = typeof payload.slug === 'string' ? payload.slug : '';
+      if (!slug) throw new Error('Could not create the branded COA.');
+      return {
+        id: String(payload.id ?? ''),
+        slug,
+        company_name: typeof payload.company_name === 'string' ? payload.company_name : '',
+        fee: typeof payload.fee === 'number' ? payload.fee : 50,
+      };
+    }
+  } catch (err) {
+    // Network / missing local API — try RPC next. Real API errors already threw above.
+    if (!(err instanceof TypeError) && !(err instanceof Error && /Failed to fetch|NetworkError|Load failed/i.test(err.message))) {
+      throw err;
+    }
+  }
+
   const { data, error } = await supabase.rpc('clone_coa_for_brand', {
     p_source_coa_id: opts.sourceCoaId,
     p_company_id: opts.companyId,
@@ -140,7 +186,7 @@ export async function purchaseBrandedCoaCopy(opts: {
     const missing = /could not find the function|schema cache/i.test(error.message);
     throw new Error(
       missing
-        ? 'Branded COA checkout is not enabled on this database yet. Ask Atlas to apply the clone_coa_for_brand migration.'
+        ? 'Additional COA checkout is not available in this environment yet. Use the live site, or ask Atlas to enable it.'
         : error.message,
     );
   }
