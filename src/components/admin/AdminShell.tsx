@@ -63,7 +63,6 @@ const NAV: NavItem[] = NAV_GROUPS.flatMap(g => g.items);
 
 const EXTERNAL = [
   { to: '/lab', label: 'Chemist Console', icon: FlaskConical },
-  { to: '/verify-portal', label: 'Verification Portal', icon: Shield },
   { to: '/dashboard', label: 'Client portal', icon: Building2 },
 ];
 
