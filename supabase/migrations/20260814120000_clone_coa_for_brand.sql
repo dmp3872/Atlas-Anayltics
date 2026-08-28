@@ -35,7 +35,7 @@ DECLARE
   alphabet text := '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
   prefix text;
   token text;
-  slug text;
+  v_candidate text;
   i int;
   idx int;
   attempt int;
@@ -47,11 +47,11 @@ BEGIN
       idx := 1 + floor(random() * length(alphabet))::int;
       token := token || substr(alphabet, idx, 1);
     END LOOP;
-    slug := prefix || '-' || token;
-    IF NOT EXISTS (SELECT 1 FROM public.coas c WHERE c.slug = slug)
-       AND NOT EXISTS (SELECT 1 FROM public.order_samples s WHERE s.accession_number = slug)
+    v_candidate := prefix || '-' || token;
+    IF NOT EXISTS (SELECT 1 FROM public.coas c WHERE c.slug = v_candidate)
+       AND NOT EXISTS (SELECT 1 FROM public.order_samples s WHERE s.accession_number = v_candidate)
     THEN
-      RETURN slug;
+      RETURN v_candidate;
     END IF;
   END LOOP;
   RAISE EXCEPTION 'Could not allocate a unique COA code.';
