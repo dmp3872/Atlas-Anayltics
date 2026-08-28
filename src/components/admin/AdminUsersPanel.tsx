@@ -89,6 +89,11 @@ export default function AdminUsersPanel({ users, loading, savingId, onChangeRole
                       >
                         {ROLES.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
                       </select>
+                      {(u.role ?? 'client') === 'verifier' && (
+                        <p className="text-[10px] text-neutral-400 mt-1 max-w-[11rem]">
+                          Isolated portal — cannot open Admin, Lab, or Client.
+                        </p>
+                      )}
                     </td>
                     <td className="px-5 py-3">
                       {(u.role ?? 'client') === 'client' ? (

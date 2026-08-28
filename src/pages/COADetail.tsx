@@ -20,6 +20,7 @@ import { coaHasDirectorSignature, coaSignatureProgress, coaWorkflowStage } from 
 import { sampleIntakeAt } from '../lib/services/orderWorkflow';
 import { useAuth } from '../context/AuthContext';
 import { resolveUserRole } from '../lib/roles';
+import { COA_MEDICAL_DIRECTOR } from '../lib/coaSignatories';
 import Header from '../components/layout/Header';
 import Footer from '../components/layout/Footer';
 import AtlasLogo from '../components/brand/AtlasLogo';
@@ -329,16 +330,16 @@ export default function COADetail() {
     ),
   );
   const isOwner = !!user && user.id === coa.user_id;
-  const backFallback = isStaff
-    ? '/lab?tab=workflow'
-    : isOwner
-      ? '/dashboard/coas'
-      : '/coa-library';
-  const backLabel = isStaff
-    ? 'Back to Lab Console'
-    : isOwner
-      ? 'Back to My COAs'
-      : 'Public Library';
+  const backFallback =
+    role === 'verifier' ? '/medical-director'
+      : isStaff ? '/lab?tab=workflow'
+        : isOwner ? '/dashboard/coas'
+          : '/coa-library';
+  const backLabel =
+    role === 'verifier' ? 'Back to Medical Director'
+      : isStaff ? 'Back to Lab Console'
+        : isOwner ? 'Back to My COAs'
+          : 'Public Library';
 
   function goBack() {
     const ref = document.referrer;
@@ -787,7 +788,7 @@ export default function COADetail() {
                     {directorSigned ? (
                       <img
                         src="/brand/signatures/gokul-gondi.png"
-                        alt="Dr. Gokul Gondi signature"
+                        alt={`${COA_MEDICAL_DIRECTOR.name} signature`}
                         className="h-9 w-auto max-w-[110px] object-contain object-left shrink-0"
                       />
                     ) : (
@@ -796,8 +797,8 @@ export default function COADetail() {
                       </div>
                     )}
                     <div className="text-[11px] leading-snug">
-                      <p className="font-semibold">Dr. Gokul Gondi MD</p>
-                      <p className="text-white/70">Lab Director</p>
+                      <p className="font-semibold">{COA_MEDICAL_DIRECTOR.formalName}</p>
+                      <p className="text-white/70">{COA_MEDICAL_DIRECTOR.title}</p>
                       <p className="text-white/70 tabular-nums">
                         {directorSigned ? footerDate(coa.verified_at || coa.issued_at) : 'Awaiting sign-off'}
                       </p>

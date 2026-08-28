@@ -21,7 +21,7 @@ import Trust from './pages/Trust';
 import Roadmap from './pages/Roadmap';
 import Lab from './pages/Lab';
 import Admin from './pages/Admin';
-import VerifyPortal from './pages/VerifyPortal';
+import MedicalDirector from './pages/MedicalDirector';
 import AdminOrderDetail from './pages/admin/AdminOrderDetail';
 
 function PublicLayout({ children }: { children: React.ReactNode }) {
@@ -81,8 +81,12 @@ export default function App() {
           {/* Chemist lab console */}
           <Route path="/lab" element={<RoleRoute allow={['chemist', 'admin']}><Lab /></RoleRoute>} />
 
-          {/* Verifier portal */}
-          <Route path="/verify-portal" element={<RoleRoute allow={['verifier', 'admin']}><VerifyPortal /></RoleRoute>} />
+          {/* Medical Director portal — verifier accounts only (sign in via /auth) */}
+          <Route
+            path="/medical-director"
+            element={<RoleRoute allow={['verifier']}><MedicalDirector /></RoleRoute>}
+          />
+          <Route path="/verify-portal" element={<Navigate to="/medical-director" replace />} />
 
           {/* Admin console */}
           <Route path="/admin" element={<RoleRoute allow={['admin']}><Admin /></RoleRoute>} />

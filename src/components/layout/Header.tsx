@@ -20,12 +20,10 @@ function workspaceLinks(role: UserRole): { href: string; label: string; icon: ty
     case 'chemist':
       return [{ href: '/lab', label: 'Lab', icon: FlaskConical }];
     case 'verifier':
-      return [{ href: '/verify-portal', label: 'Verify', icon: Shield }];
+      // Isolated portal — no workspace switcher into Admin / Lab / Client.
+      return [];
     case 'reviewer':
-      return [
-        { href: '/admin', label: 'Admin', icon: Shield },
-        { href: '/lab', label: 'Lab', icon: FlaskConical },
-      ];
+      return [];
     default:
       return [{ href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard }];
   }
@@ -40,7 +38,11 @@ export default function Header() {
   const role = resolveUserRole(profile, user?.email);
   const home = roleHome(role);
   const workspaces = workspaceLinks(role);
-  const primaryHome = workspaces[0] ?? { href: home, label: 'Dashboard', icon: LayoutDashboard };
+  const primaryHome = workspaces[0] ?? {
+    href: home,
+    label: ROLE_LABELS[role],
+    icon: role === 'verifier' ? Shield : LayoutDashboard,
+  };
 
   const isActive = (path: string) =>
     location.pathname === path || location.pathname.startsWith(`${path}/`);
@@ -118,14 +120,26 @@ export default function Header() {
                           {ws.label}
                         </Link>
                       ))}
-                      <Link
-                        to="/account"
-                        onClick={() => setUserMenuOpen(false)}
-                        className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-neutral-700 hover:bg-neutral-50"
-                      >
-                        <User size={15} />
-                        Account Settings
-                      </Link>
+                      {role === 'verifier' && (
+                        <Link
+                          to="/medical-director"
+                          onClick={() => setUserMenuOpen(false)}
+                          className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-neutral-700 hover:bg-neutral-50"
+                        >
+                          <Shield size={15} />
+                          Medical Director
+                        </Link>
+                      )}
+                      {role !== 'verifier' && (
+                        <Link
+                          to="/account"
+                          onClick={() => setUserMenuOpen(false)}
+                          className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-neutral-700 hover:bg-neutral-50"
+                        >
+                          <User size={15} />
+                          Account Settings
+                        </Link>
+                      )}
                       <div className="border-t border-neutral-100 my-1" />
                       <button
                         onClick={() => { signOut(); setUserMenuOpen(false); }}
