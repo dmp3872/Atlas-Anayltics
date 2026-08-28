@@ -35,11 +35,12 @@ export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
   cancelled: 'Cancelled',
 };
 
+/** Aligned with ORDER_STATUS_LABELS so clients and lab see the same words. */
 export const SAMPLE_STATUS_LABELS: Record<SampleStatus, string> = {
   awaiting_sample: 'Awaiting sample',
-  received: 'Received',
-  analyzing: 'Analyzing',
-  in_review: 'In Review',
+  received: 'Sample received',
+  analyzing: 'In testing',
+  in_review: 'In review',
   complete: 'Complete',
 };
 

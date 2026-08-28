@@ -3,9 +3,10 @@ import { Link, Navigate, useLocation, useNavigate, useSearchParams } from 'react
 import {
   Truck, Copy, Check, X, Search, Download, FileText, ExternalLink,
   CheckCircle, XCircle, Clock, CreditCard, FlaskConical,
-  Shield, Bell, Key, UserPlus, Lock, AlertTriangle,
+  Shield, Bell, Key, UserPlus, Lock, AlertTriangle, AlertCircle,
   ChevronDown, ChevronUp, Building2,
 } from 'lucide-react';
+import { coaClientStatus } from '../lib/statusVocabulary';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { COA, Order, OrderSample, PanelResult, TestPanel } from '../lib/types';
@@ -55,10 +56,17 @@ function ResultBadge({ result }: { result: string }) {
 }
 
 function CoaPublicationBadge({ coa }: { coa: COA }) {
-  if (coa.is_public && coa.coa_workflow_stage === 'published') {
-    return <span className="badge-pass"><CheckCircle size={10} /> Published</span>;
+  const { label, tone } = coaClientStatus(coa);
+  if (tone === 'published') {
+    return <span className="badge-pass"><CheckCircle size={10} /> {label}</span>;
   }
-  return <span className="badge-pending"><Lock size={10} /> Private Draft</span>;
+  if (tone === 'ready') {
+    return <span className="badge-pass"><CheckCircle size={10} /> {label}</span>;
+  }
+  if (tone === 'pending') {
+    return <span className="badge-pending"><AlertCircle size={10} /> {label}</span>;
+  }
+  return <span className="badge-pending"><Lock size={10} /> {label}</span>;
 }
 
 function panelPassStatus(panel: PanelResult, opts?: { metal?: boolean }): {
@@ -766,7 +774,13 @@ export default function Portal() {
         ) : (
           <>
             {tab === 'home' && (
-              <PortalHome orders={orders} coaCount={coas.length} loading={loading} />
+              <PortalHome
+                orders={orders}
+                samples={samples}
+                coas={coas}
+                coaCount={coas.length}
+                loading={loading}
+              />
             )}
 
             {tab === 'getting-started' && <GettingStarted />}
