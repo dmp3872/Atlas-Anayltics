@@ -23,20 +23,48 @@ interface NavItem {
   icon: typeof Activity;
 }
 
-const NAV: NavItem[] = [
-  { id: 'command', label: 'Ops Bench', desc: 'Customers, ETAs, exceptions', icon: LayoutGrid },
-  { id: 'dispatch', label: 'Dispatch', desc: 'Assign unassigned samples', icon: UserPlus },
-  { id: 'lab', label: 'Staff load', desc: 'Who is behind on assigned work', icon: FlaskConical },
-  { id: 'operations', label: 'Lab Analytics', desc: 'Intake & turnaround', icon: BarChart3 },
-  { id: 'orders', label: 'Orders & money', desc: 'Priority, pay, refunds', icon: ClipboardList },
-  { id: 'coas', label: 'COA Registry', desc: 'Overrides & audit', icon: Shield },
-  { id: 'clients', label: 'Clients', desc: 'CRM & order history', icon: Building2 },
-  { id: 'users', label: 'Users & Access', desc: 'Roles & accounts', icon: Users },
+interface NavGroup {
+  id: string;
+  label: string;
+  items: NavItem[];
+}
+
+/** Work = ops & staffing · Money = orders & COA overrides · People = CRM & access */
+const NAV_GROUPS: NavGroup[] = [
+  {
+    id: 'work',
+    label: 'Work',
+    items: [
+      { id: 'command', label: 'Ops Bench', desc: 'Customers, ETAs, exceptions', icon: LayoutGrid },
+      { id: 'dispatch', label: 'Dispatch', desc: 'Assign unassigned samples', icon: UserPlus },
+      { id: 'lab', label: 'Staff load', desc: 'Who is behind on assigned work', icon: FlaskConical },
+      { id: 'operations', label: 'Lab Analytics', desc: 'Intake & turnaround', icon: BarChart3 },
+    ],
+  },
+  {
+    id: 'money',
+    label: 'Money',
+    items: [
+      { id: 'orders', label: 'Orders & money', desc: 'Priority, pay, refunds', icon: ClipboardList },
+      { id: 'coas', label: 'COA Registry', desc: 'Overrides & audit', icon: Shield },
+    ],
+  },
+  {
+    id: 'people',
+    label: 'People',
+    items: [
+      { id: 'clients', label: 'Clients', desc: 'CRM & order history', icon: Building2 },
+      { id: 'users', label: 'Users & Access', desc: 'Roles & accounts', icon: Users },
+    ],
+  },
 ];
+
+const NAV: NavItem[] = NAV_GROUPS.flatMap(g => g.items);
 
 const EXTERNAL = [
   { to: '/lab', label: 'Chemist Console', icon: FlaskConical },
   { to: '/verify-portal', label: 'Verification Portal', icon: Shield },
+  { to: '/dashboard', label: 'Client portal', icon: Building2 },
 ];
 
 interface Props {
@@ -47,6 +75,36 @@ interface Props {
   onRefresh?: () => void;
   refreshing?: boolean;
   children: React.ReactNode;
+}
+
+function NavButton({
+  item,
+  active,
+  onSection,
+}: {
+  item: NavItem;
+  active: boolean;
+  onSection: (s: AdminSection) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onSection(item.id)}
+      className={`w-full text-left px-3 py-2.5 rounded-lg transition-colors group ${
+        active
+          ? 'bg-brand-500/15 text-brand-400 border border-brand-500/30'
+          : 'text-neutral-400 hover:bg-neutral-900 hover:text-white border border-transparent'
+      }`}
+    >
+      <div className="flex items-center gap-2.5">
+        <item.icon size={16} className={active ? 'text-brand-500' : 'text-neutral-500 group-hover:text-neutral-300'} />
+        <div className="min-w-0">
+          <p className="text-sm font-semibold truncate">{item.label}</p>
+          <p className="text-[10px] text-neutral-500 truncate">{item.desc}</p>
+        </div>
+      </div>
+    </button>
+  );
 }
 
 export default function AdminShell({
@@ -66,29 +124,25 @@ export default function AdminShell({
         </div>
 
         <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
-          <p className="px-3 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-neutral-500">Main</p>
-          {NAV.map(item => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => onSection(item.id)}
-              className={`w-full text-left px-3 py-2.5 rounded-lg transition-colors group ${
-                section === item.id
-                  ? 'bg-brand-500/15 text-brand-400 border border-brand-500/30'
-                  : 'text-neutral-400 hover:bg-neutral-900 hover:text-white border border-transparent'
-              }`}
-            >
-              <div className="flex items-center gap-2.5">
-                <item.icon size={16} className={section === item.id ? 'text-brand-500' : 'text-neutral-500 group-hover:text-neutral-300'} />
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold truncate">{item.label}</p>
-                  <p className="text-[10px] text-neutral-500 truncate">{item.desc}</p>
-                </div>
+          {NAV_GROUPS.map(group => (
+            <div key={group.id} className="mb-2">
+              <p className="px-3 pt-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-neutral-500">
+                {group.label}
+              </p>
+              <div className="space-y-0.5">
+                {group.items.map(item => (
+                  <NavButton
+                    key={item.id}
+                    item={item}
+                    active={section === item.id}
+                    onSection={onSection}
+                  />
+                ))}
               </div>
-            </button>
+            </div>
           ))}
 
-          <p className="px-3 pt-5 pb-1 text-[10px] font-bold uppercase tracking-wider text-neutral-500">Consoles</p>
+          <p className="px-3 pt-4 pb-1 text-[10px] font-bold uppercase tracking-wider text-neutral-500">Consoles</p>
           {EXTERNAL.map(link => (
             <Link
               key={link.to}
@@ -139,17 +193,24 @@ export default function AdminShell({
           </div>
 
           <div className="flex gap-1 mt-4 overflow-x-auto lg:hidden pb-1">
-            {NAV.map(item => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => onSection(item.id)}
-                className={`px-3 py-1.5 text-xs font-medium rounded-full whitespace-nowrap border ${
-                  section === item.id ? 'bg-black text-white border-black' : 'border-atlas-border text-neutral-600'
-                }`}
-              >
-                {item.label}
-              </button>
+            {NAV_GROUPS.map(group => (
+              <div key={group.id} className="flex items-center gap-1 mr-2">
+                <span className="text-[9px] font-bold uppercase tracking-wider text-neutral-400 px-1">
+                  {group.label}
+                </span>
+                {group.items.map(item => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => onSection(item.id)}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-full whitespace-nowrap border ${
+                      section === item.id ? 'bg-black text-white border-black' : 'border-atlas-border text-neutral-600'
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
             ))}
           </div>
         </header>
@@ -162,4 +223,4 @@ export default function AdminShell({
   );
 }
 
-export { NAV };
+export { NAV, NAV_GROUPS };

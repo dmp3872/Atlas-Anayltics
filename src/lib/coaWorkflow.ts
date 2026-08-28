@@ -3,13 +3,14 @@ import { coaHasPendingAssays } from './coaDisplayPanels';
 
 export type { CoaWorkflowStage };
 
+/** Staff board labels — same pipeline words as order/sample status vocabulary. */
 export const COA_WORKFLOW_LABELS: Record<CoaWorkflowStage, string> = {
-  awaiting_info: 'Awaiting Client Info',
-  testing_in_progress: 'Testing in Progress',
-  issued: 'Issued COAs',
-  pending_review: 'Pending Review',
-  verified: 'Verified COAs',
-  published: 'Published COAs',
+  awaiting_info: 'Needs client info',
+  testing_in_progress: 'In testing',
+  issued: 'Issued',
+  pending_review: 'In review',
+  verified: 'Verified',
+  published: 'Published',
 };
 
 /**
