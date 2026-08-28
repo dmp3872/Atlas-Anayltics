@@ -13,6 +13,8 @@ import { QueueSampleItem, isAssignedToChemist } from '../../lib/labQueue';
 import { etaHeat, resolveEtaAt } from '../../lib/etaHeat';
 import { openActionCount, type OrderActionItem } from '../../lib/orderActions';
 import { supabase } from '../../lib/supabase';
+import { computeChemistNeedsYou } from '../../lib/needsYou';
+import NeedsYouStrip from '../shared/NeedsYouStrip';
 
 interface Props {
   userId: string;
@@ -37,6 +39,11 @@ export default function MyBenchPanel({
   onIssueCoa,
   onUpdatePendingCoa,
 }: Props) {
+  const needsYou = useMemo(
+    () => computeChemistNeedsYou({ userId, samples, orders, coas }),
+    [userId, samples, orders, coas],
+  );
+
   const mineQueue = queueItems.filter(i => isAssignedToChemist(i.sample, userId));
   const overdueMine = mineQueue.filter(i => {
     const heat = etaHeat(resolveEtaAt(i.order) || i.dueAt);
@@ -115,6 +122,11 @@ export default function MyBenchPanel({
           Samples and individual tests assigned to you, due dates, reviews waiting on your signature, and open actions.
         </p>
       </div>
+
+      <NeedsYouStrip
+        items={needsYou}
+        emptyLabel="Your bench is clear — nothing urgent assigned to you."
+      />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-3">
         {[

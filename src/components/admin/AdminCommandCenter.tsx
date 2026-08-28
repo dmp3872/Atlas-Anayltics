@@ -8,8 +8,10 @@ import {
   formatDateTime, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS, normalizePaymentStatus,
 } from '../../lib/utils';
 import {
-  AdminAlert, adminOpsSnapshot, computeAdminAlerts, formatAgeHours,
+  adminOpsSnapshot, formatAgeHours,
 } from '../../lib/adminMetrics';
+import { computeAdminNeedsYou } from '../../lib/needsYou';
+import NeedsYouStrip from '../shared/NeedsYouStrip';
 import { LAB_PRIORITY_LABELS, orderLabPriority } from '../../lib/labQueue';
 import { resolveEtaAt } from '../../lib/etaHeat';
 import PriorityBanner from '../lab/PriorityBanner';
@@ -28,7 +30,7 @@ interface Props {
  */
 export default function AdminCommandCenter({ samples, orders, coas, users, onNavigate }: Props) {
   const ops = adminOpsSnapshot(samples, orders, coas, users);
-  const alerts = computeAdminAlerts(orders, samples, coas, users);
+  const needsYou = computeAdminNeedsYou(orders, samples, coas, users);
 
   const health = {
     clear: {
@@ -77,13 +79,11 @@ export default function AdminCommandCenter({ samples, orders, coas, users, onNav
         </p>
       </div>
 
-      {alerts.length > 0 && (
-        <div className="space-y-2">
-          {alerts.map(alert => (
-            <AlertBanner key={alert.id} alert={alert} onNavigate={onNavigate} />
-          ))}
-        </div>
-      )}
+      <NeedsYouStrip
+        items={needsYou}
+        onSection={onNavigate}
+        emptyLabel="Ops are clear — no exceptions need you right now."
+      />
 
       {/* Customer workflow lanes */}
       <div>
@@ -432,28 +432,3 @@ function QuickLink({ onClick, children }: { onClick: () => void; children: React
   );
 }
 
-function AlertBanner({ alert, onNavigate }: { alert: AdminAlert; onNavigate: (s: string) => void }) {
-  const styles = {
-    urgent: 'bg-red-50 border-red-200 text-red-900',
-    warning: 'bg-amber-50 border-amber-200 text-amber-900',
-    info: 'bg-brand-50 border-brand-200 text-brand-900',
-  }[alert.level];
-
-  return (
-    <div className={`flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-lg border text-sm ${styles}`}>
-      <div className="flex items-start gap-2">
-        <AlertTriangle size={16} className="flex-shrink-0 mt-0.5" />
-        <span>{alert.message}</span>
-      </div>
-      {alert.actionLabel && alert.actionSection && (
-        <button
-          type="button"
-          onClick={() => onNavigate(alert.actionSection!)}
-          className="text-xs font-semibold underline hover:no-underline whitespace-nowrap"
-        >
-          {alert.actionLabel}
-        </button>
-      )}
-    </div>
-  );
-}
