@@ -22,6 +22,7 @@ export default function StaffHeader({ title, children }: { title: string; childr
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {/* Admin may hop Admin ↔ Lab ↔ Client only — Medical Director is a separate login. */}
           {role === 'admin' && (
             <>
               <Link

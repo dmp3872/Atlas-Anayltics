@@ -3,7 +3,7 @@ import { Navigate, Link, useLocation } from 'react-router-dom';
 import { Eye, EyeOff, AlertCircle, Shield, FileText, Package, LogIn, UserPlus } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { roleHome, resolveUserRole } from '../lib/roles';
+import { resolveUserRole, postAuthDestination } from '../lib/roles';
 import AtlasLogo from '../components/brand/AtlasLogo';
 
 type Mode = 'signin' | 'signup';
@@ -12,17 +12,8 @@ export default function Auth() {
   const { user, profile, loading, signIn, signUp } = useAuth();
   const location = useLocation();
   const role = resolveUserRole(profile, user?.email);
-  const home = roleHome(role);
-  // Prefer role home for staff. Only honor deep-links (e.g. /order-new) — never force clients' /dashboard on admins.
   const requested = (location.state as { from?: string } | null)?.from;
-  const clientOnlyPaths = ['/dashboard', '/dashboard/orders', '/dashboard/coas', '/dashboard/api', '/dashboard/submissions'];
-  const fromStaffOverride =
-    role !== 'client'
-    && requested
-    && clientOnlyPaths.some(p => requested === p || requested.startsWith(`${p}/`) || requested.startsWith(`${p}?`));
-  const destination = fromStaffOverride
-    ? home
-    : (requested?.startsWith('/') ? requested : home);
+  const destination = postAuthDestination(role, requested);
 
   const [mode, setMode] = useState<Mode>('signin');
   const [email, setEmail] = useState('');
@@ -58,10 +49,13 @@ export default function Auth() {
       if (mode === 'signin') {
         const { error: signInError } = await signIn(email.trim(), password);
         if (signInError) {
+          const raw = signInError.message || '';
           setError(
-            signInError.message.includes('Invalid login')
+            /Invalid login|invalid_credentials/i.test(raw)
               ? 'Incorrect email or password. If you are new, use Create Account instead.'
-              : signInError.message,
+              : /Load failed|Failed to fetch|NetworkError|fetch/i.test(raw)
+                ? 'Could not reach the server. Refresh the page and try again.'
+                : raw,
           );
         }
       } else {
@@ -77,6 +71,13 @@ export default function Auth() {
           setMode('signin');
         }
       }
+    } catch (err) {
+      const raw = err instanceof Error ? err.message : 'Sign in failed';
+      setError(
+        /Load failed|Failed to fetch|NetworkError/i.test(raw)
+          ? 'Could not reach the server. Refresh the page and try again.'
+          : raw,
+      );
     } finally {
       setSubmitting(false);
     }
