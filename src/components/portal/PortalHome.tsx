@@ -20,6 +20,8 @@ export default function PortalHome({ orders, samples, coas, coaCount, loading }:
   const firstName = profile?.full_name?.split(' ')[0] || 'there';
   const active = orders.filter(o => !['complete', 'cancelled'].includes(o.status));
   const totalSpent = orders.filter(o => o.status !== 'cancelled').reduce((s, o) => s + o.total, 0);
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
 
   const needsYou = useMemo(
     () => (loading ? [] : computeClientNeedsYou({ orders, samples, coas })),
@@ -27,20 +29,25 @@ export default function PortalHome({ orders, samples, coas, coaCount, loading }:
   );
 
   return (
-    <div className="max-w-5xl space-y-8">
-      <div>
-        <h1 className="portal-page-title">Dashboard</h1>
-        <p className="portal-page-subtitle">Welcome back, {firstName}. Here&apos;s your testing overview.</p>
+    <div className="max-w-5xl space-y-7">
+      <div className="aa-animate">
+        <p className="aa-section-kicker" style={{ marginBottom: '0.35rem' }}>Client portal</p>
+        <h1 className="aa-section-title" style={{ fontSize: 'clamp(1.85rem, 3vw, 2.35rem)' }}>
+          {greeting}, {firstName}.
+        </h1>
+        <p className="portal-page-subtitle">Your testing overview — orders, certificates, and what needs you next.</p>
       </div>
 
       {!loading && (
-        <NeedsYouStrip
-          items={needsYou}
-          emptyLabel="You're all caught up — nothing needs you right now."
-        />
+        <div className="aa-animate" style={{ animationDelay: '60ms' }}>
+          <NeedsYouStrip
+            items={needsYou}
+            emptyLabel="You're all caught up — nothing needs you right now."
+          />
+        </div>
       )}
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 aa-animate" style={{ animationDelay: '100ms' }}>
         {[
           { label: 'Active Orders', value: active.length, icon: Package },
           { label: 'Certificates', value: coaCount, icon: FileText },
@@ -48,47 +55,56 @@ export default function PortalHome({ orders, samples, coas, coaCount, loading }:
           { label: 'Total Invested', value: formatCurrency(totalSpent), icon: TrendingUp },
         ].map(s => (
           <div key={s.label} className="portal-stat-card">
-            <s.icon size={18} className="text-brand-600 mb-2" strokeWidth={1.5} />
-            <p className="text-2xl font-bold text-black tabular-nums">{loading ? '—' : s.value}</p>
-            <p className="text-xs text-neutral-500 mt-0.5">{s.label}</p>
+            <s.icon size={16} className="mb-2" style={{ color: 'var(--aa-gold)' }} strokeWidth={1.5} />
+            <p className="text-2xl font-bold tabular-nums tracking-tight" style={{ color: 'var(--aa-ink)', letterSpacing: '-0.03em' }}>
+              {loading ? '—' : s.value}
+            </p>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--aa-muted)' }}>{s.label}</p>
           </div>
         ))}
       </div>
 
       {profile?.is_first_order && (
-        <div className="card p-5 border-brand-300 bg-gradient-to-r from-brand-50 to-white flex flex-wrap items-center justify-between gap-4">
+        <div className="aa-portal-panel aa-portal-panel-pad flex flex-wrap items-center justify-between gap-4 aa-animate" style={{ animationDelay: '120ms' }}>
           <div className="flex items-center gap-3">
-            <CheckCircle size={22} className="text-brand-600" />
+            <CheckCircle size={20} style={{ color: 'var(--aa-gold)' }} />
             <div>
-              <p className="font-semibold text-black">50% off your first sample</p>
-              <p className="text-sm text-neutral-600">Applied automatically at checkout.</p>
+              <p className="font-semibold tracking-tight" style={{ color: 'var(--aa-ink)' }}>50% off your first sample</p>
+              <p className="text-sm" style={{ color: 'var(--aa-muted)' }}>Applied automatically at checkout.</p>
             </div>
           </div>
-          <Link to="/order-new" className="btn-primary text-sm">Submit Sample</Link>
+          <Link to="/order-new" className="aa-btn-primary text-sm py-2.5 px-4">Submit Sample</Link>
         </div>
       )}
 
-      <div className="grid lg:grid-cols-2 gap-6">
-        <div className="card p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-semibold text-black">Recent Orders</h2>
-            <Link to="/dashboard/orders" className="text-xs font-medium text-brand-700 hover:underline">View all</Link>
+      <div className="grid lg:grid-cols-2 gap-5 aa-animate" style={{ animationDelay: '140ms' }}>
+        <div className="aa-portal-panel aa-portal-panel-pad">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="aa-portal-panel-title">Recent Orders</h2>
+            <Link to="/dashboard/orders" className="text-xs font-semibold hover:underline" style={{ color: 'var(--aa-muted)' }}>
+              View all
+            </Link>
           </div>
           {loading ? (
-            <p className="text-sm text-neutral-500">Loading…</p>
+            <p className="text-sm" style={{ color: 'var(--aa-muted)' }}>Loading…</p>
           ) : orders.length === 0 ? (
-            <p className="text-sm text-neutral-500 py-6 text-center">No orders yet. <Link to="/order-new" className="text-brand-700 font-medium">Submit your first sample</Link>.</p>
+            <p className="text-sm py-6 text-center" style={{ color: 'var(--aa-muted)' }}>
+              No orders yet.{' '}
+              <Link to="/order-new" className="font-semibold" style={{ color: 'var(--aa-ink)' }}>Submit your first sample</Link>.
+            </p>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-0.5">
               {orders.slice(0, 4).map(o => (
-                <Link key={o.id} to="/dashboard/orders" className="block p-3 rounded-lg border border-atlas-border hover:border-brand-300 hover:bg-brand-50/30 transition-colors">
+                <Link key={o.id} to="/dashboard/orders" className="aa-portal-row">
                   <div className="flex justify-between text-sm">
-                    <span className="font-medium text-black">{o.order_number}</span>
-                    <span className="font-semibold">{formatCurrency(o.total)}</span>
+                    <span className="font-semibold tracking-tight" style={{ color: 'var(--aa-ink)' }}>{o.order_number}</span>
+                    <span className="font-semibold tabular-nums">{formatCurrency(o.total)}</span>
                   </div>
-                  <div className="flex justify-between text-xs text-neutral-500 mt-1">
+                  <div className="flex justify-between text-xs mt-1" style={{ color: 'var(--aa-muted)' }}>
                     <span>{formatDate(o.created_at)}</span>
-                    <span className="uppercase font-semibold text-brand-700">{ORDER_STATUS_LABELS[o.status]}</span>
+                    <span className="uppercase font-semibold tracking-wide" style={{ color: 'var(--aa-gold)' }}>
+                      {ORDER_STATUS_LABELS[o.status]}
+                    </span>
                   </div>
                 </Link>
               ))}
@@ -96,23 +112,26 @@ export default function PortalHome({ orders, samples, coas, coaCount, loading }:
           )}
         </div>
 
-        <div className="card p-5">
-          <h2 className="font-semibold text-black mb-4">Quick Actions</h2>
-          <div className="space-y-2">
+        <div className="aa-portal-panel aa-portal-panel-pad">
+          <h2 className="aa-portal-panel-title mb-3">Quick Actions</h2>
+          <div className="space-y-0.5">
             {[
               { href: '/order-new', icon: Package, label: 'Submit New Samples', sub: 'Order wizard · prepaid label included' },
               { href: '/dashboard/coas', icon: FileText, label: 'Your COAs', sub: 'Certificates of analysis' },
               { href: '/dashboard/orders', icon: ShoppingCart, label: 'Track Orders', sub: 'Expand orders for sample detail' },
             ].map(a => (
-              <Link key={a.href} to={a.href} className="flex items-center gap-3 p-3 rounded-lg border border-atlas-border hover:border-brand-300 transition-colors group">
-                <div className="w-9 h-9 rounded-lg bg-neutral-100 group-hover:bg-brand-50 flex items-center justify-center">
-                  <a.icon size={17} className="text-neutral-600 group-hover:text-brand-700" />
+              <Link key={a.href} to={a.href} className="aa-portal-row flex items-center gap-3 group">
+                <div
+                  className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+                  style={{ background: 'rgba(0,0,0,0.04)' }}
+                >
+                  <a.icon size={16} style={{ color: 'var(--aa-muted)' }} />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-black">{a.label}</p>
-                  <p className="text-xs text-neutral-500">{a.sub}</p>
+                  <p className="text-sm font-semibold tracking-tight" style={{ color: 'var(--aa-ink)' }}>{a.label}</p>
+                  <p className="text-xs" style={{ color: 'var(--aa-muted)' }}>{a.sub}</p>
                 </div>
-                <ArrowRight size={14} className="text-neutral-300" />
+                <ArrowRight size={14} className="text-neutral-300 group-hover:text-neutral-500" />
               </Link>
             ))}
           </div>

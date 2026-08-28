@@ -52,15 +52,15 @@ export default function ClientPortalLayout({ children }: { children: React.React
   }
 
   const Sidebar = () => (
-    <div className="flex flex-col h-full bg-white">
-      <div className="px-5 py-5 border-b border-atlas-border">
+    <div className="flex flex-col h-full aa-portal-aside">
+      <div className="aa-portal-side-head">
         <AtlasLogo size="sm" />
-        <p className="mt-3 text-sm font-semibold text-black truncate">{displayName}</p>
-        <p className="text-xs text-neutral-500 truncate">{user?.email}</p>
+        <p className="aa-portal-side-name truncate">{displayName}</p>
+        <p className="aa-portal-side-email truncate">{user?.email}</p>
       </div>
 
       <div className="p-4">
-        <Link to="/order-new" onClick={() => setOpen(false)} className="btn-primary w-full text-sm gap-2 py-2.5">
+        <Link to="/order-new" onClick={() => setOpen(false)} className="aa-btn-primary w-full text-sm gap-2 py-2.5">
           <Plus size={16} /> Submit Sample
         </Link>
       </div>
@@ -100,7 +100,7 @@ export default function ClientPortalLayout({ children }: { children: React.React
         })}
       </nav>
 
-      <div className="p-3 border-t border-atlas-border">
+      <div className="p-3 border-t" style={{ borderColor: 'var(--aa-line)' }}>
         <button
           type="button"
           onClick={() => void handleSignOut()}
@@ -114,15 +114,16 @@ export default function ClientPortalLayout({ children }: { children: React.React
   );
 
   return (
-    <div className="min-h-screen bg-neutral-50 flex">
-      <aside className="hidden lg:flex flex-col w-60 border-r border-atlas-border fixed inset-y-0 left-0 z-30">
+    <div className="aa-shell aa-portal flex">
+      <div className="aa-ambient" aria-hidden />
+      <aside className="hidden lg:flex flex-col w-60 fixed inset-y-0 left-0 z-30">
         <Sidebar />
       </aside>
 
       {open && (
         <div className="lg:hidden fixed inset-0 z-40">
           <div className="absolute inset-0 bg-black/40" onClick={() => setOpen(false)} />
-          <aside className="relative w-72 max-w-[85vw] h-full shadow-xl">
+          <aside className="relative w-72 max-w-[85vw] h-full shadow-xl z-10">
             <button type="button" onClick={() => setOpen(false)} className="absolute top-4 right-4 p-1.5 rounded-lg hover:bg-neutral-100 z-10">
               <X size={18} />
             </button>
@@ -131,12 +132,12 @@ export default function ClientPortalLayout({ children }: { children: React.React
         </div>
       )}
 
-      <div className="flex-1 lg:ml-60 min-w-0">
-        <header className="lg:hidden sticky top-0 z-20 bg-white border-b border-atlas-border px-4 py-3 flex items-center gap-3">
-          <button type="button" onClick={() => setOpen(true)} className="p-2 rounded-lg hover:bg-neutral-100">
+      <div className="flex-1 lg:ml-60 min-w-0 relative z-[1]">
+        <header className="lg:hidden aa-portal-mobile-bar px-4 py-3 flex items-center gap-3">
+          <button type="button" onClick={() => setOpen(true)} className="p-2 rounded-xl hover:bg-black/5">
             <Menu size={20} />
           </button>
-          <span className="font-semibold text-black text-sm">Client Portal</span>
+          <span className="font-semibold text-sm tracking-tight" style={{ color: 'var(--aa-ink)' }}>Client Portal</span>
         </header>
         <main className="portal-main">{children}</main>
       </div>
