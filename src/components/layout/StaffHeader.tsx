@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { LogOut } from 'lucide-react';
+import { FlaskConical, LayoutDashboard, LogOut, Shield } from 'lucide-react';
 import AtlasLogo from '../brand/AtlasLogo';
 import { useAuth } from '../../context/AuthContext';
 import { ROLE_LABELS, resolveUserRole, roleHome } from '../../lib/roles';
@@ -22,6 +22,28 @@ export default function StaffHeader({ title, children }: { title: string; childr
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {role === 'admin' && (
+            <>
+              <Link
+                to="/admin"
+                className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-neutral-300 hover:text-white hover:bg-neutral-900 rounded-md"
+              >
+                <Shield size={13} /> Admin
+              </Link>
+              <Link
+                to="/lab"
+                className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-neutral-300 hover:text-white hover:bg-neutral-900 rounded-md"
+              >
+                <FlaskConical size={13} /> Lab
+              </Link>
+              <Link
+                to="/dashboard"
+                className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-neutral-300 hover:text-white hover:bg-neutral-900 rounded-md"
+              >
+                <LayoutDashboard size={13} /> Client
+              </Link>
+            </>
+          )}
           {children}
           <button onClick={() => signOut()} className="p-2 text-neutral-500 hover:text-red-400 hover:bg-neutral-900 rounded-md" title="Sign out">
             <LogOut size={18} />

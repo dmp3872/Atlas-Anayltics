@@ -1,20 +1,30 @@
+import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, Package, FileText, ShoppingCart, Clock, TrendingUp, CheckCircle } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { Order } from '../../lib/types';
+import { COA, Order, OrderSample } from '../../lib/types';
 import { formatCurrency, formatDate, ORDER_STATUS_LABELS } from '../../lib/utils';
+import { computeClientNeedsYou } from '../../lib/needsYou';
+import NeedsYouStrip from '../shared/NeedsYouStrip';
 
 interface Props {
   orders: Order[];
+  samples: OrderSample[];
+  coas: COA[];
   coaCount: number;
   loading: boolean;
 }
 
-export default function PortalHome({ orders, coaCount, loading }: Props) {
+export default function PortalHome({ orders, samples, coas, coaCount, loading }: Props) {
   const { profile } = useAuth();
   const firstName = profile?.full_name?.split(' ')[0] || 'there';
   const active = orders.filter(o => !['complete', 'cancelled'].includes(o.status));
   const totalSpent = orders.filter(o => o.status !== 'cancelled').reduce((s, o) => s + o.total, 0);
+
+  const needsYou = useMemo(
+    () => (loading ? [] : computeClientNeedsYou({ orders, samples, coas })),
+    [loading, orders, samples, coas],
+  );
 
   return (
     <div className="max-w-5xl space-y-8">
@@ -22,6 +32,13 @@ export default function PortalHome({ orders, coaCount, loading }: Props) {
         <h1 className="portal-page-title">Dashboard</h1>
         <p className="portal-page-subtitle">Welcome back, {firstName}. Here&apos;s your testing overview.</p>
       </div>
+
+      {!loading && (
+        <NeedsYouStrip
+          items={needsYou}
+          emptyLabel="You're all caught up — nothing needs you right now."
+        />
+      )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[

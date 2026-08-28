@@ -1,16 +1,49 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Menu, X, ChevronDown, LogOut, LayoutDashboard, User, ArrowRight } from 'lucide-react';
+import {
+  Menu, X, ChevronDown, LogOut, LayoutDashboard, User, ArrowRight,
+  FlaskConical, Shield, Building2,
+} from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import AtlasLogo from '../brand/AtlasLogo';
+import { ROLE_LABELS, resolveUserRole, roleHome } from '../../lib/roles';
+import type { UserRole } from '../../lib/types';
+
+function workspaceLinks(role: UserRole): { href: string; label: string; icon: typeof LayoutDashboard }[] {
+  switch (role) {
+    case 'admin':
+      return [
+        { href: '/admin', label: 'Admin', icon: Shield },
+        { href: '/lab', label: 'Lab', icon: FlaskConical },
+        { href: '/dashboard', label: 'Client portal', icon: Building2 },
+      ];
+    case 'chemist':
+      return [{ href: '/lab', label: 'Lab', icon: FlaskConical }];
+    case 'verifier':
+      return [{ href: '/verify-portal', label: 'Verify', icon: Shield }];
+    case 'reviewer':
+      return [
+        { href: '/admin', label: 'Admin', icon: Shield },
+        { href: '/lab', label: 'Lab', icon: FlaskConical },
+      ];
+    default:
+      return [{ href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard }];
+  }
+}
 
 export default function Header() {
-  const { user, signOut } = useAuth();
+  const { user, profile, signOut } = useAuth();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
 
-  const isActive = (path: string) => location.pathname === path;
+  const role = resolveUserRole(profile, user?.email);
+  const home = roleHome(role);
+  const workspaces = workspaceLinks(role);
+  const primaryHome = workspaces[0] ?? { href: home, label: 'Dashboard', icon: LayoutDashboard };
+
+  const isActive = (path: string) =>
+    location.pathname === path || location.pathname.startsWith(`${path}/`);
 
   const navLinks = [
     { href: '/pricing', label: 'Pricing' },
@@ -70,15 +103,21 @@ export default function Header() {
                     <ChevronDown size={14} className="text-neutral-500" />
                   </button>
                   {userMenuOpen && (
-                    <div className="absolute right-0 top-full mt-1 w-52 bg-white rounded-lg shadow-lg border border-atlas-border py-1 z-50">
-                      <Link
-                        to="/dashboard"
-                        onClick={() => setUserMenuOpen(false)}
-                        className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-neutral-700 hover:bg-neutral-50"
-                      >
-                        <LayoutDashboard size={15} />
-                        Dashboard
-                      </Link>
+                    <div className="absolute right-0 top-full mt-1 w-56 bg-white rounded-lg shadow-lg border border-atlas-border py-1 z-50">
+                      <p className="px-4 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-neutral-400">
+                        {ROLE_LABELS[role]}
+                      </p>
+                      {workspaces.map(ws => (
+                        <Link
+                          key={ws.href}
+                          to={ws.href}
+                          onClick={() => setUserMenuOpen(false)}
+                          className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-neutral-700 hover:bg-neutral-50"
+                        >
+                          <ws.icon size={15} />
+                          {ws.label}
+                        </Link>
+                      ))}
                       <Link
                         to="/account"
                         onClick={() => setUserMenuOpen(false)}
@@ -118,7 +157,6 @@ export default function Header() {
         </div>
       </header>
 
-      {/* Mobile drawer — full screen, separate from page content */}
       {mobileOpen && (
         <div className="fixed inset-0 z-[100] md:hidden">
           <button
@@ -162,11 +200,11 @@ export default function Header() {
               {user ? (
                 <>
                   <Link
-                    to="/dashboard"
+                    to={primaryHome.href}
                     onClick={() => setMobileOpen(false)}
                     className="btn-primary w-full justify-center text-sm"
                   >
-                    Dashboard
+                    {primaryHome.label}
                   </Link>
                   <button
                     type="button"
