@@ -4,19 +4,19 @@ import type { NeedsYouItem } from '../../lib/needsYou';
 
 const LEVEL = {
   urgent: {
-    wrap: 'border-red-200 bg-red-50',
+    wrap: 'aa-needs aa-needs-urgent',
     icon: AlertTriangle,
     iconClass: 'text-red-600',
     title: 'text-red-950',
   },
   warning: {
-    wrap: 'border-amber-200 bg-amber-50',
+    wrap: 'aa-needs aa-needs-warning',
     icon: AlertCircle,
     iconClass: 'text-amber-700',
     title: 'text-amber-950',
   },
   info: {
-    wrap: 'border-sky-200 bg-sky-50',
+    wrap: 'aa-needs aa-needs-info',
     icon: Info,
     iconClass: 'text-sky-700',
     title: 'text-sky-950',
@@ -39,7 +39,7 @@ export default function NeedsYouStrip({
 }: Props) {
   if (items.length === 0) {
     return (
-      <div className={`rounded-xl border border-emerald-200 bg-emerald-50/70 px-4 py-3 flex items-center gap-2.5 ${className}`}>
+      <div className={`aa-needs aa-needs-empty flex items-center gap-2.5 ${className}`}>
         <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
         <p className="text-sm font-medium text-emerald-900">{emptyLabel}</p>
       </div>
@@ -49,8 +49,12 @@ export default function NeedsYouStrip({
   return (
     <section className={`space-y-2 ${className}`} aria-label="Needs you">
       <div className="flex items-baseline justify-between gap-2">
-        <h2 className="text-sm font-bold text-black tracking-tight">Needs you</h2>
-        <p className="text-[11px] text-neutral-500">{items.length} action{items.length === 1 ? '' : 's'}</p>
+        <h2 className="text-sm font-semibold tracking-tight" style={{ color: 'var(--aa-ink, #1d1d1f)' }}>
+          Needs you
+        </h2>
+        <p className="text-[11px]" style={{ color: 'var(--aa-muted, #6e6e73)' }}>
+          {items.length} action{items.length === 1 ? '' : 's'}
+        </p>
       </div>
       <ul className="space-y-2">
         {items.map(item => {
@@ -68,13 +72,13 @@ export default function NeedsYouStrip({
               <div className="min-w-0 flex-1">
                 <p className={`text-sm font-semibold ${style.title}`}>{item.title}</p>
                 {item.detail && (
-                  <p className="text-xs text-neutral-600 mt-0.5">{item.detail}</p>
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--aa-muted, #6e6e73)' }}>{item.detail}</p>
                 )}
               </div>
               {action}
             </>
           );
-          const rowClass = `w-full flex items-start gap-3 rounded-xl border px-3.5 py-3 text-left transition-colors hover:brightness-[0.98] ${style.wrap}`;
+          const rowClass = `w-full flex items-start gap-3 ${style.wrap} text-left transition-opacity hover:opacity-95`;
 
           if (item.href) {
             return (
@@ -105,7 +109,7 @@ export default function NeedsYouStrip({
                 <div className="min-w-0 flex-1">
                   <p className={`text-sm font-semibold ${style.title}`}>{item.title}</p>
                   {item.detail && (
-                    <p className="text-xs text-neutral-600 mt-0.5">{item.detail}</p>
+                    <p className="text-xs mt-0.5" style={{ color: 'var(--aa-muted, #6e6e73)' }}>{item.detail}</p>
                   )}
                 </div>
               </div>
