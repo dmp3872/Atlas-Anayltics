@@ -339,13 +339,35 @@ export default function Lab() {
   const filteredWorkflowCoas = useMemo(() => {
     const q = workflowCompanyFilter.trim().toLowerCase();
     if (!q) return coas;
-    return coas.filter(c => (c.company_name ?? '').toLowerCase().includes(q));
-  }, [coas, workflowCompanyFilter]);
+    return coas.filter(c => {
+      if ((c.company_name ?? '').toLowerCase().includes(q)) return true;
+      if ((c.batch_number ?? '').toLowerCase().includes(q)) return true;
+      if ((c.accession_number ?? '').toLowerCase().includes(q)) return true;
+      if ((c.slug ?? '').toLowerCase().includes(q)) return true;
+      if ((c.sample_name ?? '').toLowerCase().includes(q)) return true;
+      if ((c.display_name ?? '').toLowerCase().includes(q)) return true;
+      if (c.sample_id) {
+        const sample = samples.find(s => s.id === c.sample_id);
+        const lot = (parseSampleMetadata(sample?.metadata).batch_number || '').toLowerCase();
+        if (lot.includes(q)) return true;
+      }
+      return false;
+    });
+  }, [coas, samples, workflowCompanyFilter]);
 
   const filteredPendingQueueItems = useMemo(() => {
     const q = workflowCompanyFilter.trim().toLowerCase();
     if (!q) return pendingQueueItems;
-    return pendingQueueItems.filter(item => (item.order.company_name ?? '').toLowerCase().includes(q));
+    return pendingQueueItems.filter(item => {
+      if ((item.order.company_name ?? '').toLowerCase().includes(q)) return true;
+      const lot = (parseSampleMetadata(item.sample.metadata).batch_number || '').toLowerCase();
+      if (lot.includes(q)) return true;
+      const accession = (item.sample.accession_number || '').toLowerCase();
+      if (accession.includes(q)) return true;
+      const name = (item.sample.display_name || item.sample.sample_name || '').toLowerCase();
+      if (name.includes(q)) return true;
+      return false;
+    });
   }, [pendingQueueItems, workflowCompanyFilter]);
 
   const queueItems = useMemo(
@@ -2620,6 +2642,9 @@ export default function Lab() {
               value={workflowCompanyFilter}
               onChange={setWorkflowCompanyFilter}
               companies={workflowCompanyOptions}
+              label="Search workflow"
+              placeholder="Company, lot, LIMS ID, or sample…"
+              matchingHint={`Showing COAs matching company or lot “${workflowCompanyFilter}”`}
             />
             <CoaWorkflowBoard
               coas={filteredWorkflowCoas}
