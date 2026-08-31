@@ -6,6 +6,10 @@ interface Props {
   onChange: (value: string) => void;
   companies: string[];
   placeholder?: string;
+  /** Overrides the default “Company filter” label. */
+  label?: string;
+  /** Extra hint under the input when a query is active. */
+  matchingHint?: string;
 }
 
 export default function CompanyFilterSearch({
@@ -13,6 +17,8 @@ export default function CompanyFilterSearch({
   onChange,
   companies,
   placeholder = 'Filter by company…',
+  label = 'Company filter',
+  matchingHint,
 }: Props) {
   const [open, setOpen] = useState(false);
 
@@ -26,7 +32,7 @@ export default function CompanyFilterSearch({
     <div className="relative max-w-md">
       <label className="label flex items-center gap-1.5">
         <Building2 size={14} className="text-brand-600" />
-        Company filter
+        {label}
       </label>
       <div className="relative">
         <input
@@ -49,7 +55,7 @@ export default function CompanyFilterSearch({
               setOpen(false);
             }}
             className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-neutral-400 hover:text-black"
-            aria-label="Clear company filter"
+            aria-label="Clear filter"
           >
             <X size={16} />
           </button>
@@ -76,7 +82,7 @@ export default function CompanyFilterSearch({
       )}
       {value && (
         <p className="text-xs text-neutral-500 mt-1.5">
-          Showing COAs matching &ldquo;{value}&rdquo;
+          {matchingHint || `Showing COAs matching “${value}”`}
         </p>
       )}
     </div>
