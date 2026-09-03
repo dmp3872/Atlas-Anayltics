@@ -11,10 +11,6 @@ const proof = [
     title: 'Tamper-proof signing',
     description: 'Every certificate is cryptographically hashed. Public verification needs no account.',
   },
-  {
-    title: 'Independent lab',
-    description: 'No manufacturer affiliation. Flat panel pricing, no minimums, no contracts.',
-  },
 ];
 
 const steps = [

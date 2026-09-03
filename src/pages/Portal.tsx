@@ -23,7 +23,8 @@ import {
 } from '../lib/portalPrefs';
 import { loadOrderDraft, draftSummary } from '../lib/orderDraft';
 import { canDiscardOrder, discardOrder } from '../lib/orderDiscard';
-import { expectedPanelNames, matchCoaForSample } from '../lib/coaPanels';
+import { expectedPanelNames, matchCoaForSample, coasForSample } from '../lib/coaPanels';
+import SampleCoaPicker from '../components/portal/SampleCoaPicker';
 import { testsForSample } from '../lib/labQueue';
 import { SHIPPING_ADDRESS } from '../lib/submissionUtils';
 import AccountSettings from '../components/account/AccountSettings';
@@ -926,7 +927,8 @@ export default function Portal() {
                         </thead>
                         <tbody className="divide-y divide-atlas-border">
                           {filteredSamples.map(s => {
-                            const coa = matchCoaForSample(s, coas);
+                            const sampleCoas = coasForSample(s, coas);
+                            const coa = sampleCoas[0] ?? matchCoaForSample(s, coas);
                             const order = orders.find(o => o.id === s.order_id);
                             const meta = s.metadata as { batch_number?: string; labeled_content?: string; tests_label?: string } | null;
                             const lot = meta?.batch_number || coa?.batch_number || '—';
@@ -967,6 +969,11 @@ export default function Portal() {
                                       {meta.labeled_content}{meta.tests_label ? ` · ${meta.tests_label}` : ''}
                                     </p>
                                   )}
+                                  {sampleCoas.length > 1 && (
+                                    <p className="text-[11px] text-neutral-500 mt-1">
+                                      {sampleCoas.length} COAs available
+                                    </p>
+                                  )}
                                 </td>
                                 <td className="px-4 py-3">
                                   <SampleTestResultsList sample={s} coa={coa} panels={panels} />
@@ -974,14 +981,13 @@ export default function Portal() {
                                 <td className="px-4 py-3 text-xs text-neutral-600 whitespace-nowrap">{lot}</td>
                                 <td className="px-4 py-3 text-xs text-neutral-600 whitespace-nowrap">{formatDate(s.created_at)}</td>
                                 <td className="px-4 py-3 text-right whitespace-nowrap">
-                                  {coa ? (
-                                    <button
-                                      type="button"
-                                      onClick={() => openSampleCoa(s, coa)}
-                                      className="btn-outline text-[11px] py-1 px-2 gap-1 inline-flex"
-                                    >
-                                      <ExternalLink size={11} /> COA
-                                    </button>
+                                  {sampleCoas.length > 0 ? (
+                                    <SampleCoaPicker
+                                      sample={s}
+                                      coas={coas}
+                                      compact
+                                      onOpenCoa={c => openSampleCoa(s, c)}
+                                    />
                                   ) : s.status === 'complete' ? (
                                     <Link to={`/sample/${s.id}/coa`} className="btn-outline text-[11px] py-1 px-2 gap-1 inline-flex">
                                       <ExternalLink size={11} /> COA
@@ -1100,7 +1106,8 @@ export default function Portal() {
                         {orderSamples.length === 0 ? (
                           <p className="px-5 py-4 text-sm text-neutral-500">No samples recorded for this order.</p>
                         ) : orderSamples.map(s => {
-                          const coa = matchCoaForSample(s, coas);
+                          const sampleCoas = coasForSample(s, coas);
+                          const coa = sampleCoas[0] ?? matchCoaForSample(s, coas);
                           const meta = s.metadata as {
                             tests_label?: string;
                             batch_number?: string;
@@ -1123,7 +1130,7 @@ export default function Portal() {
                           const trackStage = trackingStageFromStatuses({
                             orderStatus: order.status,
                             sampleStatus: s.status,
-                            hasIssuedCoa: !!coa,
+                            hasIssuedCoa: sampleCoas.length > 0,
                           });
                           return (
                             <div key={s.id} className="px-5 py-4 flex flex-col lg:flex-row lg:items-start justify-between gap-4">
@@ -1137,9 +1144,10 @@ export default function Portal() {
                                 </div>
                                 {(() => {
                                   const brands = [
+                                    ...sampleCoas.map(c => c.company_name).filter(Boolean),
                                     order.company_name,
                                     ...((s.metadata as { brand_names?: string[] } | null)?.brand_names || []),
-                                  ].filter((n, i, arr) => !!n && arr.findIndex(x => x?.toLowerCase() === n.toLowerCase()) === i);
+                                  ].filter((n, i, arr) => !!n && arr.findIndex(x => x?.toLowerCase() === n!.toLowerCase()) === i) as string[];
                                   if (brands.length === 0) return null;
                                   return (
                                     <p className="text-xs text-neutral-500 mt-1">
@@ -1158,7 +1166,7 @@ export default function Portal() {
                                 <div className="mt-4 max-w-[280px]">
                                   <AtlasDigitalCoaCard
                                     samples={[trackerSample]}
-                                    companyName={order.company_name || profile?.company_name || ''}
+                                    companyName={coa?.company_name || order.company_name || profile?.company_name || ''}
                                     stage="tracking"
                                     trackingStage={trackStage}
                                     accession={s.accession_number || null}
@@ -1195,10 +1203,8 @@ export default function Portal() {
                                 </div>
                               </div>
                               <div className="flex-shrink-0">
-                                {coa ? (
-                                  <Link to={`/coa/${coa.slug}`} className="btn-outline text-xs py-1.5 gap-1 inline-flex whitespace-nowrap">
-                                    <ExternalLink size={12} /> View COA
-                                  </Link>
+                                {sampleCoas.length > 0 ? (
+                                  <SampleCoaPicker sample={s} coas={coas} />
                                 ) : s.status === 'complete' ? (
                                   <Link to={`/sample/${s.id}/coa`} className="btn-outline text-xs py-1.5 gap-1 inline-flex whitespace-nowrap">
                                     <ExternalLink size={12} /> View COA
