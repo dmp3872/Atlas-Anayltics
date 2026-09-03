@@ -212,9 +212,7 @@ export default function Admin() {
     >
       <div className="space-y-6">
         {msg && (
-          <div className={`flex items-start gap-2 p-3 rounded-lg border text-sm ${
-            msg.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-700'
-          }`}>
+          <div className={`aa-admin-toast ${msg.type === 'success' ? 'is-ok' : 'is-err'}`} role="status">
             {msg.type === 'success' ? <CheckCircle size={16} className="flex-shrink-0 mt-0.5" /> : <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />}
             {msg.text}
           </div>

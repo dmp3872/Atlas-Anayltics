@@ -36,6 +36,11 @@ import {
   resolveIncludeSterility,
   resolveIncludeEndotoxin,
   resolveIncludeHeavyMetals,
+  resolveIncludePh,
+  PH_SPEC_LABEL,
+  formatPhResult,
+  phPassFromResult,
+  isPhPanel,
 } from '../../lib/labCoaForm';
 import { downloadCoaPdf, openCoaPrintView } from '../../lib/coaPdf';
 import { LABEL_CLAIM_UNITS, labelClaimFromSummary } from '../../lib/orderCatalog';
@@ -111,11 +116,23 @@ function applyPrepDefaults(coa: COA) {
   };
 }
 
+function bootPhResult(coa: COA): string {
+  const summary = (coa.result_summary && typeof coa.result_summary === 'object')
+    ? (coa.result_summary as Record<string, unknown>)
+    : {};
+  const panels = Array.isArray(coa.panel_results) ? coa.panel_results : [];
+  const panel = panels.find(p => isPhPanel(p.panel_name));
+  const fromPanel = panel?.result && !/^pending\b/i.test(panel.result) ? panel.result : '';
+  const fromSummary = typeof summary.ph_result === 'string' ? summary.ph_result : '';
+  return formatPhResult(fromPanel || fromSummary);
+}
+
 export default function CoaPdfPrepModal({ coa, sampleMetadata = null, onClose, onSaved }: Props) {
   const boot = applyPrepDefaults(coa);
   const includeSterility = resolveIncludeSterility(coa, sampleMetadata);
   const includeEndotoxin = resolveIncludeEndotoxin(coa, sampleMetadata);
   const includeHeavyMetals = resolveIncludeHeavyMetals(coa, sampleMetadata);
+  const includePh = resolveIncludePh(coa, sampleMetadata);
   const [vialImage, setVialImage] = useState(boot.next.vial_image || '');
   const [hplcImage, setHplcImage] = useState(boot.next.hplc_image || '');
   const [watermarkImage, setWatermarkImage] = useState(boot.next.chromatogram_image || '');
@@ -156,6 +173,7 @@ export default function CoaPdfPrepModal({ coa, sampleMetadata = null, onClose, o
   const [intakeYmd, setIntakeYmd] = useState(boot.intakeYmd);
   const [endotoxinEuMl, setEndotoxinEuMl] = useState(boot.endotoxinEuMl);
   const [endotoxinPass, setEndotoxinPass] = useState<AssayPassState>(boot.stats.endotoxin_pass);
+  const [phResult, setPhResult] = useState(() => bootPhResult(coa));
   const [heavyMetalsPass, setHeavyMetalsPass] = useState<AssayPassState>(boot.stats.heavy_metals_pass);
   const [heavyMetals, setHeavyMetals] = useState<Record<HeavyMetalName, string>>(
     boot.stats.heavy_metals || heavyMetalsEmptyDefaults(),
@@ -195,6 +213,7 @@ export default function CoaPdfPrepModal({ coa, sampleMetadata = null, onClose, o
     setIntakeYmd(d.intakeYmd);
     setEndotoxinEuMl(d.endotoxinEuMl);
     setEndotoxinPass(d.stats.endotoxin_pass);
+    setPhResult(bootPhResult(coa));
     setHeavyMetalsPass(d.stats.heavy_metals_pass);
     setHeavyMetals(d.stats.heavy_metals || heavyMetalsEmptyDefaults());
     {
@@ -292,6 +311,8 @@ export default function CoaPdfPrepModal({ coa, sampleMetadata = null, onClose, o
         include_sterility: includeSterility,
         include_endotoxin: includeEndotoxin,
         include_heavy_metals: includeHeavyMetals,
+        include_ph: includePh,
+        ph_result: phResult,
       });
       if (saveError) {
         setError(saveError);
@@ -719,6 +740,32 @@ export default function CoaPdfPrepModal({ coa, sampleMetadata = null, onClose, o
                           {' '}Shown on the COA while Pending.
                         </p>
                       </div>
+                    )}
+                  </div>
+                </div>
+                )}
+
+                {includePh && (
+                <div className="space-y-3">
+                  <h3 className="text-sm font-bold uppercase tracking-wide text-black">pH</h3>
+                  <p className="text-xs text-neutral-500">Specification on COA: {PH_SPEC_LABEL}</p>
+                  <div>
+                    <label className="label" htmlFor="prep-ph-result">Calculated result</label>
+                    <input
+                      id="prep-ph-result"
+                      type="text"
+                      inputMode="decimal"
+                      value={phResult}
+                      onChange={e => setPhResult(e.target.value)}
+                      className="input-field max-w-xs"
+                      placeholder="e.g. 5.8"
+                    />
+                    {phResult.trim() ? (
+                      <p className={`text-xs mt-1 font-semibold ${phPassFromResult(phResult) ? 'text-emerald-700' : 'text-red-700'}`}>
+                        {phPassFromResult(phResult) ? 'PASS' : 'FAIL'}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-neutral-500 mt-1">Type the measured pH.</p>
                     )}
                   </div>
                 </div>
