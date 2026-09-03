@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link, Navigate } from 'react-router-dom';
 import {
-  ArrowLeft, CheckCircle, Clock, Shield, XCircle, FlaskConical,
+  ArrowLeft, CheckCircle, Clock, Shield, XCircle, FlaskConical, ExternalLink,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Order, OrderSample, TestPanel } from '../lib/types';
@@ -12,6 +12,8 @@ import Header from '../components/layout/Header';
 import Footer from '../components/layout/Footer';
 import AtlasLogo from '../components/brand/AtlasLogo';
 
+type CoaChoice = { slug: string; company_name: string | null; issued_at: string | null };
+
 export default function SampleCOA() {
   const { sampleId } = useParams<{ sampleId: string }>();
   const { user, profile, loading: authLoading } = useAuth();
@@ -19,6 +21,7 @@ export default function SampleCOA() {
   const [order, setOrder] = useState<Order | null>(null);
   const [panels, setPanels] = useState<TestPanel[]>([]);
   const [completedSlug, setCompletedSlug] = useState<string | null>(null);
+  const [coaChoices, setCoaChoices] = useState<CoaChoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
 
@@ -26,21 +29,52 @@ export default function SampleCOA() {
     if (!sampleId || authLoading) return;
     setLoading(true);
     setNotFound(false);
+    setCoaChoices([]);
+    setCompletedSlug(null);
     (async () => {
       const { data: s } = await supabase.from('order_samples').select('*').eq('id', sampleId).maybeSingle();
       if (!s) { setNotFound(true); setLoading(false); return; }
       setSample(s);
 
-      // If a certificate already exists for this sample, send the user there.
-      const { data: coa } = await supabase.from('coas').select('slug').eq('sample_id', s.id).maybeSingle();
-      if (coa?.slug) { setCompletedSlug(coa.slug); setLoading(false); return; }
+      // Certificates for this sample (may be multiple branded copies).
+      const { data: coaRows } = await supabase
+        .from('coas')
+        .select('slug, company_name, issued_at')
+        .eq('sample_id', s.id)
+        .order('issued_at', { ascending: false });
+      const rows = (coaRows as CoaChoice[] | null) ?? [];
+      if (rows.length === 1 && rows[0].slug) {
+        setCompletedSlug(rows[0].slug);
+        setLoading(false);
+        return;
+      }
+      if (rows.length > 1) {
+        setCoaChoices(rows.filter(r => !!r.slug));
+        setLoading(false);
+        return;
+      }
 
       // Fall back to matching an existing certificate by batch number.
       const sMeta = s.metadata as { batch_number?: string } | null;
       const batch = sMeta?.batch_number?.trim();
       if (batch) {
-        const { data: byBatch } = await supabase.from('coas').select('slug').eq('batch_number', batch).limit(1).maybeSingle();
-        if (byBatch?.slug) { setCompletedSlug(byBatch.slug); setLoading(false); return; }
+        const { data: byBatch } = await supabase
+          .from('coas')
+          .select('slug, company_name, issued_at')
+          .eq('batch_number', batch)
+          .order('issued_at', { ascending: false })
+          .limit(10);
+        const batchRows = (byBatch as CoaChoice[] | null) ?? [];
+        if (batchRows.length === 1 && batchRows[0].slug) {
+          setCompletedSlug(batchRows[0].slug);
+          setLoading(false);
+          return;
+        }
+        if (batchRows.length > 1) {
+          setCoaChoices(batchRows.filter(r => !!r.slug));
+          setLoading(false);
+          return;
+        }
       }
 
       const [{ data: o }, { data: p }] = await Promise.all([
@@ -61,6 +95,41 @@ export default function SampleCOA() {
       <div className="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
     </div>
   );
+
+  if (coaChoices.length > 1) {
+    return (
+      <>
+        <Header />
+        <div className="min-h-screen bg-neutral-50 flex items-center justify-center px-4">
+          <div className="w-full max-w-md card p-6">
+            <h1 className="text-xl font-bold text-black tracking-tight">Select a certificate</h1>
+            <p className="text-sm text-neutral-500 mt-2">
+              This sample has {coaChoices.length} COAs. Choose which brand to open.
+            </p>
+            <ul className="mt-5 space-y-2">
+              {coaChoices.map(c => (
+                <li key={c.slug}>
+                  <Link
+                    to={`/coa/${c.slug}`}
+                    className="flex items-center justify-between gap-3 w-full px-4 py-3 rounded-xl border border-atlas-border hover:border-brand-400 hover:bg-brand-50/40 transition-colors"
+                  >
+                    <span className="font-semibold text-black truncate">
+                      {(c.company_name || '').trim() || c.slug}
+                    </span>
+                    <ExternalLink size={14} className="text-neutral-400 shrink-0" />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+            <Link to="/dashboard/coas" className="inline-flex items-center gap-1.5 text-sm text-neutral-500 mt-5 hover:text-black">
+              <ArrowLeft size={14} /> Back to Your COAs
+            </Link>
+          </div>
+        </div>
+        <Footer />
+      </>
+    );
+  }
 
   if (notFound || !sample) return (
     <>

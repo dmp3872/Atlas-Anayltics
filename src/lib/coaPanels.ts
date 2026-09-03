@@ -158,11 +158,17 @@ export function hasIssuedCoaForSample(sample: OrderSample, coas: COA[]): boolean
 // same user_id (and narrowed further to the same order_id when possible) to
 // avoid matching another client's identically-named sample or batch number.
 export function matchCoaForSample(sample: OrderSample, coas: COA[]): COA | undefined {
-  const direct = coas.find(c => c.sample_id === sample.id);
-  if (direct) return direct;
+  const all = coasForSample(sample, coas);
+  return all[0];
+}
+
+/** All certificates tied to a sample (branded copies share sample_id). */
+export function coasForSample(sample: OrderSample, coas: COA[]): COA[] {
+  const direct = coas.filter(c => c.sample_id === sample.id);
+  if (direct.length > 0) return direct;
 
   const sameUser = coas.filter(c => c.user_id === sample.user_id);
-  if (sameUser.length === 0) return undefined;
+  if (sameUser.length === 0) return [];
 
   const sameOrder = sample.order_id ? sameUser.filter(c => c.order_id === sample.order_id) : [];
   const pool = sameOrder.length ? sameOrder : sameUser;
@@ -170,17 +176,25 @@ export function matchCoaForSample(sample: OrderSample, coas: COA[]): COA | undef
   const meta = sample.metadata as { batch_number?: string } | null;
   const batch = meta?.batch_number?.trim();
   if (batch) {
-    const byBatch = pool.find(c => (c.batch_number || '').trim() === batch);
-    if (byBatch) return byBatch;
+    const byBatch = pool.filter(c => (c.batch_number || '').trim() === batch);
+    if (byBatch.length) return byBatch;
   }
 
   const names = [sample.display_name, sample.sample_name]
     .filter(Boolean)
-    .map(n => n.toLowerCase().trim());
-  return pool.find(c =>
-    names.includes((c.display_name || '').toLowerCase().trim()) ||
-    names.includes((c.sample_name || '').toLowerCase().trim())
+    .map(n => n!.toLowerCase().trim());
+  const byName = pool.filter(c =>
+    names.includes((c.display_name || '').toLowerCase().trim())
+    || names.includes((c.sample_name || '').toLowerCase().trim()),
   );
+  return byName;
+}
+
+/** Label for picking among branded COA copies. */
+export function coaBrandLabel(coa: Pick<COA, 'company_name' | 'slug' | 'display_name' | 'sample_name'>): string {
+  const brand = (coa.company_name || '').trim();
+  if (brand) return brand;
+  return coa.slug || coa.display_name || coa.sample_name || 'Certificate';
 }
 
 // Fraction of testing complete, inferred from sample status. Used to render a
