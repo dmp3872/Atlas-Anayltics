@@ -4,7 +4,7 @@ import {
   AlertCircle, AlertTriangle, ArrowLeft, ArrowRight, CalendarClock, CheckCircle, CheckCircle2, Clock,
   DollarSign, Fingerprint, Package, PackageCheck, Printer, Zap,
 } from 'lucide-react';
-import StaffHeader from '../../components/layout/StaffHeader';
+import { AdminDetailChrome } from '../../components/admin/AdminShell';
 import ActivityLog from '../../components/admin/ActivityLog';
 import PriorityBanner from '../../components/lab/PriorityBanner';
 import PrintPackButton from '../../components/lab/PrintPackButton';
@@ -285,26 +285,24 @@ export default function AdminOrderDetail() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-neutral-50">
-        <StaffHeader title="Order Detail" />
+      <AdminDetailChrome title="Order">
         <div className="max-w-4xl mx-auto p-6">
-          <div className="h-64 bg-neutral-100 rounded-xl animate-pulse" />
+          <div className="h-64 rounded-2xl animate-pulse" style={{ background: 'rgba(0,0,0,0.04)' }} />
         </div>
-      </div>
+      </AdminDetailChrome>
     );
   }
 
   if (!order) {
     return (
-      <div className="min-h-screen bg-neutral-50">
-        <StaffHeader title="Order Detail" />
+      <AdminDetailChrome title="Order">
         <div className="max-w-4xl mx-auto p-6">
-          <button type="button" onClick={() => navigate('/admin')} className="inline-flex items-center gap-1.5 text-sm text-neutral-500 hover:text-black mb-4">
+          <button type="button" onClick={() => navigate('/admin')} className="inline-flex items-center gap-1.5 text-sm mb-4" style={{ color: 'var(--aa-muted)' }}>
             <ArrowLeft size={14} /> Back to admin
           </button>
-          <div className="card p-8 text-center text-neutral-500">Order not found.</div>
+          <div className="card p-8 text-center" style={{ color: 'var(--aa-muted)' }}>Order not found.</div>
         </div>
-      </div>
+      </AdminDetailChrome>
     );
   }
 
@@ -314,10 +312,9 @@ export default function AdminOrderDetail() {
   const advanceStatuses = nextStatuses.filter(s => s !== 'cancelled');
 
   return (
-    <div className="min-h-screen bg-neutral-50">
-      <StaffHeader title="Order Detail" />
+    <AdminDetailChrome title={order.order_number}>
       <div className="max-w-4xl mx-auto p-4 sm:p-6">
-        <button type="button" onClick={() => navigate('/admin')} className="inline-flex items-center gap-1.5 text-sm text-neutral-500 hover:text-black mb-4">
+        <button type="button" onClick={() => navigate('/admin')} className="inline-flex items-center gap-1.5 text-sm mb-4 hover:opacity-80" style={{ color: 'var(--aa-muted)' }}>
           <ArrowLeft size={14} /> Back to admin
         </button>
 
@@ -698,6 +695,6 @@ export default function AdminOrderDetail() {
           )}
         </div>
       </div>
-    </div>
+    </AdminDetailChrome>
   );
 }

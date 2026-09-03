@@ -64,6 +64,10 @@ function accessionForCoa(coa: COA): { label: string; value: string } | null {
   return null;
 }
 
+/** Lanes that stay collapsed unless they need attention or the chemist opens them. */
+const QUIET_COLUMNS: CoaWorkflowStage[] = ['awaiting_info', 'verified', 'published'];
+const NEXT_QUEUE_LIMIT = 3;
+
 const COLUMN_STYLES: Record<CoaWorkflowStage, { header: string; body: string; ring: string }> = {
   awaiting_info: {
     header: 'bg-amber-50 border-amber-200',
@@ -460,6 +464,8 @@ export default function CoaWorkflowBoard({
   const [canScrollRight, setCanScrollRight] = useState(false);
   /** `${stage}:${bundle.key}` → expanded. Multi-COA orders start collapsed. */
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+  /** Lane open/closed: undefined = default, true = chemist opened, false = chemist closed. */
+  const [columnOpen, setColumnOpen] = useState<Partial<Record<CoaWorkflowStage, boolean>>>({});
 
   function updateBoardScrollHints() {
     const el = boardScrollRef.current;
@@ -638,6 +644,153 @@ export default function CoaWorkflowBoard({
     return out;
   }, [grouped, sortedPending, orders, samples, currentUserId]);
 
+  const columnCounts = useMemo(() => {
+    const counts = {} as Record<CoaWorkflowStage, number>;
+    for (const stage of COA_WORKFLOW_BOARD_COLUMNS) {
+      const bundles = bundlesByStage[stage] || [];
+      counts[stage] = bundles.reduce((n, b) => n + bundleItemCount(b), 0);
+    }
+    return counts;
+  }, [bundlesByStage]);
+
+  const publishedPendingCount = useMemo(
+    () => grouped.published.filter(c => canUpdatePendingPublishedCoa(c)).length,
+    [grouped],
+  );
+
+  function isColumnCollapsed(stage: CoaWorkflowStage): boolean {
+    if (columnOpen[stage] === true) return false;
+    if (columnOpen[stage] === false) return true;
+    if (!QUIET_COLUMNS.includes(stage)) return false;
+    if (stage === 'awaiting_info') return columnCounts[stage] === 0;
+    if (stage === 'published') return publishedPendingCount === 0;
+    return true;
+  }
+
+  function toggleColumn(stage: CoaWorkflowStage) {
+    setColumnOpen(prev => ({ ...prev, [stage]: isColumnCollapsed(stage) }));
+  }
+
+  function revealStage(stage: CoaWorkflowStage) {
+    setColumnOpen(prev => ({ ...prev, [stage]: true }));
+  }
+
+  const nextActions = useMemo(() => {
+    type NextItem = {
+      id: string;
+      title: string;
+      detail: string;
+      action: string;
+      stage: CoaWorkflowStage;
+      run: () => void;
+    };
+    const items: NextItem[] = [];
+    const mine = (userId: string | null | undefined) => !!currentUserId && userId === currentUserId;
+
+    for (const item of sortedPending) {
+      if (!onIssueCoa) break;
+      if (currentUserId && item.assigned_to && item.assigned_to !== currentUserId) continue;
+      items.push({
+        id: `issue-${item.sample.id}`,
+        title: item.sample.display_name || item.sample.sample_name,
+        detail: item.order.company_name || item.order.order_number,
+        action: 'Issue COA',
+        stage: 'testing_in_progress',
+        run: () => {
+          revealStage('testing_in_progress');
+          onIssueCoa(item.sample);
+        },
+      });
+      if (items.length >= NEXT_QUEUE_LIMIT) return items;
+    }
+
+    for (const coa of grouped.pending_review) {
+      const reviewId = coa.review_assigned_to ?? null;
+      const canSignOff = !reviewId
+        || mine(reviewId)
+        || reviewerOptions.some(r => r.id === currentUserId && (r.role === 'admin' || r.role === 'reviewer'));
+      if (!canSignOff) continue;
+      if (currentUserId && reviewId && reviewId !== currentUserId && !isAdmin) continue;
+      items.push({
+        id: `sign-${coa.id}`,
+        title: coa.display_name || coa.sample_name,
+        detail: coa.company_name || 'In review',
+        action: 'Sign off (2/2)',
+        stage: 'pending_review',
+        run: () => {
+          revealStage('pending_review');
+          void onMoveCoa(coa, 'verified');
+        },
+      });
+      if (items.length >= NEXT_QUEUE_LIMIT) return items;
+    }
+
+    for (const coa of grouped.issued) {
+      if (currentUserId && assigneeForCoa(coa) && assigneeForCoa(coa) !== currentUserId) continue;
+      items.push({
+        id: `review-${coa.id}`,
+        title: coa.display_name || coa.sample_name,
+        detail: coa.company_name || 'Issued',
+        action: 'Send for review',
+        stage: 'issued',
+        run: () => {
+          revealStage('issued');
+          setReviewPickFor(coa.id);
+          setReviewAssignee('');
+        },
+      });
+      if (items.length >= NEXT_QUEUE_LIMIT) return items;
+    }
+
+    for (const coa of grouped.verified) {
+      items.push({
+        id: `publish-${coa.id}`,
+        title: coa.display_name || coa.sample_name,
+        detail: coa.company_name || 'Verified',
+        action: 'Publish',
+        stage: 'verified',
+        run: () => {
+          revealStage('verified');
+          void onMoveCoa(coa, 'published');
+        },
+      });
+      if (items.length >= NEXT_QUEUE_LIMIT) return items;
+    }
+
+    for (const coa of grouped.published.filter(c => canUpdatePendingPublishedCoa(c))) {
+      if (currentUserId && assigneeForCoa(coa) && assigneeForCoa(coa) !== currentUserId) continue;
+      items.push({
+        id: `pending-${coa.id}`,
+        title: coa.display_name || coa.sample_name,
+        detail: pendingAssayLabels(coa.panel_results).join(' · ') || 'Pending assays',
+        action: 'Update pending',
+        stage: 'published',
+        run: () => {
+          revealStage('published');
+          setPrepCoa(coa);
+        },
+      });
+      if (items.length >= NEXT_QUEUE_LIMIT) return items;
+    }
+
+    for (const coa of grouped.awaiting_info) {
+      if (currentUserId && assigneeForCoa(coa) && assigneeForCoa(coa) !== currentUserId) continue;
+      items.push({
+        id: `info-${coa.id}`,
+        title: coa.display_name || coa.sample_name,
+        detail: coa.company_name || 'Needs client info',
+        action: 'Open lane',
+        stage: 'awaiting_info',
+        run: () => revealStage('awaiting_info'),
+      });
+      if (items.length >= NEXT_QUEUE_LIMIT) return items;
+    }
+
+    return items;
+  }, [
+    sortedPending, grouped, currentUserId, onIssueCoa, onMoveCoa, reviewerOptions, isAdmin, samples,
+  ]);
+
   function isGroupExpanded(stage: CoaWorkflowStage, bundleKey: string): boolean {
     return expandedGroups[`${stage}:${bundleKey}`] === true;
   }
@@ -667,17 +820,26 @@ export default function CoaWorkflowBoard({
 
   function handleDragOver(e: React.DragEvent, stage: CoaWorkflowStage) {
     e.preventDefault();
+    e.stopPropagation();
     e.dataTransfer.dropEffect = 'move';
     setOverStage(stage);
   }
 
+  function handleDragLeave(e: React.DragEvent, stage: CoaWorkflowStage) {
+    const next = e.relatedTarget as Node | null;
+    if (next && e.currentTarget.contains(next)) return;
+    setOverStage(prev => (prev === stage ? null : prev));
+  }
+
   function handleDrop(e: React.DragEvent, stage: CoaWorkflowStage) {
     e.preventDefault();
+    e.stopPropagation();
     const coaId = e.dataTransfer.getData('text/coa-id')
       || e.dataTransfer.getData('text/plain')
       || draggingId;
     const coa = coas.find(c => c.id === coaId);
     if (coa && coaWorkflowStage(coa) !== stage) {
+      revealStage(stage);
       void onMoveCoa(coa, stage);
     }
     handleDragEnd();
@@ -718,8 +880,39 @@ export default function CoaWorkflowBoard({
         <strong> Restart COA</strong> to edit results and re-issue. Cards marked <strong className="text-sky-800">Assigned to you</strong> are yours.
         Chemists can <strong>Publish now</strong> from any stage to override stopping points when needed.
         Published / verified cards stay editable — use <strong>Edit COA</strong> (or amber <strong>Update pending</strong>
-        when deferred assays remain). Changes are written to the certificate update log without unpublishing.
+        when deferred assays remain). Collapse any lane with the chevron to free space.
+        Needs client info, Verified, and Published start collapsed unless they need work.
       </p>
+
+      {nextActions.length > 0 && (
+        <div className="rounded-xl border border-atlas-border bg-white p-3">
+          <div className="flex items-baseline justify-between gap-2 mb-2">
+            <p className="text-sm font-semibold text-black tracking-tight">Next</p>
+            <p className="text-[11px] text-neutral-500">Up to {NEXT_QUEUE_LIMIT} actions, assigned to you first</p>
+          </div>
+          <ul className="grid gap-2 sm:grid-cols-3">
+            {nextActions.map(item => (
+              <li key={item.id}>
+                <button
+                  type="button"
+                  onClick={item.run}
+                  disabled={!!movingId}
+                  className="w-full text-left rounded-lg border border-atlas-border hover:border-brand-400 hover:bg-brand-50/40 px-3 py-2.5 transition-colors disabled:opacity-50"
+                >
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-400">
+                    {COA_WORKFLOW_LABELS[item.stage]}
+                  </p>
+                  <p className="text-sm font-semibold text-black truncate mt-0.5">{item.title}</p>
+                  <p className="text-xs text-neutral-500 truncate">{item.detail}</p>
+                  <span className="inline-flex items-center gap-1 mt-1.5 text-xs font-semibold text-brand-800">
+                    {item.action} <ArrowRight size={11} />
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {prepCoa && (
         <CoaPdfPrepModal
@@ -798,11 +991,62 @@ export default function CoaWorkflowBoard({
           const isTestingCol = stage === 'testing_in_progress';
           const isOver = overStage === stage && draggingId !== null;
           const bundles = bundlesByStage[stage] || [];
-          const columnCount = bundles.reduce((n, b) => n + bundleItemCount(b), 0);
+          const columnCount = columnCounts[stage] ?? 0;
           const pendingFollowUpCount =
             (stage === 'published' || stage === 'verified')
               ? grouped[stage].filter(c => canUpdatePendingPublishedCoa(c)).length
               : 0;
+          const collapsed = isColumnCollapsed(stage);
+
+          if (collapsed) {
+            return (
+              <div
+                key={stage}
+                className={`flex-shrink-0 w-[72px] snap-start flex flex-col rounded-xl border border-atlas-border overflow-hidden h-[min(70vh,720px)] ${
+                  isOver ? `ring-2 ${styles.ring} shadow-md` : ''
+                }`}
+                onDragOver={e => handleDragOver(e, stage)}
+                onDragLeave={e => handleDragLeave(e, stage)}
+                onDrop={e => handleDrop(e, stage)}
+              >
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => {
+                    if (draggingId) return;
+                    toggleColumn(stage);
+                  }}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      toggleColumn(stage);
+                    }
+                  }}
+                  className={`flex-1 min-h-0 flex flex-col items-center justify-start gap-3 px-1.5 py-3 ${styles.header} hover:brightness-[0.98] cursor-pointer ${
+                    draggingId ? 'pointer-events-none' : ''
+                  }`}
+                  title={draggingId ? `Drop to move to ${COA_WORKFLOW_LABELS[stage]}` : `Open ${COA_WORKFLOW_LABELS[stage]}`}
+                >
+                  {stageIcon(stage)}
+                  <span
+                    className="text-[10px] font-bold uppercase tracking-wide text-neutral-700"
+                    style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
+                  >
+                    {COA_WORKFLOW_LABELS[stage]}
+                  </span>
+                  <span className="text-xs font-semibold text-neutral-600 bg-white/80 px-1.5 py-0.5 rounded-full">
+                    {columnCount}
+                  </span>
+                  {pendingFollowUpCount > 0 && (
+                    <span className="text-[9px] font-bold uppercase tracking-wide text-amber-900 bg-amber-100 border border-amber-300 px-1 py-0.5 rounded-full">
+                      {pendingFollowUpCount}
+                    </span>
+                  )}
+                  <ChevronRight size={14} className="text-neutral-400 mt-auto" />
+                </div>
+              </div>
+            );
+          }
 
           return (
             <div
@@ -811,14 +1055,21 @@ export default function CoaWorkflowBoard({
                 isOver ? `ring-2 ${styles.ring} shadow-md` : ''
               }`}
               onDragOver={e => handleDragOver(e, stage)}
-              onDragLeave={() => setOverStage(prev => (prev === stage ? null : prev))}
+              onDragLeave={e => handleDragLeave(e, stage)}
               onDrop={e => handleDrop(e, stage)}
             >
-              <div className={`px-3 py-2.5 border-b flex items-center justify-between gap-2 shrink-0 sticky top-0 z-10 ${styles.header}`}>
-                <h3 className="font-bold text-sm flex items-center gap-2 min-w-0 truncate">
+              <div className={`px-3 py-2.5 border-b flex items-center justify-between gap-2 shrink-0 sticky top-0 z-10 ${styles.header} ${
+                draggingId ? 'pointer-events-none' : ''
+              }`}>
+                <button
+                  type="button"
+                  onClick={() => toggleColumn(stage)}
+                  className="font-bold text-sm flex items-center gap-2 min-w-0 truncate text-left hover:opacity-80"
+                  title={`Collapse ${COA_WORKFLOW_LABELS[stage]}`}
+                >
                   {stageIcon(stage)}
                   <span className="truncate">{COA_WORKFLOW_LABELS[stage]}</span>
-                </h3>
+                </button>
                 <div className="flex items-center gap-1 shrink-0">
                   {pendingFollowUpCount > 0 && (
                     <span
@@ -831,6 +1082,15 @@ export default function CoaWorkflowBoard({
                   <span className="text-xs font-semibold text-neutral-500 bg-white/70 px-2 py-0.5 rounded-full">
                     {columnCount}
                   </span>
+                  <button
+                    type="button"
+                    onClick={() => toggleColumn(stage)}
+                    className="p-0.5 rounded text-neutral-500 hover:text-black hover:bg-white/80"
+                    aria-label={`Collapse ${COA_WORKFLOW_LABELS[stage]}`}
+                    title="Collapse lane"
+                  >
+                    <ChevronLeft size={14} />
+                  </button>
                   <div className="flex flex-col -space-y-0.5">
                     <button
                       type="button"

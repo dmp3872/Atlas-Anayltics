@@ -8,7 +8,7 @@ import { supabase } from '../lib/supabase';
 import { COA, Company, LabPriority, Order, OrderSample, SampleStatus, UserProfile } from '../lib/types';
 import { computeCoaContentHash } from '../lib/coaVerify';
 import { notifyCoaReady, notifyOrderUpdate, notifyOrderEtaUpdated } from '../lib/notifications';
-import { clientSubmittedLabel, matrixTypeFromSampleMetadata, parseSampleMetadata } from '../lib/coaPanels';
+import { clientSubmittedLabel, matrixTypeFromSampleMetadata, parseSampleMetadata, sampleIsBacWater } from '../lib/coaPanels';
 import { fetchUserCompanies } from '../lib/coaProfile';
 import {
   EMPTY_LAB_RESULTS, LabCoaResults, VIAL_SIZE_OPTIONS, VialSizeOption,
@@ -20,6 +20,7 @@ import {
   assayPassSelectValue, assayPassFromSelect, blendConformityVialRows, isBlendTotalConformityRow,
   MAX_PURITY_PERCENT, PURITY_INPUT_HINT, sanitizePurityInput, purityExceedsMax,
   ASSAY_METHOD_LABELS, AssayMethod,
+  PH_SPEC_LABEL, formatPhResult, phPassFromResult,
 } from '../lib/labCoaForm';
 import { COA_WORKFLOW_LABELS, canPrepareCoa, coaWorkflowStage, buildWorkflowStagePatch, CoaWorkflowStage } from '../lib/coaWorkflow';
 import {
@@ -1043,6 +1044,10 @@ export default function Lab() {
         includeEndotoxin: labResults.includeEndotoxin || !!orderedIncludes?.includeEndotoxin,
         includeHeavyMetals: labResults.includeHeavyMetals || !!orderedIncludes?.includeHeavyMetals,
         includeFentanyl: labResults.includeFentanyl || !!orderedIncludes?.includeFentanyl,
+        includePh: labResults.includePh
+          || !!orderedIncludes?.includePh
+          || sampleIsBacWater(linkedSample?.metadata)
+          || /bac\s*water/i.test(form.matrixType),
         sterilityMethod:
           labResults.includeSterility || orderedIncludes?.includeSterility
             ? (labResults.sterilityMethod === 'pcr' && orderedIncludes?.sterilityMethod === 'culture_14_day'
@@ -1234,6 +1239,8 @@ export default function Lab() {
             include_heavy_metals: !!resultsForPanels.includeHeavyMetals,
             include_sterility: !!resultsForPanels.includeSterility,
             include_fentanyl: !!resultsForPanels.includeFentanyl,
+            include_ph: !!resultsForPanels.includePh,
+            ph_result: resultsForPanels.includePh ? formatPhResult(resultsForPanels.phResult) : '',
             labeled_content: form.labeledContent.trim() || linkedMeta?.labeled_content || '',
             label_claim_unit: form.labelClaimUnit.trim() || linkedMeta?.label_claim_unit || 'mg',
             include_cas_number: !!looksLikeCasNumber(form.casNumber.trim())
@@ -1865,7 +1872,11 @@ export default function Lab() {
                   <select
                     className="input-field"
                     value={form.matrixType}
-                    onChange={e => update({ matrixType: e.target.value })}
+                    onChange={e => {
+                      const matrixType = e.target.value;
+                      update({ matrixType });
+                      if (/bac\s*water/i.test(matrixType)) updateResults({ includePh: true });
+                    }}
                   >
                     <option value="">Select matrix type…</option>
                     {SAMPLE_MATRICES.map(m => (
@@ -2224,6 +2235,32 @@ export default function Lab() {
                           </select>
                         </div>
                       </>
+                    )}
+                    {labResults.includePh && (
+                      <div>
+                        <label className="label">pH (calculated)</label>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={labResults.phResult}
+                          onChange={e => updateResults({ phResult: e.target.value })}
+                          className="input-field"
+                          placeholder="e.g. 5.8"
+                        />
+                        <p className="text-xs text-neutral-500 mt-1">
+                          Spec: {PH_SPEC_LABEL}
+                          {labResults.phResult.trim() ? (
+                            <>
+                              {' · '}
+                              <span className={phPassFromResult(labResults.phResult) ? 'text-emerald-700 font-semibold' : 'text-red-700 font-semibold'}>
+                                {phPassFromResult(labResults.phResult) ? 'PASS' : 'FAIL'}
+                              </span>
+                            </>
+                          ) : (
+                            <> · type the measured result</>
+                          )}
+                        </p>
+                      </div>
                     )}
                     {labResults.includeFentanyl && (
                       <div>

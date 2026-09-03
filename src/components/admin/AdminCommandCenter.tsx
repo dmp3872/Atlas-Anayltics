@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { type ReactNode } from 'react';
 import {
   AlertTriangle, ArrowRight, Building2, CheckCircle2, Clock, DollarSign,
   FlaskConical, Package, UserPlus, Users, Zap,
@@ -36,48 +37,49 @@ export default function AdminCommandCenter({ samples, orders, coas, users, onNav
     clear: {
       label: 'On track',
       blurb: 'No major overdue backlog or chemist lag.',
-      className: 'border-emerald-200 bg-emerald-50/60 text-emerald-950',
       icon: CheckCircle2,
     },
     watch: {
       label: 'Needs attention',
       blurb: 'Unpaid, unassigned, or approaching overdue work.',
-      className: 'border-amber-200 bg-amber-50/70 text-amber-950',
       icon: Clock,
     },
     behind: {
       label: 'Behind',
       blurb: 'Overdue ETAs and/or assigned chemists lagging — intervene.',
-      className: 'border-red-300 bg-red-50 text-red-950',
       icon: AlertTriangle,
     },
   }[ops.behindLevel];
 
   return (
-    <div className="space-y-6">
-      <div className={`card p-5 border ${health.className}`}>
+    <div className="space-y-7">
+      <div className={`aa-portal-panel aa-portal-panel-pad aa-animate ${
+        ops.behindLevel === 'behind' ? 'aa-needs-urgent' : ops.behindLevel === 'watch' ? 'aa-needs-warning' : 'aa-needs-empty'
+      }`}>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-start gap-3 min-w-0">
-            <health.icon size={22} className="flex-shrink-0 mt-0.5" />
+            <health.icon size={20} className="flex-shrink-0 mt-0.5" strokeWidth={1.6} />
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-wider opacity-70">Admin ops status</p>
-              <h2 className="text-xl font-bold mt-0.5">{health.label}</h2>
-              <p className="text-sm mt-1 opacity-90">{health.blurb}</p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] opacity-70">Ops status</p>
+              <h2 className="text-xl font-semibold tracking-tight mt-0.5" style={{ letterSpacing: '-0.03em' }}>{health.label}</h2>
+              <p className="text-sm mt-1 opacity-80">{health.blurb}</p>
             </div>
           </div>
-          <div className="flex flex-wrap gap-2 text-xs font-semibold">
-            <StatChip label="Overdue" value={ops.overdue.length} alert={ops.overdue.length > 0} />
-            <StatChip label="Chemist lag" value={ops.chemistsBehind.length} alert={ops.chemistsBehind.length > 0} />
-            <StatChip label="Unassigned" value={ops.unassigned.length} alert={ops.unassigned.length > 0} />
-            <StatChip label="Unpaid" value={ops.unpaid.length} alert={ops.unpaid.length > 0} />
-          </div>
         </div>
-        <p className="text-xs mt-3 opacity-80">
-          This is the <span className="font-semibold">admin bench</span> — customers, money, ETAs, and staffing exceptions.
-          Day-to-day testing lives on the{' '}
-          <Link to="/lab" className="font-semibold underline hover:no-underline">Chemist Console</Link>.
-        </p>
       </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 aa-animate" style={{ animationDelay: '60ms' }}>
+        <StatChip label="Overdue" value={ops.overdue.length} alert={ops.overdue.length > 0} />
+        <StatChip label="Chemist lag" value={ops.chemistsBehind.length} alert={ops.chemistsBehind.length > 0} />
+        <StatChip label="Unassigned" value={ops.unassigned.length} alert={ops.unassigned.length > 0} />
+        <StatChip label="Unpaid" value={ops.unpaid.length} alert={ops.unpaid.length > 0} />
+      </div>
+
+      <p className="text-xs aa-animate" style={{ color: 'var(--aa-muted)', animationDelay: '80ms' }}>
+        Customer workflow, money, ETAs, and staffing exceptions.
+        Testing lives on the{' '}
+        <Link to="/lab" className="font-semibold hover:underline" style={{ color: 'var(--aa-ink)' }}>Chemist Console</Link>.
+      </p>
 
       <NeedsYouStrip
         items={needsYou}
@@ -89,8 +91,8 @@ export default function AdminCommandCenter({ samples, orders, coas, users, onNav
       <div>
         <div className="flex items-center justify-between mb-3">
           <div>
-            <h3 className="font-bold text-black">Customer workflow</h3>
-            <p className="text-xs text-neutral-500">Where orders sit relative to the client — not the chemist queue.</p>
+            <h3 className="font-semibold tracking-tight text-black">Customer workflow</h3>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--aa-muted)' }}>Where orders sit for the client.</p>
           </div>
           <button
             type="button"
@@ -142,13 +144,13 @@ export default function AdminCommandCenter({ samples, orders, coas, users, onNav
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         {/* Who's behind */}
-        <div className="card p-5">
+        <div className="aa-portal-panel aa-portal-panel-pad">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h3 className="font-bold text-black flex items-center gap-2">
-                <Users size={16} className="text-brand-600" /> Who&apos;s behind
+              <h3 className="font-semibold tracking-tight text-black flex items-center gap-2">
+                <Users size={16} style={{ color: 'var(--aa-gold)' }} strokeWidth={1.6} /> Who&apos;s behind
               </h3>
-              <p className="text-xs text-neutral-500 mt-0.5">
+              <p className="text-xs mt-0.5" style={{ color: 'var(--aa-muted)' }}>
                 Assigned chemists with overdue work or samples aging past 48h.
               </p>
             </div>
@@ -203,11 +205,11 @@ export default function AdminCommandCenter({ samples, orders, coas, users, onNav
         </div>
 
         {/* Exceptions */}
-        <div className="card p-5">
+        <div className="aa-portal-panel aa-portal-panel-pad">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h3 className="font-bold text-black">Exceptions & money</h3>
-              <p className="text-xs text-neutral-500 mt-0.5">Refunds, cancellations, and urgent priority.</p>
+              <h3 className="font-semibold tracking-tight text-black">Exceptions & money</h3>
+              <p className="text-xs mt-0.5" style={{ color: 'var(--aa-muted)' }}>Refunds, cancellations, and urgent priority.</p>
             </div>
             <button
               type="button"
@@ -264,7 +266,7 @@ export default function AdminCommandCenter({ samples, orders, coas, users, onNav
 
       {/* Unassigned needs dispatch — admin action, not chemist claim */}
       {ops.unassigned.length > 0 && (
-        <div className="card overflow-hidden">
+        <div className="aa-portal-panel overflow-hidden">
           <div className="px-5 py-3 border-b border-atlas-border flex items-center justify-between gap-3">
             <div>
               <h3 className="font-bold text-sm text-black flex items-center gap-2">
@@ -309,8 +311,8 @@ export default function AdminCommandCenter({ samples, orders, coas, users, onNav
         <QuickLink onClick={() => onNavigate('dispatch')}>Dispatch board</QuickLink>
         <QuickLink onClick={() => onNavigate('clients')}>Client CRM</QuickLink>
         <QuickLink onClick={() => onNavigate('coas')}>COA overrides</QuickLink>
-        <Link to="/lab" className="px-3 py-1.5 rounded-md border border-atlas-border bg-white text-neutral-600 hover:bg-neutral-50">
-          Chemist console ↗
+        <Link to="/lab" className="aa-admin-pill">
+          Chemist console
         </Link>
       </div>
     </div>
@@ -319,11 +321,12 @@ export default function AdminCommandCenter({ samples, orders, coas, users, onNav
 
 function StatChip({ label, value, alert }: { label: string; value: number; alert?: boolean }) {
   return (
-    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border tabular-nums ${
-      alert ? 'bg-white/80 border-black/10 font-bold' : 'bg-white/50 border-transparent opacity-80'
-    }`}>
-      {label} <strong>{value}</strong>
-    </span>
+    <div className={`portal-stat-card ${alert ? 'ring-1 ring-amber-300/80' : ''}`}>
+      <p className="text-2xl font-bold tabular-nums tracking-tight" style={{ color: 'var(--aa-ink)', letterSpacing: '-0.03em' }}>
+        {value}
+      </p>
+      <p className="text-xs mt-0.5" style={{ color: 'var(--aa-muted)' }}>{label}</p>
+    </div>
   );
 }
 
@@ -334,9 +337,10 @@ function MiniStat({
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-lg border px-3 py-2 text-left hover:bg-neutral-50 ${
-        alert ? 'border-amber-200 bg-amber-50/40' : 'border-atlas-border bg-neutral-50'
+      className={`rounded-xl border px-3 py-2 text-left hover:bg-black/[0.03] ${
+        alert ? 'border-amber-200/80 bg-amber-50/40' : ''
       }`}
+      style={alert ? undefined : { borderColor: 'var(--aa-line)', background: 'rgba(255,255,255,0.5)' }}
     >
       <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">{label}</p>
       <p className="text-lg font-bold text-black tabular-nums">{value}</p>
@@ -356,13 +360,13 @@ function WorkflowLane({
   onSeeAll: () => void;
 }) {
   const toneClass = {
-    ok: 'border-atlas-border',
-    amber: 'border-amber-200 bg-amber-50/20',
-    red: 'border-red-200 bg-red-50/30',
+    ok: '',
+    amber: 'aa-needs-warning',
+    red: 'aa-needs-urgent',
   }[tone];
 
   return (
-    <div className={`card overflow-hidden ${toneClass}`}>
+    <div className={`aa-admin-lane ${toneClass}`}>
       <div className="px-4 py-3 border-b border-atlas-border/80 flex items-start justify-between gap-2">
         <div>
           <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500 flex items-center gap-1.5">
@@ -420,13 +424,9 @@ function OrderRow({ order, compact, muted }: { order: Order; compact?: boolean; 
   );
 }
 
-function QuickLink({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+function QuickLink({ onClick, children }: { onClick: () => void; children: ReactNode }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="px-3 py-1.5 rounded-md border border-atlas-border bg-white text-neutral-700 hover:bg-neutral-50 font-medium"
-    >
+    <button type="button" onClick={onClick} className="aa-admin-pill">
       {children}
     </button>
   );
