@@ -1,6 +1,6 @@
 import { PanelResult } from './types';
 
-const QTY_UNIT_RE = /mg|mcg|µg|ug|g|mL|ml|IU|iu/i;
+const QTY_UNIT_RE = /mg|mcg|µg|ug|g|mL|ml|IU|iu|units/i;
 
 function displayQtyUnit(unit?: string): string {
   const u = (unit || 'mg').trim();
@@ -269,17 +269,20 @@ export function formatCoaResultDisplay(raw: string): string {
     .split(/\s*,\s*/)
     .map(part => {
       const t = part.trim();
-      const qty = t.match(/^(-?\d+(?:\.\d+)?)\s*(mg|mcg|µg|ug|g|mL|ml|IU|iu)$/i);
+      const qty = t.match(/^(-?\d+(?:\.\d+)?)\s*(mg|mcg|µg|ug|g|mL|ml|IU|iu|units)$/i);
       if (qty) {
         const n = Number(qty[1]);
         if (Number.isFinite(n)) {
-          const unit = qty[2].toLowerCase() === 'iu'
+          const rawU = qty[2];
+          const unit = rawU.toLowerCase() === 'iu'
             ? 'IU'
-            : qty[2].toLowerCase() === 'ml'
+            : rawU.toLowerCase() === 'ml'
               ? 'mL'
-              : qty[2].toLowerCase() === 'ug' || qty[2] === 'µg'
+              : rawU.toLowerCase() === 'ug' || rawU === 'µg'
                 ? 'mcg'
-                : qty[2];
+                : rawU.toLowerCase() === 'units'
+                  ? 'units'
+                  : rawU;
           return `${(Math.round(n * 10) / 10).toFixed(1)} ${unit}`;
         }
       }

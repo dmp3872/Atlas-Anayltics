@@ -26,6 +26,40 @@ export function parseSampleMetadata(metadata: OrderSample['metadata']): OrderSam
   return metadata as OrderSampleMetadata;
 }
 
+/** Product form shown on COAs (Lyophilized, Liquid/Solution, etc.). */
+export function matrixTypeFromSampleMetadata(
+  metadata: OrderSample['metadata'] | OrderSampleMetadata | null | undefined,
+): string {
+  const meta = parseSampleMetadata(metadata as OrderSample['metadata']);
+  const direct = (meta.sample_matrix || '').trim();
+  if (direct) return direct;
+  // Some older / walk-in rows stored the matrix in sample_type.
+  const sampleType = (meta.sample_type || '').trim();
+  const known = [
+    'Powder',
+    'Liquid/Solution',
+    'Lyophilized',
+    'Capsule/Tablet',
+    'Raw Material',
+    'Creams/Gels',
+    'Capsules',
+    'BAC Water',
+    'Other',
+  ];
+  if (known.includes(sampleType)) return sampleType;
+  return '';
+}
+
+/** Bacteriostatic water / aqueous diluent samples — COA includes a pH assay. */
+export function sampleIsBacWater(
+  metadata: OrderSample['metadata'] | OrderSampleMetadata | null | undefined,
+): boolean {
+  const meta = parseSampleMetadata(metadata as OrderSample['metadata']);
+  if (meta.category === 'bac_water') return true;
+  const matrix = `${meta.sample_matrix || ''} ${meta.sample_type || ''}`.toLowerCase();
+  return /\bbac\s*water\b|\bbacteriostatic\b/.test(matrix);
+}
+
 export function orderSampleIncludesFentanyl(metadata: OrderSample['metadata']): boolean {
   const meta = parseSampleMetadata(metadata);
   if (typeof meta.include_fentanyl === 'boolean') return meta.include_fentanyl;

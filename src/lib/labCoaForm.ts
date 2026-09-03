@@ -1,5 +1,5 @@
 import { COA, OrderSample, PanelResult } from './types';
-import { OrderSampleMetadata, parseSampleMetadata, orderSampleIncludesFentanyl } from './coaPanels';
+import { OrderSampleMetadata, parseSampleMetadata, orderSampleIncludesFentanyl, sampleIsBacWater } from './coaPanels';
 import { ATLAS_PRO_INCLUDED_CONFORMITY_VIALS, formatLabelClaim } from './orderCatalog';
 import { sampleIncludesAssay } from './orderProjection';
 
@@ -86,6 +86,43 @@ export function sterilityPanelName(method: SterilityMethod): string {
 /** Endotoxin panel title — LAL (Limulus Amebocyte Lysate / USP <85>). */
 export function endotoxinPanelName(): string {
   return 'Endotoxin (LAL)';
+}
+
+/** BAC water pH — specification range shown on the certificate. */
+export const PH_SPEC_MIN = 4.5;
+export const PH_SPEC_MAX = 7.0;
+export const PH_SPEC_LABEL = '4.5–7.0';
+
+export function phPanelName(): string {
+  return 'pH';
+}
+
+export function isPhPanel(name: string): boolean {
+  return /^\s*ph\b/i.test((name || '').trim());
+}
+
+export function parsePhValue(raw: string): number | null {
+  const m = String(raw || '').trim().match(/-?\d+(?:\.\d+)?/);
+  if (!m) return null;
+  const n = Number(m[0]);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Keep chemist-typed precision (up to 2 decimals). Empty stays empty. */
+export function formatPhResult(raw: string): string {
+  const trimmed = (raw || '').trim();
+  if (!trimmed) return '';
+  const n = parsePhValue(trimmed);
+  if (n == null) return trimmed;
+  const frac = trimmed.match(/-?\d+\.(\d+)/)?.[1] ?? '';
+  const decimals = frac.length === 0 ? 1 : Math.min(frac.length, 2);
+  return n.toFixed(decimals);
+}
+
+export function phPassFromResult(raw: string): boolean | null {
+  const n = parsePhValue(raw);
+  if (n == null) return null;
+  return n >= PH_SPEC_MIN && n <= PH_SPEC_MAX;
 }
 
 /** Append sterility method to a specification cell (PDF AcroForm). */
@@ -418,6 +455,9 @@ export interface LabCoaResults {
   blendPeptides: BlendPeptideRow[];
   includeFentanyl: boolean;
   fentanylPass: boolean;
+  /** BAC water only — calculated pH on the certificate. */
+  includePh: boolean;
+  phResult: string;
 }
 
 export const EMPTY_LAB_RESULTS: LabCoaResults = {
@@ -441,6 +481,8 @@ export const EMPTY_LAB_RESULTS: LabCoaResults = {
   blendPeptides: [],
   includeFentanyl: false,
   fentanylPass: true,
+  includePh: false,
+  phResult: '',
 };
 
 /** Well-known peptide → CAS for chemist COA autocomplete. */
@@ -510,19 +552,31 @@ export function resolveCasNumber(
   return '';
 }
 
-/** Normalizes claim/result quantity units for COA display (IU stays IU, not mg). */
-export function normalizeClaimUnit(unit?: string | null): string {
+/** Quantity tokens allowed on label claim / net content results. */
+export const QUANTITY_UNIT_TOKEN_RE = /IU|iu|units|mcg|µg|ug|mg|g|mL|ml|%/i;
+
+/** Canonical unit shown on COAs. Empty for "other" so we do not invent mg. */
+export function displayClaimUnit(unit?: string | null): string {
   const u = (unit || '').trim();
-  if (!u || /^other$/i.test(u)) return 'mg';
+  if (!u || /^other$/i.test(u)) return '';
   if (/^iu$/i.test(u)) return 'IU';
   if (/^ml$/i.test(u)) return 'mL';
   if (/^(ug|µg)$/i.test(u)) return 'mcg';
+  if (/^u$/i.test(u) || /^units$/i.test(u)) return 'units';
   return u;
 }
 
-const QUANTITY_UNIT_SUFFIX_RE = /\s*(?:mg|mcg|µg|ug|g|mL|ml|IU|iu)\s*$/i;
+/** Normalizes claim/result quantity units for COA display (IU stays IU, not mg). */
+export function normalizeClaimUnit(unit?: string | null): string {
+  const shown = displayClaimUnit(unit);
+  if (shown) return shown;
+  if (/^other$/i.test((unit || '').trim())) return '';
+  return 'mg';
+}
 
-/** Strip a trailing quantity unit (mg / IU / mcg / …) from a typed amount. */
+const QUANTITY_UNIT_SUFFIX_RE = /\s*(?:IU|iu|units|mcg|µg|ug|mg|g|mL|ml|%)\s*$/i;
+
+/** Strip a trailing quantity unit (mg / IU / mcg / units / …) from a typed amount. */
 export function stripQuantityUnit(raw: string): string {
   return (raw || '').trim().replace(QUANTITY_UNIT_SUFFIX_RE, '').trim();
 }
@@ -532,11 +586,34 @@ export function stripQuantityUnit(raw: string): string {
  * Uses the selected label-claim unit so HCG and similar assays can show IU instead of mg.
  */
 export function formatMgAmount(raw: string, unit: string = 'mg'): string {
-  const u = normalizeClaimUnit(unit);
+  const u = displayClaimUnit(unit);
   const numeric = stripQuantityUnit(raw);
   if (!numeric) return '';
   const formatted = formatCoaDecimal(numeric);
-  return formatted ? `${formatted} ${u}` : '';
+  if (!formatted) return '';
+  return u ? `${formatted} ${u}` : formatted;
+}
+
+/** Rewrite quantity results to the label-claim unit (fixes COAs that were stored as mg). */
+export function applyQuantityUnit(raw: string, unit?: string | null): string {
+  const display = displayClaimUnit(unit);
+  if (!raw?.trim()) return raw || '';
+  return raw
+    .split(/\s*,\s*/)
+    .map(part => {
+      const t = part.trim();
+      if (!t || /^pending\b/i.test(t) || t === '—') return t;
+      const m = t.match(/^(-?\d+(?:\.\d+)?)\s*(IU|iu|units|mcg|µg|ug|mg|g|mL|ml|U|%)?$/i);
+      if (!m) return t;
+      const n = Number(m[1]);
+      if (!Number.isFinite(n)) return t;
+      const rounded = (Math.round(n * 10) / 10).toFixed(1);
+      const token = (m[2] || '').toLowerCase();
+      if (token === '%' && display !== '%') return `${rounded}%`;
+      if (!display) return rounded;
+      return `${rounded} ${display}`;
+    })
+    .join(', ');
 }
 
 /**
@@ -659,6 +736,7 @@ export function buildLabResultsFromSample(metadata: OrderSample['metadata'], sam
   const includeSterilityCulture = sampleIncludesAssay(orderRef, 'sterility_culture');
   const includeSterility =
     includeSterilityCulture || sampleIncludesAssay(orderRef, 'sterility_pcr');
+  const includePh = sampleIsBacWater(metadata);
   return {
     ...EMPTY_LAB_RESULTS,
     identification,
@@ -668,6 +746,7 @@ export function buildLabResultsFromSample(metadata: OrderSample['metadata'], sam
     includeHeavyMetals,
     includeEndotoxin,
     includeSterility,
+    includePh,
     sterilityMethod: includeSterilityCulture ? 'culture_14_day' : 'pcr',
     conformityPeptides: isBlend
       ? seedBlendConformityPeptides(blendPeptides, extraConformityVialCount(metadata))
@@ -738,6 +817,24 @@ export function resolveIncludeHeavyMetals(
   return false;
 }
 
+/** pH appears on bacteriostatic water COAs. */
+export function resolveIncludePh(
+  coa: Pick<COA, 'panel_results' | 'result_summary'>,
+  sampleMetadata?: OrderSample['metadata'] | null,
+): boolean {
+  if (sampleMetadata != null && sampleIsBacWater(sampleMetadata)) return true;
+  const summary = (coa.result_summary && typeof coa.result_summary === 'object')
+    ? (coa.result_summary as Record<string, unknown>)
+    : {};
+  const panels = Array.isArray(coa.panel_results) ? coa.panel_results : [];
+  if (panels.some(p => isPhPanel(p.panel_name))) return true;
+  if (typeof summary.include_ph === 'boolean') return summary.include_ph;
+  if (summary.category === 'bac_water') return true;
+  const matrix = `${summary.sample_matrix || ''} ${summary.matrix_type || ''}`.toLowerCase();
+  if (/\bbac\s*water\b|\bbacteriostatic\b/.test(matrix)) return true;
+  return sampleIsBacWater(sampleMetadata);
+}
+
 /** Rebuild Issue COA form values from an existing certificate (restart / re-issue). */
 export function buildLabResultsFromCoa(
   coa: Pick<COA, 'panel_results' | 'purity_percent' | 'molecular_weight' | 'result_summary' | 'sample_name'>,
@@ -762,6 +859,7 @@ export function buildLabResultsFromCoa(
   const sterilityPanel = findPanel('sterility');
   const endotoxinPanel = findPanel('endotoxin');
   const fentanylPanel = findPanel('fentanyl');
+  const phPanel = panels.find(p => isPhPanel(p.panel_name));
 
   const summaryContentValues = Array.isArray(summary.content_values)
     ? summary.content_values.map(v => String(v || '').trim()).filter(Boolean)
@@ -967,6 +1065,13 @@ export function buildLabResultsFromCoa(
     heavyMetals,
     includeFentanyl: sampleMetadata != null ? base.includeFentanyl : (!!fentanylPanel || base.includeFentanyl),
     fentanylPass: fentanylPanel ? fentanylPanel.pass !== false : true,
+    includePh: sampleMetadata != null
+      ? (base.includePh || !!phPanel)
+      : (base.includePh || !!phPanel || summary.include_ph === true),
+    phResult: formatPhResult(
+      (phPanel?.result && !/^pending\b/i.test(phPanel.result) ? phPanel.result : '')
+      || (typeof summary.ph_result === 'string' ? summary.ph_result : ''),
+    ),
     conformityPeptides,
     blendPeptides: blendPeptides.length > 0 ? blendPeptides : base.blendPeptides,
   };
@@ -1105,8 +1210,19 @@ export function labResultsToPanelResults(
     });
   }
 
+  if (results.includePh) {
+    const formatted = formatPhResult(results.phResult);
+    const pass = phPassFromResult(formatted);
+    rows.push({
+      panel_name: phPanelName(),
+      specification: PH_SPEC_LABEL,
+      result: pass === null ? '' : formatted,
+      pass,
+    });
+  }
+
   // Fold multi-vial conformity into Net Content / Net Purity totals only — never blend component rows.
-  const { contentParts, purityParts } = collectContentPurityParts(results);
+  const { contentParts, purityParts } = collectContentPurityParts(results, claimUnit);
 
   if (contentParts.length > 0) {
     const net = rows.find(r => {
@@ -1174,8 +1290,7 @@ function collectContentPurityParts(
 } {
   const contentParts: string[] = [];
   const purityParts: string[] = [];
-  const claimUnit = normalizeClaimUnit(unit);
-  const asQty = (v: string) => formatMgAmount(v, claimUnit);
+  const asQty = (v: string) => formatMgAmount(v, unit);
   const asPct = (v: string) => formatPurityPercent(v);
 
   // Primary assay fields = first vial tested. Conformity rows = additional measured vials
@@ -1227,7 +1342,7 @@ export function computeLabAssayAverages(
   const vialCount = Math.max(contentParts.length, purityParts.length, contentNums.length ? 1 : 0);
 
   return {
-    avg_net_peptide_content: meanQty ? `${meanQty} ${claimUnit}` : '',
+    avg_net_peptide_content: meanQty ? (claimUnit ? `${meanQty} ${claimUnit}` : meanQty) : '',
     avg_purity: meanPct ? `${meanPct}%` : '',
     mean_of_vials_tested: vialCount > 0 ? String(vialCount) : '',
     content_values: contentParts,
@@ -1241,10 +1356,9 @@ export function computeAssayAveragesFromPanels(
   purityPercent?: number | null,
   summary?: Record<string, unknown> | null,
 ): AssayAverages {
+  const fromSummary = typeof summary?.label_claim_unit === 'string' ? summary.label_claim_unit : '';
+  const claimUnit = displayClaimUnit(fromSummary) || normalizeClaimUnit(fromSummary);
   const hydrated = hydrateMultiVialPanelResults(panels, summary);
-  const claimUnit = normalizeClaimUnit(
-    typeof summary?.label_claim_unit === 'string' ? summary.label_claim_unit : 'mg',
-  );
   const net = hydrated.find(p => /net content|peptide content/i.test(p.panel_name) && !/^blend content\b/i.test(p.panel_name));
   const pur = hydrated.find(p => /net purity|^purity\b/i.test(p.panel_name));
   const contentParts = (net?.result || '')
@@ -1262,11 +1376,12 @@ export function computeAssayAveragesFromPanels(
   const vialCount = Math.max(contentParts.length, purityParts.length, contentNums.length ? 1 : 0);
 
   // Prefer unit already present on measured results (e.g. "5000.0 IU") over summary fallback.
-  const unitFromResult = contentParts[0]?.match(/\b(mg|mcg|µg|ug|g|mL|ml|IU|iu)\b/i)?.[1];
-  const displayUnit = unitFromResult ? normalizeClaimUnit(unitFromResult) : claimUnit;
+  const unitFromResult = contentParts[0]?.match(/\b(IU|iu|units|mcg|µg|ug|mg|g|mL|ml)\b/i)?.[1];
+  const displayUnit = displayClaimUnit(fromSummary) || displayClaimUnit(unitFromResult) || claimUnit;
+  const avgQty = meanQty ? (displayUnit ? `${meanQty} ${displayUnit}` : meanQty) : '';
 
   return {
-    avg_net_peptide_content: meanQty ? `${meanQty} ${displayUnit}` : '',
+    avg_net_peptide_content: avgQty,
     avg_purity: meanPct
       ? `${meanPct}%`
       : (purityPercent != null && Number.isFinite(purityPercent) ? `${purityPercent}%` : ''),

@@ -283,7 +283,7 @@ export const MAX_BRANDS_PER_SAMPLE = 5;
 export const MAX_BLEND_COMPONENTS = 4;
 export const MIN_BLEND_COMPONENTS = 2;
 
-export const LABEL_CLAIM_UNITS = ['mg', 'mcg', 'g', 'mL', '%', 'IU', 'other'] as const;
+export const LABEL_CLAIM_UNITS = ['mg', 'mcg', 'g', 'mL', 'units', '%', 'IU', 'other'] as const;
 
 export interface BlendComponent {
   name: string;
@@ -461,8 +461,8 @@ export function formatLabelClaim(content: string, unit: string): string {
 export function labelClaimFromSummary(summary: Record<string, unknown> | null | undefined): string {
   if (!summary || typeof summary !== 'object') return '';
   const content = typeof summary.labeled_content === 'string' ? summary.labeled_content.trim() : '';
-  const unit = typeof summary.label_claim_unit === 'string' ? summary.label_claim_unit.trim() : 'mg';
-  return formatLabelClaim(content, unit || 'mg');
+  const unit = typeof summary.label_claim_unit === 'string' ? summary.label_claim_unit.trim() : '';
+  return formatLabelClaim(content, unit);
 }
 
 /**
