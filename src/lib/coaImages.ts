@@ -22,6 +22,11 @@ import {
   formatCoaDecimal,
   resolveCasNumber,
   looksLikeCasNumber,
+  phPanelName,
+  PH_SPEC_LABEL,
+  formatPhResult,
+  phPassFromResult,
+  isPhPanel,
 } from './labCoaForm';
 import { compressImageDataUrl } from './imageCompress';
 import { resolvePanelPass } from './coaDisplayPanels';
@@ -494,6 +499,8 @@ export type CoaPdfPrepPayload = {
   include_sterility?: boolean;
   include_endotoxin?: boolean;
   include_heavy_metals?: boolean;
+  include_ph?: boolean;
+  ph_result?: string;
 };
 
 function upsertNamedPanel(
@@ -580,6 +587,24 @@ export function applyPrepToCoaPanels(coa: COA, prep: CoaPdfPrepPayload): {
             result: formatEndotoxinResult(prep.endotoxin_eu_ml),
             pass: prep.endotoxin_pass,
           };
+    })(),
+  );
+
+  panels = upsertNamedPanel(
+    panels,
+    name => isPhPanel(name),
+    (() => {
+      const hadPh = panels.some(p => isPhPanel(p.panel_name));
+      const includePh = prep.include_ph ?? hadPh;
+      if (!includePh) return null;
+      const formatted = formatPhResult(prep.ph_result || '');
+      const pass = phPassFromResult(formatted);
+      return {
+        panel_name: phPanelName(),
+        specification: PH_SPEC_LABEL,
+        result: pass === null ? '' : formatted,
+        pass,
+      };
     })(),
   );
 
@@ -713,6 +738,8 @@ export async function saveCoaPdfPrep(
     ...(typeof prep.include_sterility === 'boolean' ? { include_sterility: prep.include_sterility } : {}),
     ...(typeof prep.include_endotoxin === 'boolean' ? { include_endotoxin: prep.include_endotoxin } : {}),
     ...(typeof prep.include_heavy_metals === 'boolean' ? { include_heavy_metals: prep.include_heavy_metals } : {}),
+    ...(typeof prep.include_ph === 'boolean' ? { include_ph: prep.include_ph } : {}),
+    ...(typeof prep.ph_result === 'string' ? { ph_result: formatPhResult(prep.ph_result) } : {}),
     ...((prep.labeled_content || '').trim()
       ? {
           labeled_content: (prep.labeled_content || '').trim(),

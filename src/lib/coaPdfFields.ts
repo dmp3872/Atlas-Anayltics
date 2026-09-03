@@ -1,7 +1,7 @@
 import { COA, PanelResult } from './types';
 import { formatDate } from './utils';
 import { readCoaPdfStats } from './coaImages';
-import { ENDOTOXIN_SPEC_EU_ML, STERILITY_METHOD_LABELS, formatCoaDecimal, parseAssayMethod, withAssayMethodSpec, withSterilityMethodSpec, ASSAY_METHOD_LABELS, assayMethodFromPanels, hydrateMultiVialPanelResults, formatPurityResultWithUncertainty, formatSterilityPendingResult } from './labCoaForm';
+import { ENDOTOXIN_SPEC_EU_ML, STERILITY_METHOD_LABELS, formatCoaDecimal, parseAssayMethod, withAssayMethodSpec, withSterilityMethodSpec, ASSAY_METHOD_LABELS, assayMethodFromPanels, hydrateMultiVialPanelResults, formatPurityResultWithUncertainty, formatSterilityPendingResult, applyQuantityUnit } from './labCoaForm';
 import { collapseConformityPanels } from './coaDisplayPanels';
 import { labelClaimFromSummary, netContentSpecificationDisplay } from './orderCatalog';
 
@@ -162,6 +162,7 @@ export function buildCoaPdfFieldValues(coa: COA): CoaPdfFieldValues {
     (coa.purity_percent != null ? `${formatCoaDecimal(coa.purity_percent)}%` : '');
   const vialsTested = meanOfVials || (typeof chrom.vial_size === 'string' ? chrom.vial_size : '');
   const labelClaim = labelClaimFromSummary(summary);
+  const claimUnit = typeof summary.label_claim_unit === 'string' ? summary.label_claim_unit : '';
   const netContentSpecification = netContentSpecificationDisplay(netContent.specification, labelClaim)
     || netContent.specification;
   const assayMethod = parseAssayMethod(
@@ -185,7 +186,7 @@ export function buildCoaPdfFieldValues(coa: COA): CoaPdfFieldValues {
     'ASSAY METHOD': methodLabel,
 
     // Average Net Peptide Content card
-    VIALS_33: avgNetPeptide,
+    VIALS_33: applyQuantityUnit(avgNetPeptide, claimUnit),
     VIALS_55: meanOfVials,
     VIALS_222: '',
 
@@ -202,7 +203,7 @@ export function buildCoaPdfFieldValues(coa: COA): CoaPdfFieldValues {
       netContentSpecification || 'Label claim',
       assayMethod,
     ),
-    'ResultNet Peptide Content': netContent.result,
+    'ResultNet Peptide Content': applyQuantityUnit(netContent.result, claimUnit),
     'ConformityNet Peptide Content': netContent.conformity,
 
     'SpecificationPurity HPLC': withAssayMethodSpec(
@@ -261,9 +262,11 @@ export function buildCoaPdfFieldValues(coa: COA): CoaPdfFieldValues {
     for (let i = slot; i < 5; i++) {
       const panel = extras[i - slot];
       fields[`Text2_T${i + 1}`] = panel
-        ? (panel.panel_name.toLowerCase().startsWith('blend content')
-          ? `${panel.panel_name.replace(/^blend content\s*[—–-]\s*/i, '').trim()}: ${panel.result || 'Pending'}`
-          : (panel.result || panel.panel_name))
+        ? (/^\s*ph\b/i.test(panel.panel_name)
+          ? `pH ${panel.result || 'Pending'} (${panel.specification || '4.5–7.0'})`
+          : (panel.panel_name.toLowerCase().startsWith('blend content')
+            ? `${panel.panel_name.replace(/^blend content\s*[—–-]\s*/i, '').trim()}: ${applyQuantityUnit(panel.result || 'Pending', claimUnit)}`
+            : (panel.result || panel.panel_name)))
         : '';
       fields[`Text2_T${i + 6}`] = panel ? conformityLabel(panel) : '';
     }

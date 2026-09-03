@@ -297,18 +297,6 @@
     font-size: 9.5px !important;
   }
 
-  .coa-update-log {
-    padding: 0.2rem 0.4rem !important;
-    margin-bottom: 0.25rem !important;
-    break-inside: avoid;
-  }
-
-  .coa-update-log p,
-  .coa-update-log li {
-    font-size: 8px !important;
-    line-height: 1.25 !important;
-  }
-
   .coa-cert-footer {
     padding: 0.4rem 0.65rem !important;
     margin-top: 0.35rem !important;
@@ -910,6 +898,85 @@
 .aa-needs-urgent { border-color: rgba(239, 68, 68, 0.25); background: rgba(254, 242, 242, 0.75); }
 .aa-needs-warning { border-color: rgba(245, 158, 11, 0.28); background: rgba(255, 251, 235, 0.75); }
 .aa-needs-info { border-color: rgba(14, 165, 233, 0.25); background: rgba(240, 249, 255, 0.75); }
+
+/* Admin portal — same Apple-clean surface as client */
+.aa-admin .card {
+  border-radius: 1.25rem;
+  background: var(--aa-card);
+  border: 1px solid var(--aa-line);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.03);
+  overflow: hidden;
+}
+.aa-admin .btn-primary,
+.aa-admin .btn-outline,
+.aa-admin .btn-ghost,
+.aa-admin .btn-secondary {
+  border-radius: 0.85rem;
+}
+.aa-admin .input-field {
+  border-radius: 0.75rem;
+  border-color: var(--aa-line);
+  background: rgba(255, 255, 255, 0.85);
+}
+.aa-admin table thead th {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--aa-muted);
+  background: transparent;
+}
+.aa-admin-ghost-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid var(--aa-line);
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--aa-ink);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.aa-admin-ghost-btn:hover { background: #fff; }
+.aa-admin-ghost-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.aa-admin-toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border-radius: 1rem;
+  border: 1px solid var(--aa-line);
+  background: var(--aa-card);
+  backdrop-filter: blur(10px);
+  font-size: 0.875rem;
+}
+.aa-admin-toast.is-ok { border-color: rgba(16, 185, 129, 0.25); background: rgba(236, 253, 245, 0.75); color: #065f46; }
+.aa-admin-toast.is-err { border-color: rgba(239, 68, 68, 0.25); background: rgba(254, 242, 242, 0.75); color: #991b1b; }
+.aa-admin-lane {
+  border-radius: 1.15rem;
+  background: var(--aa-card);
+  border: 1px solid var(--aa-line);
+  backdrop-filter: blur(12px);
+  overflow: hidden;
+}
+.aa-admin-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.45rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid var(--aa-line);
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--aa-ink);
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+.aa-admin-pill:hover { background: #fff; }
 
 /* ── Medical Director portal (Apple-clean director console) ─────────────── */
 .md-shell {

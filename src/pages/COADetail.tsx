@@ -11,7 +11,7 @@ import { verifyCoaIntegrity } from '../lib/coaVerify';
 import { hydrateCoaImages, readCoaPdfStats, resolveCoaHeaderLogo, resolveCoaWatermark, trimImageWhitespace } from '../lib/coaImages';
 import { partitionCoaPanels, panelStatusLabel, panelStatusToneClass, resolvePanelPass, formatCoaResultDisplay } from '../lib/coaDisplayPanels';
 import { COA_DETAIL_COLUMNS, fetchCoaImageRow } from '../lib/coaSelect';
-import { formatCoaDecimal, parseAssayMethod, ASSAY_METHOD_LABELS, assayMethodFromPanels, hydrateMultiVialPanelResults, resolveCasNumber } from '../lib/labCoaForm';
+import { formatCoaDecimal, parseAssayMethod, ASSAY_METHOD_LABELS, assayMethodFromPanels, hydrateMultiVialPanelResults, resolveCasNumber, applyQuantityUnit } from '../lib/labCoaForm';
 import { labelClaimFromSummary, netContentSpecificationDisplay } from '../lib/orderCatalog';
 import { compressImageDataUrl } from '../lib/imageCompress';
 import { coaPngFilename, downloadCoaPngFromElement } from '../lib/coaPdf';
@@ -25,7 +25,6 @@ import AtlasLogo from '../components/brand/AtlasLogo';
 import InteractiveChromatogram from '../components/coa/InteractiveChromatogram';
 import CoaQrCode from '../components/coa/CoaQrCode';
 import { chromatogramNoteForSample } from '../lib/coaCompoundNotes';
-import { formatCoaUpdateLogDate, readCoaUpdateLog } from '../lib/coaUpdateLog';
 import { coaAllowsBrandedCopy } from '../lib/coaProfile';
 import BrandedCoaPurchaseModal from '../components/coa/BrandedCoaPurchaseModal';
 
@@ -325,6 +324,9 @@ export default function COADetail() {
       return m?.[1]?.trim() || '';
     })()
     || '—';
+  const claimUnit =
+    (typeof summary.label_claim_unit === 'string' && summary.label_claim_unit.trim())
+    || '';
 
   const clientWebsite =
     (typeof summary.client_website === 'string' && summary.client_website.trim())
@@ -500,12 +502,9 @@ export default function COADetail() {
                   <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">Average Net Peptide Content</p>
                   <p className="text-xl font-bold text-black mt-0.5 tabular-nums">
                     {stats.avg_net_peptide_content
-                      || (coa.purity_percent
-                        ? `${(Number(coa.purity_percent) * 0.1).toFixed(1)} ${
-                          typeof summary.label_claim_unit === 'string' && summary.label_claim_unit.trim()
-                            ? summary.label_claim_unit.trim()
-                            : 'mg'
-                        }`
+                      ? applyQuantityUnit(stats.avg_net_peptide_content, claimUnit)
+                      : (coa.purity_percent
+                        ? `${(Number(coa.purity_percent) * 0.1).toFixed(1)}${claimUnit ? ` ${claimUnit}` : ''}`
                         : '—')}
                   </p>
                   <p className="text-[11px] text-neutral-500 mt-0.5">
@@ -556,12 +555,22 @@ export default function COADetail() {
                   const specification = isNetContent
                     ? (netContentSpecificationDisplay(r.specification, labelClaim === '—' ? '' : labelClaim) || '—')
                     : (r.specification || '—');
+                  const isBlendContent = /^blend content\b/i.test(r.panel_name);
+                  const isPh = /^\s*ph\b/i.test(r.panel_name);
+                  const resultShown = isPh
+                    ? (r.result?.trim() || (pass === null ? 'Pending' : '—'))
+                    : (isNetContent || isBlendContent)
+                      ? applyQuantityUnit(
+                        formatCoaResultDisplay(r.result || (pass === null ? 'Pending' : '—')),
+                        claimUnit,
+                      )
+                      : formatCoaResultDisplay(r.result || (pass === null ? 'Pending' : '—'));
                   return (
                     <tr key={`main-${i}`} className={i % 2 === 0 ? 'bg-white' : 'bg-neutral-50'}>
                       <td className="px-3 py-1 font-medium border-t border-atlas-border">{r.panel_name}</td>
                       <td className="px-3 py-1 text-neutral-600 border-t border-atlas-border">{specification}</td>
                       <td className="px-3 py-1 font-medium border-t border-atlas-border">
-                        {formatCoaResultDisplay(r.result || (pass === null ? 'Pending' : '—'))}
+                        {resultShown}
                         {r.unit && r.result ? ` ${r.unit}` : ''}
                       </td>
                       <td className="px-3 py-1 border-t border-atlas-border">
@@ -634,35 +643,6 @@ export default function COADetail() {
               <span>Sig: {coa.signature || `AM-${coa.slug.slice(0, 8).toUpperCase()}`}</span>
             </div>
           )}
-
-          {(() => {
-            const updateLog = readCoaUpdateLog(summaryEarly);
-            if (updateLog.length === 0) return null;
-            return (
-              <div className="coa-update-log mb-2 px-2.5 py-1.5 border border-atlas-border/80 bg-neutral-50/80">
-                <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-neutral-500 mb-0.5">
-                  Update log
-                </p>
-                <ul className="space-y-0.5">
-                  {updateLog.map((entry, i) => (
-                    <li
-                      key={`${entry.at}-${i}`}
-                      className="text-[10px] leading-snug text-neutral-600 flex gap-1.5 min-w-0"
-                    >
-                      <span className="tabular-nums text-neutral-400 shrink-0">
-                        {formatCoaUpdateLogDate(entry.at)}
-                      </span>
-                      <span className="text-neutral-300 shrink-0">·</span>
-                      <span className="min-w-0 break-words">
-                        {entry.note}
-                        {entry.by ? <span className="text-neutral-400"> ({entry.by})</span> : null}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            );
-          })()}
 
           <div className="coa-cert-footer bg-[#0a1628] text-white px-4 sm:px-5 py-2.5 mt-auto">
             <div className="coa-footer-row flex flex-wrap items-center justify-between gap-x-4 gap-y-3 w-full">

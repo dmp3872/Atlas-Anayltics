@@ -1,8 +1,9 @@
 import { Link } from 'react-router-dom';
 import {
   Activity, BarChart3, ClipboardList, ExternalLink, FlaskConical,
-  LayoutGrid, LogOut, Shield, UserPlus, Users, Building2,
+  LayoutGrid, LogOut, Menu, Shield, UserPlus, Users, Building2, X,
 } from 'lucide-react';
+import { useState, type ReactNode } from 'react';
 import AtlasLogo from '../brand/AtlasLogo';
 import { useAuth } from '../../context/AuthContext';
 
@@ -73,36 +74,91 @@ interface Props {
   subtitle?: string;
   onRefresh?: () => void;
   refreshing?: boolean;
-  children: React.ReactNode;
+  children: ReactNode;
 }
 
 function NavButton({
   item,
   active,
   onSection,
+  onPick,
 }: {
   item: NavItem;
   active: boolean;
   onSection: (s: AdminSection) => void;
+  onPick?: () => void;
 }) {
   return (
     <button
       type="button"
-      onClick={() => onSection(item.id)}
-      className={`w-full text-left px-3 py-2.5 rounded-lg transition-colors group ${
-        active
-          ? 'bg-brand-500/15 text-brand-400 border border-brand-500/30'
-          : 'text-neutral-400 hover:bg-neutral-900 hover:text-white border border-transparent'
-      }`}
+      onClick={() => {
+        onSection(item.id);
+        onPick?.();
+      }}
+      className={`portal-nav-item w-full ${active ? 'portal-nav-item-active' : ''}`}
     >
-      <div className="flex items-center gap-2.5">
-        <item.icon size={16} className={active ? 'text-brand-500' : 'text-neutral-500 group-hover:text-neutral-300'} />
-        <div className="min-w-0">
-          <p className="text-sm font-semibold truncate">{item.label}</p>
-          <p className="text-[10px] text-neutral-500 truncate">{item.desc}</p>
-        </div>
-      </div>
+      <item.icon size={17} strokeWidth={1.6} />
+      <span className="min-w-0 truncate">{item.label}</span>
     </button>
+  );
+}
+
+function greetingForHour(hour: number) {
+  if (hour < 12) return 'Good morning';
+  if (hour < 17) return 'Good afternoon';
+  return 'Good evening';
+}
+
+export function AdminDetailChrome({
+  title,
+  children,
+}: {
+  title: string;
+  children: ReactNode;
+}) {
+  const { profile, user, signOut } = useAuth();
+
+  return (
+    <div className="aa-shell aa-portal aa-admin min-h-screen">
+      <div className="aa-ambient" aria-hidden />
+      <header className="aa-portal-mobile-bar relative z-[1] px-4 sm:px-6 py-3">
+        <div className="max-w-4xl mx-auto flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <Link to="/admin" className="shrink-0">
+              <AtlasLogo size="sm" />
+            </Link>
+            <div className="min-w-0 hidden sm:block">
+              <p className="aa-section-kicker" style={{ margin: 0 }}>Admin</p>
+              <p className="text-sm font-semibold tracking-tight truncate" style={{ color: 'var(--aa-ink)' }}>{title}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-1">
+            <Link to="/admin" className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-full hover:bg-black/5" style={{ color: 'var(--aa-muted)' }}>
+              <Shield size={13} /> Admin
+            </Link>
+            <Link to="/lab" className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-full hover:bg-black/5" style={{ color: 'var(--aa-muted)' }}>
+              <FlaskConical size={13} /> Lab
+            </Link>
+            <Link to="/dashboard" className="hidden md:inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-full hover:bg-black/5" style={{ color: 'var(--aa-muted)' }}>
+              <Building2 size={13} /> Client
+            </Link>
+            <span className="hidden lg:inline text-xs px-2 truncate max-w-[12rem]" style={{ color: 'var(--aa-muted)' }}>
+              {profile?.full_name || user?.email}
+            </span>
+            <button
+              type="button"
+              onClick={() => signOut()}
+              className="p-2 rounded-full hover:bg-black/5"
+              style={{ color: 'var(--aa-muted)' }}
+              title="Sign out"
+            >
+              <LogOut size={16} />
+            </button>
+          </div>
+        </div>
+      </header>
+      <div className="relative z-[1]">{children}</div>
+    </div>
   );
 }
 
@@ -110,111 +166,139 @@ export default function AdminShell({
   section, onSection, title, subtitle, onRefresh, refreshing, children,
 }: Props) {
   const { profile, user, signOut } = useAuth();
+  const [open, setOpen] = useState(false);
+  const firstName = profile?.full_name?.split(' ')[0] || 'Director';
+  const greeting = greetingForHour(new Date().getHours());
+  const showGreeting = section === 'command';
 
-  return (
-    <div className="min-h-screen bg-neutral-100 flex">
-      <aside className="hidden lg:flex w-64 flex-col bg-neutral-950 text-white flex-shrink-0 border-r border-neutral-800">
-        <div className="p-5 border-b border-neutral-800">
-          <Link to="/admin" className="block">
-            <AtlasLogo variant="light" size="sm" />
-          </Link>
-          <p className="text-[10px] font-bold uppercase tracking-widest text-brand-500 mt-3">Lab Director</p>
-          <p className="text-xs text-neutral-500 mt-0.5">Operations Control</p>
-        </div>
+  const Sidebar = ({ onPick }: { onPick?: () => void }) => (
+    <div className="flex flex-col h-full aa-portal-aside">
+      <div className="aa-portal-side-head">
+        <Link to="/admin" onClick={onPick}>
+          <AtlasLogo size="sm" />
+        </Link>
+        <p className="aa-portal-side-name truncate">{profile?.full_name || 'Lab Director'}</p>
+        <p className="aa-portal-side-email truncate">{user?.email}</p>
+      </div>
 
-        <nav className="flex-1 p-3 space-y-0.5 overflow-y-auto">
-          {NAV_GROUPS.map(group => (
-            <div key={group.id} className="mb-2">
-              <p className="px-3 pt-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-neutral-500">
-                {group.label}
-              </p>
-              <div className="space-y-0.5">
-                {group.items.map(item => (
-                  <NavButton
-                    key={item.id}
-                    item={item}
-                    active={section === item.id}
-                    onSection={onSection}
-                  />
-                ))}
-              </div>
-            </div>
-          ))}
-
-          <p className="px-3 pt-4 pb-1 text-[10px] font-bold uppercase tracking-wider text-neutral-500">Consoles</p>
-          {EXTERNAL.map(link => (
-            <Link
-              key={link.to}
-              to={link.to}
-              className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-neutral-400 hover:bg-neutral-900 hover:text-white text-sm transition-colors"
-            >
-              <link.icon size={15} className="text-neutral-500" />
-              {link.label}
-              <ExternalLink size={11} className="ml-auto opacity-40" />
-            </Link>
-          ))}
-        </nav>
-
-        <div className="p-4 border-t border-neutral-800">
-          <p className="text-xs font-medium text-white truncate">{profile?.full_name || 'Director'}</p>
-          <p className="text-[10px] text-neutral-500 truncate">{user?.email}</p>
-          <button
-            type="button"
-            onClick={() => signOut()}
-            className="mt-3 flex items-center gap-2 text-xs text-neutral-500 hover:text-red-400 transition-colors"
-          >
-            <LogOut size={13} /> Sign out
-          </button>
-        </div>
-      </aside>
-
-      <div className="flex-1 flex flex-col min-w-0">
-        <header className="sticky top-0 z-30 bg-white border-b border-atlas-border px-4 sm:px-6 py-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-brand-600">Atlas Analytics · Lab Operations</p>
-              <h1 className="text-xl sm:text-2xl font-bold text-black mt-0.5">{title}</h1>
-              {subtitle && <p className="text-sm text-neutral-500 mt-0.5">{subtitle}</p>}
-            </div>
-            <div className="flex items-center gap-2">
-              {onRefresh && (
-                <button
-                  type="button"
-                  onClick={onRefresh}
-                  disabled={refreshing}
-                  className="btn-outline text-xs py-2 gap-1.5"
-                >
-                  <Activity size={14} className={refreshing ? 'animate-spin' : ''} />
-                  Refresh
-                </button>
-              )}
-            </div>
-          </div>
-
-          <div className="flex gap-1 mt-4 overflow-x-auto lg:hidden pb-1">
-            {NAV_GROUPS.map(group => (
-              <div key={group.id} className="flex items-center gap-1 mr-2">
-                <span className="text-[9px] font-bold uppercase tracking-wider text-neutral-400 px-1">
-                  {group.label}
-                </span>
-                {group.items.map(item => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => onSection(item.id)}
-                    className={`px-3 py-1.5 text-xs font-medium rounded-full whitespace-nowrap border ${
-                      section === item.id ? 'bg-black text-white border-black' : 'border-atlas-border text-neutral-600'
-                    }`}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
+      <nav className="flex-1 px-3 py-3 space-y-0.5 overflow-y-auto">
+        {NAV_GROUPS.map(group => (
+          <div key={group.id} className="mb-1">
+            <p className="px-3 pt-4 pb-1.5 text-[10px] font-bold uppercase tracking-widest" style={{ color: 'var(--aa-muted)' }}>
+              {group.label}
+            </p>
+            {group.items.map(item => (
+              <NavButton
+                key={item.id}
+                item={item}
+                active={section === item.id}
+                onSection={onSection}
+                onPick={onPick}
+              />
             ))}
           </div>
+        ))}
+
+        <p className="px-3 pt-5 pb-1.5 text-[10px] font-bold uppercase tracking-widest" style={{ color: 'var(--aa-muted)' }}>
+          Consoles
+        </p>
+        {EXTERNAL.map(link => (
+          <Link
+            key={link.to}
+            to={link.to}
+            onClick={onPick}
+            className="portal-nav-item"
+          >
+            <link.icon size={17} strokeWidth={1.6} />
+            <span className="min-w-0 truncate">{link.label}</span>
+            <ExternalLink size={12} className="ml-auto opacity-40 shrink-0" />
+          </Link>
+        ))}
+      </nav>
+
+      <div className="p-3" style={{ borderTop: '1px solid var(--aa-line)' }}>
+        <button
+          type="button"
+          onClick={() => signOut()}
+          className="portal-nav-item w-full text-red-600 hover:bg-red-50 hover:text-red-700"
+        >
+          <LogOut size={17} /> Sign out
+        </button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="aa-shell aa-portal aa-admin flex">
+      <div className="aa-ambient" aria-hidden />
+      <aside className="hidden lg:flex flex-col w-60 fixed inset-y-0 left-0 z-30">
+        <Sidebar />
+      </aside>
+
+      {open && (
+        <div className="lg:hidden fixed inset-0 z-40">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setOpen(false)} />
+          <aside className="relative w-72 max-w-[85vw] h-full shadow-xl z-10">
+            <button type="button" onClick={() => setOpen(false)} className="absolute top-4 right-4 p-1.5 rounded-lg hover:bg-neutral-100 z-10">
+              <X size={18} />
+            </button>
+            <Sidebar onPick={() => setOpen(false)} />
+          </aside>
+        </div>
+      )}
+
+      <div className="flex-1 lg:ml-60 min-w-0 relative z-[1]">
+        <header className="lg:hidden aa-portal-mobile-bar px-4 py-3 flex items-center gap-3">
+          <button type="button" onClick={() => setOpen(true)} className="p-2 rounded-xl hover:bg-black/5">
+            <Menu size={20} />
+          </button>
+          <span className="font-semibold text-sm tracking-tight" style={{ color: 'var(--aa-ink)' }}>Admin</span>
         </header>
 
-        <main className="flex-1 p-4 sm:p-6 overflow-y-auto">
+        <div className="px-5 sm:px-8 pt-6 sm:pt-8 pb-2">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div className="min-w-0 aa-animate">
+              <p className="aa-section-kicker" style={{ marginBottom: '0.35rem' }}>Lab Director</p>
+              <h1 className="aa-section-title" style={{ fontSize: 'clamp(1.7rem, 3vw, 2.2rem)' }}>
+                {showGreeting ? `${greeting}, ${firstName}.` : title}
+              </h1>
+              <p className="portal-page-subtitle">
+                {showGreeting ? title + (subtitle ? ` — ${subtitle}` : '') : subtitle}
+              </p>
+            </div>
+            {onRefresh && (
+              <button
+                type="button"
+                onClick={onRefresh}
+                disabled={refreshing}
+                className="aa-admin-ghost-btn"
+              >
+                <Activity size={14} className={refreshing ? 'animate-spin' : ''} />
+                Refresh
+              </button>
+            )}
+          </div>
+
+          <div className="flex gap-1.5 mt-5 overflow-x-auto lg:hidden pb-1">
+            {NAV.map(item => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => onSection(item.id)}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-full whitespace-nowrap border ${
+                  section === item.id
+                    ? 'bg-[#1d1d1f] text-white border-[#1d1d1f]'
+                    : 'border-transparent bg-white/70'
+                }`}
+                style={section === item.id ? undefined : { color: 'var(--aa-muted)', borderColor: 'var(--aa-line)' }}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <main className="px-5 sm:px-8 pb-10 pt-4">
           {children}
         </main>
       </div>
