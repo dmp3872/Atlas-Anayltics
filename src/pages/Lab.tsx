@@ -250,7 +250,7 @@ export default function Lab() {
       supabase.from('user_profiles').select('*'),
       supabase.from('order_samples').select('*').order('created_at', { ascending: false }),
       supabase.from('orders').select('*').order('created_at', { ascending: false }),
-      supabase.from('coas').select(COA_LIST_COLUMNS).order('issued_at', { ascending: false }),
+      supabase.from('coas').select(COA_LIST_COLUMNS).order('created_at', { ascending: false }),
     ]);
     if (p.data) {
       setAllProfiles(p.data);
@@ -259,7 +259,21 @@ export default function Lab() {
     }
     if (s.data) setSamples(s.data);
     if (o.data) setOrders(o.data);
-    if (c.data) setCoas((c.data as COA[]).map(hydrateCoaImages));
+    if (c.data) {
+      const rows = (c.data as COA[]).map(hydrateCoaImages);
+      rows.sort((a, b) => {
+        const ta = Math.max(
+          Date.parse(a.created_at || '') || 0,
+          Date.parse(a.issued_at || '') || 0,
+        );
+        const tb = Math.max(
+          Date.parse(b.created_at || '') || 0,
+          Date.parse(b.issued_at || '') || 0,
+        );
+        return tb - ta;
+      });
+      setCoas(rows);
+    }
     setLoading(false);
   }
 
