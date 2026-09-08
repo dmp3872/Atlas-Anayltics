@@ -38,6 +38,8 @@ import TestingQueuePanel from '../components/lab/TestingQueuePanel';
 import ChemistOrderBriefDrawer from '../components/lab/ChemistOrderBriefDrawer';
 import QueueFilters, { QueueFilterValues } from '../components/lab/QueueFilters';
 import ClaimVsResultStrip from '../components/lab/ClaimVsResultStrip';
+import RdFolderPanel from '../components/lab/RdFolderPanel';
+import { sampleIsRd, orderIsRd } from '../lib/rdPathway';
 import { buildQueueItems, filterQueueItems, getTestAssignments, normalizeLabPriority } from '../lib/labQueue';
 import { sampleIntakeAt, sampleReceivedBy, setSampleStatus } from '../lib/services/orderWorkflow';
 import { allocateUniqueSampleCode, isValidSampleCode } from '../lib/sampleCode';
@@ -73,13 +75,14 @@ import { parseOrderNotes } from '../lib/orderMeta';
 const MAX_COA_IMAGE_BYTES = 1024 * 1024;
 
 type Message = { type: 'success' | 'error'; text: string; slug?: string } | null;
-type LabTab = 'bench' | 'receive' | 'queue' | 'issue' | 'workflow';
+type LabTab = 'bench' | 'receive' | 'queue' | 'rd' | 'issue' | 'workflow';
 
-const LAB_TABS: LabTab[] = ['bench', 'receive', 'queue', 'issue', 'workflow'];
+const LAB_TABS: LabTab[] = ['bench', 'receive', 'queue', 'rd', 'issue', 'workflow'];
 const LAB_TAB_LABELS: Record<LabTab, string> = {
   bench: 'My Bench',
   receive: 'Receive',
   queue: 'Testing Queue',
+  rd: 'R&D Folder',
   issue: 'Issue COA',
   workflow: 'COA Workflow',
 };
@@ -1453,10 +1456,21 @@ export default function Lab() {
     }).length;
   }, [samples, orders]);
 
+  const rdActiveCount = useMemo(() => {
+    const orderMap = new Map(orders.map(o => [o.id, o]));
+    return samples.filter(s => {
+      if (s.status === 'complete') return false;
+      if (sampleIsRd(s)) return true;
+      const order = orderMap.get(s.order_id);
+      return order ? orderIsRd(order) : false;
+    }).length;
+  }, [samples, orders]);
+
   const tabs: { id: LabTab; label: string; count?: number }[] = [
     { id: 'bench', label: LAB_TAB_LABELS.bench },
     { id: 'receive', label: LAB_TAB_LABELS.receive, count: receiveCount || undefined },
     { id: 'queue', label: LAB_TAB_LABELS.queue, count: pendingQueueCount || undefined },
+    { id: 'rd', label: LAB_TAB_LABELS.rd, count: rdActiveCount || undefined },
     { id: 'issue', label: LAB_TAB_LABELS.issue },
     { id: 'workflow', label: LAB_TAB_LABELS.workflow, count: workflowActiveCount || undefined },
   ];
@@ -1480,7 +1494,7 @@ export default function Lab() {
             <FlaskConical size={24} className="text-brand-500" /> Lab Console
           </h1>
           <p className="text-sm text-neutral-500 mt-1">
-            My Bench → Receive → Testing queue → Issue COA → Workflow (verify &amp; publish).
+            My Bench → Receive → Testing queue / R&amp;D folder → Issue COA → Workflow (verify &amp; publish).
           </p>
         </div>
 
@@ -1621,6 +1635,16 @@ export default function Lab() {
               onOpenOrderBrief={setBriefOrderId}
             />
           </div>
+        )}
+
+        {tab === 'rd' && (
+          <RdFolderPanel
+            samples={samples}
+            orders={normalizedOrders}
+            clients={clients}
+            currentUserId={user?.id}
+            onChanged={loadAll}
+          />
         )}
 
         {tab === 'issue' && (

@@ -46,6 +46,7 @@ interface Props {
   onPaymentMethodChange: (method: SimulatedPaymentMethod) => void;
   onCardPayAndSubmit?: () => Promise<void>;
   readiness?: ReadinessReport;
+  rdMode?: boolean;
 }
 
 export default function StepReviewSubmit({
@@ -69,6 +70,7 @@ export default function StepReviewSubmit({
   onPaymentMethodChange,
   onCardPayAndSubmit,
   readiness,
+  rdMode = false,
 }: Props) {
   const totals = orderTotals(samples, companyName, catalog);
   const estimatedTotal = Math.max(0, totals.subtotal - discount);
@@ -197,8 +199,12 @@ export default function StepReviewSubmit({
                     <dd className="font-medium text-black">{formatCurrency(sampleLineTotal(sample, companyName, catalog))}</dd>
                   </div>
                   <div className="sm:col-span-2">
-                    <dt className="text-neutral-500 text-xs">COA profile</dt>
-                    <dd className="font-medium text-black">{selectedCompany?.name || companyName || 'Not selected'}</dd>
+                    <dt className="text-neutral-500 text-xs">{rdMode ? 'Pathway' : 'COA profile'}</dt>
+                    <dd className="font-medium text-black">
+                      {rdMode
+                        ? 'R&D verification (no certificate)'
+                        : (selectedCompany?.name || companyName || 'Not selected')}
+                    </dd>
                   </div>
                   <div className="sm:col-span-2 pt-2">
                     <VialAllocationMap sample={sample} catalog={catalog} compact />

@@ -23,7 +23,9 @@ import {
   applyCategoryDefaults,
   applyPrimaryTest,
   createEmptySample,
+  createRdSample,
   formatLabelClaim,
+  isRdSample,
   mergeCatalogWithDbPanels,
   normalizeWizardSample,
   orderTotals,
@@ -33,6 +35,7 @@ import {
   validateSampleInformation,
   validateTestingSelection,
 } from '../lib/orderCatalog';
+import { profileAllowsRdSubmissions, RD_PURITY_QUANTITY_PRICE } from '../lib/rdPathway';
 import { clearOrderDraft, loadOrderDraft, saveOrderDraft } from '../lib/orderDraft';
 import { generateOrderNumber } from '../lib/utils';
 import { generateShippingLabelId } from '../lib/shippingLabel';
@@ -94,19 +97,22 @@ export default function OrderWizard() {
   const { subtotal, totalVials, sampleCount } = orderTotals(samples, companyName, catalog);
   const promoDiscount = promoApplied ? subtotal * 0.1 : 0;
   const total = Math.max(0, subtotal - promoDiscount);
+  const templateSample = samples[0] ?? createEmptySample();
+  const canOrderRd = profileAllowsRdSubmissions(profile);
+  const rdMode = samples.length > 0 && samples.every(isRdSample);
   // Checkout readiness for UI includes payment; submit gating keeps payment separate
   // so "Pay & submit" can authorize in the same click.
   const readiness = computeOrderReadiness({
     samples,
     includeCheckout: step === 3,
-    hasCoaProfile: !!selectedCompanyId,
+    hasCoaProfile: rdMode || !!selectedCompanyId,
     confirmations,
     paymentPaid,
   });
   const readinessExceptPayment = computeOrderReadiness({
     samples,
     includeCheckout: step === 3,
-    hasCoaProfile: !!selectedCompanyId,
+    hasCoaProfile: rdMode || !!selectedCompanyId,
     confirmations,
     paymentPaid: true,
   });
@@ -115,8 +121,6 @@ export default function OrderWizard() {
   const displayName = profile?.full_name || user?.email?.split('@')[0] || 'Account';
   const userInitial = displayName.charAt(0).toUpperCase();
   const selectedCompany = companies.find(c => c.id === selectedCompanyId) ?? null;
-
-  const templateSample = samples[0] ?? createEmptySample();
 
   const persistDraft = useCallback(() => {
     if (!user || success) return;
@@ -204,10 +208,11 @@ export default function OrderWizard() {
   const readyExceptPayment = useMemo(() => {
     if (!confirmations.accurate || !confirmations.labelsMatch || !confirmations.agreeTerms) return false;
     if (validateTestingSelection(samples) || validateSampleInformation(samples)) return false;
-    if (!selectedCompanyId) return false;
+    if (!rdMode && !selectedCompanyId) return false;
+    if (rdMode && !canOrderRd) return false;
     return readinessExceptPayment.sampleBlocking.length === 0
       && readinessExceptPayment.blocking.every(b => !/payment/i.test(b));
-  }, [confirmations, samples, selectedCompanyId, readinessExceptPayment.sampleBlocking.length, readinessExceptPayment.blocking]);
+  }, [confirmations, samples, selectedCompanyId, rdMode, canOrderRd, readinessExceptPayment.sampleBlocking.length, readinessExceptPayment.blocking]);
 
   const canSubmit = useMemo(() => {
     if (loading) return false;
@@ -260,6 +265,17 @@ export default function OrderWizard() {
   }
 
   function addSample() {
+    if (rdMode) {
+      const next = createRdSample({
+        category: templateSample.category,
+        sample_matrix: templateSample.sample_matrix,
+        is_peptide: templateSample.is_peptide,
+        sample_type: templateSample.sample_type,
+      });
+      setSamples(prev => [...prev, next]);
+      setCollapsed(prev => ({ ...prev, [next.id]: false }));
+      return;
+    }
     const template = samples[0];
     const { id: _id, ...rest } = template ?? createEmptySample();
     const next = createEmptySample({
@@ -278,18 +294,36 @@ export default function OrderWizard() {
     setCollapsed(prev => ({ ...prev, [next.id]: false }));
   }
 
+  function enableRdMode() {
+    if (!canOrderRd) return;
+    setSamples([createRdSample({ category: templateSample.category || 'single_peptide' })]);
+    setValidationError('');
+  }
+
+  function disableRdMode() {
+    setSamples([createEmptySample({ category: templateSample.category || 'single_peptide' })]);
+    setValidationError('');
+  }
+
   function duplicateSample(id: string) {
     const src = samples.find(x => x.id === id);
     if (!src) return;
     const { id: _id, batch_number: _lot, client_reference: _ref, ...rest } = src;
-    const copy = createEmptySample({
-      ...rest,
-      batch_number: '',
-      client_reference: '',
-      blend_components: src.blend_components.map(c => ({ ...c })),
-      individual_tests: [...src.individual_tests],
-      brand_names: [...src.brand_names],
-    });
+    const copy = isRdSample(src)
+      ? createRdSample({
+          ...rest,
+          batch_number: '',
+          client_reference: '',
+          blend_components: src.blend_components.map(c => ({ ...c })),
+        })
+      : createEmptySample({
+          ...rest,
+          batch_number: '',
+          client_reference: '',
+          blend_components: src.blend_components.map(c => ({ ...c })),
+          individual_tests: [...src.individual_tests],
+          brand_names: [...src.brand_names],
+        });
     setSamples(prev => [...prev, copy]);
     setCollapsed(prev => ({ ...prev, [copy.id]: false }));
   }
@@ -309,9 +343,13 @@ export default function OrderWizard() {
     if (step === 1) {
       const err = validateTestingSelection(samples);
       if (err) { setValidationError(err); return; }
+      if (rdMode && !canOrderRd) {
+        setValidationError('R&D submissions are not enabled on this account. Contact Atlas admin.');
+        return;
+      }
     }
     if (step === 2) {
-      if (!selectedCompanyId || !companies.some(c => c.id === selectedCompanyId)) {
+      if (!rdMode && (!selectedCompanyId || !companies.some(c => c.id === selectedCompanyId))) {
         setValidationError('Create or select a COA profile before continuing.');
         return;
       }
@@ -365,8 +403,9 @@ export default function OrderWizard() {
       const orderMeta = {
         prepaid_label: true,
         promo_code: promoApplied ? promoCode : null,
-        coa_profile_id: selectedCompanyId,
-        coa_profile_name: selectedCompany?.name ?? companyName,
+        pathway: rdMode ? 'rd' : 'commercial',
+        coa_profile_id: rdMode ? null : selectedCompanyId,
+        coa_profile_name: rdMode ? null : (selectedCompany?.name ?? companyName),
         samples_detail: samples.map(s => sampleMetadataPayload(s, companyName, catalog)),
         payment_simulation: true,
         payment_provider: method === 'crypto' ? 'crypto_placeholder' : 'stripe_placeholder',
@@ -391,7 +430,9 @@ export default function OrderWizard() {
         rush_fee: samples.filter(s => s.rush).length * RUSH_PRICE_PER_SAMPLE,
         total,
         first_order_discount: false,
-        company_name: selectedCompany?.name ?? companyName,
+        company_name: rdMode
+          ? (profile?.company_name || companyName || 'R&D')
+          : (selectedCompany?.name ?? companyName),
         prepaid_shipping: true,
         payment_method: method,
         shipping_label_id: shippingLabelId,
@@ -594,20 +635,78 @@ export default function OrderWizard() {
         <div className="grid lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-4">
             {step === 1 && (
-              <StepSelectTesting
-                category={templateSample.category}
-                onCategoryChange={handleCategoryChange}
-                onOtherMaterialChange={handleOtherMaterialChange}
-                sample={templateSample}
-                catalog={catalog}
-                onSelectPrimary={handleSelectPrimary}
-                onToggleAlaCarte={handleToggleAlaCarte}
-                onToggleFentanyl={handleToggleFentanyl}
-                onConformityExtraChange={handleConformityExtraChange}
-                onPreviewPackageChange={setPreviewPackageId}
-                catalogLoading={catalogLoading}
-                catalogError={catalogError}
-              />
+              <>
+                {canOrderRd && (
+                  <div className="rounded-xl border border-violet-200 bg-violet-50/50 p-4 space-y-3">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-bold text-violet-950">R&amp;D verification order</p>
+                        <p className="text-xs text-violet-900/70 mt-0.5">
+                          Purity &amp; Quantity only · ${RD_PURITY_QUANTITY_PRICE} · no certificate. Cannot mix with standard COA testing.
+                        </p>
+                      </div>
+                      {rdMode ? (
+                        <button type="button" className="btn-outline text-xs" onClick={disableRdMode}>
+                          Switch to standard testing
+                        </button>
+                      ) : (
+                        <button type="button" className="btn-primary text-xs" onClick={enableRdMode}>
+                          Start R&amp;D order
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+                {rdMode ? (
+                  <div className="card p-5 space-y-3">
+                    <h2 className="text-2xl font-bold text-black tracking-tight">R&amp;D Purity &amp; Quantity</h2>
+                    <p className="text-sm text-neutral-500">
+                      Quick product verification for enabled accounts. Results are saved in the R&amp;D folder — not published as a COA.
+                    </p>
+                    <p className="text-sm font-semibold text-black">
+                      ${RD_PURITY_QUANTITY_PRICE} per sample · HPLC purity + net content
+                    </p>
+                    <fieldset>
+                      <legend className="text-[11px] font-bold uppercase tracking-[0.14em] text-brand-800 mb-2">
+                        Sample category
+                      </legend>
+                      <div className="grid grid-cols-2 gap-2">
+                        {(['single_peptide', 'peptide_blend', 'bac_water', 'other'] as SampleCategory[]).map(id => (
+                          <button
+                            key={id}
+                            type="button"
+                            onClick={() => handleCategoryChange(id)}
+                            className={`text-left rounded-xl border px-3 py-3 text-sm font-semibold ${
+                              templateSample.category === id
+                                ? 'border-brand-500 bg-brand-500 text-black'
+                                : 'border-atlas-border bg-white hover:border-brand-400'
+                            }`}
+                          >
+                            {id === 'single_peptide' ? 'Single Peptide'
+                              : id === 'peptide_blend' ? 'Peptide Blend'
+                                : id === 'bac_water' ? 'BAC Water' : 'Other'}
+                          </button>
+                        ))}
+                      </div>
+                    </fieldset>
+                  </div>
+                ) : (
+                  <StepSelectTesting
+                    category={templateSample.category}
+                    onCategoryChange={handleCategoryChange}
+                    onOtherMaterialChange={handleOtherMaterialChange}
+                    sample={templateSample}
+                    catalog={catalog}
+                    onSelectPrimary={handleSelectPrimary}
+                    onToggleAlaCarte={handleToggleAlaCarte}
+                    onToggleFentanyl={handleToggleFentanyl}
+                    onConformityExtraChange={handleConformityExtraChange}
+                    onPreviewPackageChange={setPreviewPackageId}
+                    catalogLoading={catalogLoading}
+                    catalogError={catalogError}
+                  />
+                )}
+              </>
             )}
 
             {step === 2 && (
@@ -627,6 +726,7 @@ export default function OrderWizard() {
                 onCompaniesChange={setCompanies}
                 onProfileSynced={() => refreshProfile()}
                 companiesLoading={companiesLoading}
+                hideCoaProfile={rdMode}
               />
             )}
 
@@ -655,6 +755,7 @@ export default function OrderWizard() {
                 }}
                 onCardPayAndSubmit={handleCardPayAndSubmit}
                 readiness={readiness}
+                rdMode={rdMode}
               />
             )}
           </div>
