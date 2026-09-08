@@ -37,10 +37,15 @@ import {
   resolveIncludeEndotoxin,
   resolveIncludeHeavyMetals,
   resolveIncludePh,
+  resolveIncludeBenzylPq,
   PH_SPEC_LABEL,
+  BENZYL_PQ_SPEC_LABEL,
   formatPhResult,
   phPassFromResult,
   isPhPanel,
+  formatBenzylPurity,
+  benzylPqPassFromResult,
+  isBenzylPqPanel,
 } from '../../lib/labCoaForm';
 import { downloadCoaPdf, openCoaPrintView } from '../../lib/coaPdf';
 import { LABEL_CLAIM_UNITS, labelClaimFromSummary } from '../../lib/orderCatalog';
@@ -127,12 +132,35 @@ function bootPhResult(coa: COA): string {
   return formatPhResult(fromPanel || fromSummary);
 }
 
+function bootBenzylFields(coa: COA): { purity: string; quantity: string } {
+  const summary = (coa.result_summary && typeof coa.result_summary === 'object')
+    ? (coa.result_summary as Record<string, unknown>)
+    : {};
+  const panels = Array.isArray(coa.panel_results) ? coa.panel_results : [];
+  const panel = panels.find(p => isBenzylPqPanel(p.panel_name));
+  const fromSummaryPurity = typeof summary.benzyl_purity === 'string' ? summary.benzyl_purity : '';
+  const fromSummaryQty = typeof summary.benzyl_quantity === 'string' ? summary.benzyl_quantity : '';
+  if (fromSummaryPurity.trim() || fromSummaryQty.trim()) {
+    return {
+      purity: fromSummaryPurity.replace(/%/g, '').trim(),
+      quantity: fromSummaryQty.trim(),
+    };
+  }
+  const raw = panel?.result && !/^pending\b/i.test(panel.result) ? panel.result : '';
+  const parts = raw.split('·').map(s => s.trim()).filter(Boolean);
+  return {
+    purity: (parts[0] || '').replace(/%/g, '').trim(),
+    quantity: parts.length > 1 ? parts.slice(1).join(' · ') : '',
+  };
+}
+
 export default function CoaPdfPrepModal({ coa, sampleMetadata = null, onClose, onSaved }: Props) {
   const boot = applyPrepDefaults(coa);
   const includeSterility = resolveIncludeSterility(coa, sampleMetadata);
   const includeEndotoxin = resolveIncludeEndotoxin(coa, sampleMetadata);
   const includeHeavyMetals = resolveIncludeHeavyMetals(coa, sampleMetadata);
   const includePh = resolveIncludePh(coa, sampleMetadata);
+  const includeBenzylPq = resolveIncludeBenzylPq(coa, sampleMetadata);
   const [vialImage, setVialImage] = useState(boot.next.vial_image || '');
   const [hplcImage, setHplcImage] = useState(boot.next.hplc_image || '');
   const [watermarkImage, setWatermarkImage] = useState(boot.next.chromatogram_image || '');
@@ -174,6 +202,15 @@ export default function CoaPdfPrepModal({ coa, sampleMetadata = null, onClose, o
   const [endotoxinEuMl, setEndotoxinEuMl] = useState(boot.endotoxinEuMl);
   const [endotoxinPass, setEndotoxinPass] = useState<AssayPassState>(boot.stats.endotoxin_pass);
   const [phResult, setPhResult] = useState(() => bootPhResult(coa));
+  const bootBenzyl = bootBenzylFields(coa);
+  const [benzylPurity, setBenzylPurity] = useState(bootBenzyl.purity);
+  const [benzylQuantity, setBenzylQuantity] = useState(bootBenzyl.quantity);
+  const [measuredNetContent, setMeasuredNetContent] = useState(() => {
+    const panels = Array.isArray(coa.panel_results) ? coa.panel_results : [];
+    const net = panels.find(p =>
+      (/fill\s*volume|net content/i.test(p.panel_name) && !/^blend content/i.test(p.panel_name)));
+    return (net?.result && !/^pending\b/i.test(net.result) ? net.result : '') || '';
+  });
   const [heavyMetalsPass, setHeavyMetalsPass] = useState<AssayPassState>(boot.stats.heavy_metals_pass);
   const [heavyMetals, setHeavyMetals] = useState<Record<HeavyMetalName, string>>(
     boot.stats.heavy_metals || heavyMetalsEmptyDefaults(),
@@ -214,6 +251,15 @@ export default function CoaPdfPrepModal({ coa, sampleMetadata = null, onClose, o
     setEndotoxinEuMl(d.endotoxinEuMl);
     setEndotoxinPass(d.stats.endotoxin_pass);
     setPhResult(bootPhResult(coa));
+    {
+      const b = bootBenzylFields(coa);
+      setBenzylPurity(b.purity);
+      setBenzylQuantity(b.quantity);
+      const panels = Array.isArray(coa.panel_results) ? coa.panel_results : [];
+      const net = panels.find(p =>
+        (/fill\s*volume|net content/i.test(p.panel_name) && !/^blend content/i.test(p.panel_name)));
+      setMeasuredNetContent((net?.result && !/^pending\b/i.test(net.result) ? net.result : '') || '');
+    }
     setHeavyMetalsPass(d.stats.heavy_metals_pass);
     setHeavyMetals(d.stats.heavy_metals || heavyMetalsEmptyDefaults());
     {
@@ -313,6 +359,10 @@ export default function CoaPdfPrepModal({ coa, sampleMetadata = null, onClose, o
         include_heavy_metals: includeHeavyMetals,
         include_ph: includePh,
         ph_result: phResult,
+        include_benzyl_pq: includeBenzylPq,
+        benzyl_purity: benzylPurity,
+        benzyl_quantity: benzylQuantity,
+        measured_net_content: includeBenzylPq ? measuredNetContent : undefined,
       });
       if (saveError) {
         setError(saveError);
@@ -745,12 +795,58 @@ export default function CoaPdfPrepModal({ coa, sampleMetadata = null, onClose, o
                 </div>
                 )}
 
+                {includeBenzylPq && (
+                <div className="space-y-3">
+                  <h3 className="text-sm font-bold uppercase tracking-wide text-black">Bacteriostatic Water</h3>
+                  <p className="text-xs text-neutral-500">
+                    Certificate assays: Benzyl Alcohol Assay (HPLC), pH ({PH_SPEC_LABEL}), Fill Volume / Net Content (Gravimetric).
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="label" htmlFor="prep-benzyl-result">Benzyl Alcohol Assay (HPLC) — % (v/v)</label>
+                      <input
+                        id="prep-benzyl-result"
+                        type="text"
+                        inputMode="decimal"
+                        value={benzylPurity}
+                        onChange={e => { setBenzylPurity(e.target.value); setBenzylQuantity(''); }}
+                        className="input-field"
+                        placeholder="e.g. 0.88"
+                      />
+                      <p className="text-xs text-neutral-500 mt-1">
+                        Method: HPLC · Spec: {BENZYL_PQ_SPEC_LABEL}
+                        {benzylPurity.trim() ? (
+                          <>
+                            {' · '}
+                            <span className={benzylPqPassFromResult(benzylPurity) ? 'text-emerald-700 font-semibold' : 'text-red-700 font-semibold'}>
+                              {benzylPqPassFromResult(benzylPurity) ? 'PASS' : 'FAIL'}
+                            </span>
+                          </>
+                        ) : null}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="label" htmlFor="prep-bac-net">Fill Volume / Net Content (Gravimetric)</label>
+                      <input
+                        id="prep-bac-net"
+                        type="text"
+                        value={measuredNetContent}
+                        onChange={e => setMeasuredNetContent(e.target.value)}
+                        className="input-field"
+                        placeholder={`e.g. 10.0 ${labelClaimUnit || 'mL'}`}
+                      />
+                      <p className="text-xs text-neutral-500 mt-1">Method: Gravimetric</p>
+                    </div>
+                  </div>
+                </div>
+                )}
+
                 {includePh && (
                 <div className="space-y-3">
                   <h3 className="text-sm font-bold uppercase tracking-wide text-black">pH</h3>
                   <p className="text-xs text-neutral-500">Specification on COA: {PH_SPEC_LABEL}</p>
                   <div>
-                    <label className="label" htmlFor="prep-ph-result">Calculated result</label>
+                    <label className="label" htmlFor="prep-ph-result">Measured result</label>
                     <input
                       id="prep-ph-result"
                       type="text"

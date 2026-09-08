@@ -27,6 +27,14 @@ import {
   formatPhResult,
   phPassFromResult,
   isPhPanel,
+  benzylPqPanelName,
+  BENZYL_PQ_SPEC_LABEL,
+  formatBenzylPqResult,
+  formatBenzylPurity,
+  benzylPqPassFromResult,
+  isBenzylPqPanel,
+  fillVolumePanelName,
+  isFillVolumePanel,
 } from './labCoaForm';
 import { compressImageDataUrl } from './imageCompress';
 import { resolvePanelPass } from './coaDisplayPanels';
@@ -501,6 +509,11 @@ export type CoaPdfPrepPayload = {
   include_heavy_metals?: boolean;
   include_ph?: boolean;
   ph_result?: string;
+  include_benzyl_pq?: boolean;
+  benzyl_purity?: string;
+  benzyl_quantity?: string;
+  /** BAC water — overwrite measured Net Content panel result. */
+  measured_net_content?: string;
 };
 
 function upsertNamedPanel(
@@ -531,11 +544,33 @@ export function applyPrepToCoaPanels(coa: COA, prep: CoaPdfPrepPayload): {
     const claimLabel = formatLabelClaim(claimAmount, (prep.label_claim_unit || 'mg').trim() || 'mg');
     panels = panels.map(p => {
       const n = p.panel_name.toLowerCase();
-      if ((n.includes('net content') || n.includes('peptide content')) && !n.startsWith('blend content')) {
+      if (
+        (n.includes('net content') || n.includes('peptide content') || /fill\s*volume/.test(n))
+        && !n.startsWith('blend content')
+      ) {
         return { ...p, specification: `Label claim: ${claimLabel}` };
       }
       return p;
     });
+  }
+
+  const measuredNet = (prep.measured_net_content || '').trim();
+  if (measuredNet && (prep.include_benzyl_pq || panels.some(p => isFillVolumePanel(p.panel_name)))) {
+    const claimUnit = (prep.label_claim_unit || 'mg').trim() || 'mg';
+    const claimLabel = claimAmount
+      ? formatLabelClaim(claimAmount, claimUnit)
+      : '';
+    panels = upsertNamedPanel(
+      panels,
+      name => isFillVolumePanel(name)
+        || ((name.includes('net content') || name.includes('peptide content')) && !name.startsWith('blend content')),
+      {
+        panel_name: fillVolumePanelName(),
+        specification: claimLabel ? `Label claim: ${claimLabel}` : 'Fill volume',
+        result: measuredNet,
+        pass: true,
+      },
+    );
   }
 
   panels = upsertNamedPanel(
@@ -587,6 +622,23 @@ export function applyPrepToCoaPanels(coa: COA, prep: CoaPdfPrepPayload): {
             result: formatEndotoxinResult(prep.endotoxin_eu_ml),
             pass: prep.endotoxin_pass,
           };
+    })(),
+  );
+
+  panels = upsertNamedPanel(
+    panels,
+    name => isBenzylPqPanel(name),
+    (() => {
+      const hadBenzyl = panels.some(p => isBenzylPqPanel(p.panel_name));
+      const includeBenzyl = prep.include_benzyl_pq ?? hadBenzyl;
+      if (!includeBenzyl) return null;
+      const purity = prep.benzyl_purity || '';
+      return {
+        panel_name: benzylPqPanelName(),
+        specification: BENZYL_PQ_SPEC_LABEL,
+        result: formatBenzylPqResult(purity),
+        pass: benzylPqPassFromResult(purity),
+      };
     })(),
   );
 
@@ -740,6 +792,9 @@ export async function saveCoaPdfPrep(
     ...(typeof prep.include_heavy_metals === 'boolean' ? { include_heavy_metals: prep.include_heavy_metals } : {}),
     ...(typeof prep.include_ph === 'boolean' ? { include_ph: prep.include_ph } : {}),
     ...(typeof prep.ph_result === 'string' ? { ph_result: formatPhResult(prep.ph_result) } : {}),
+    ...(typeof prep.include_benzyl_pq === 'boolean' ? { include_benzyl_pq: prep.include_benzyl_pq } : {}),
+    ...(typeof prep.benzyl_purity === 'string' ? { benzyl_purity: formatBenzylPurity(prep.benzyl_purity) } : {}),
+    ...(typeof prep.benzyl_quantity === 'string' ? { benzyl_quantity: prep.benzyl_quantity.trim() } : {}),
     ...((prep.labeled_content || '').trim()
       ? {
           labeled_content: (prep.labeled_content || '').trim(),

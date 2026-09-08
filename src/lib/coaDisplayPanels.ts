@@ -80,7 +80,7 @@ function isConformityPanel(name: string): boolean {
 function isNetContentPanel(name: string): boolean {
   if (/^blend content\b/i.test(name.trim())) return false;
   const n = name.toLowerCase();
-  return n.includes('net content') || n.includes('peptide content');
+  return n.includes('net content') || n.includes('peptide content') || /fill\s*volume/.test(n);
 }
 
 function isNetPurityPanel(name: string): boolean {
@@ -193,6 +193,10 @@ export function pendingAssayLabels(
     if (n.includes('endotoxin') || n.includes('lal')) return 'Endotoxin';
     if (/lead|arsenic|cadmium|mercury|chromium/i.test(p.panel_name)) return 'Heavy metals';
     if (n.includes('fentanyl')) return 'Fentanyl';
+    if (/^\s*ph\b/i.test(p.panel_name)) return 'pH';
+    if (/benzyl/i.test(p.panel_name)) return 'Benzyl alcohol';
+    if (/fill\s*volume/i.test(p.panel_name)) return 'Fill volume';
+    if (/net content/i.test(p.panel_name)) return 'Net content';
     return p.panel_name.replace(/\s*\([^)]*\)\s*$/, '').trim() || p.panel_name;
   }).filter((v, i, arr) => arr.indexOf(v) === i);
 }
