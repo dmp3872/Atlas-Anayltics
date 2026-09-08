@@ -50,7 +50,7 @@ export function matrixTypeFromSampleMetadata(
   return '';
 }
 
-/** Bacteriostatic water / aqueous diluent samples — COA includes a pH assay. */
+/** Bacteriostatic water / aqueous diluent samples — Benzyl Alcohol Assay (HPLC) + pH + Fill Volume / Net Content. */
 export function sampleIsBacWater(
   metadata: OrderSample['metadata'] | OrderSampleMetadata | null | undefined,
 ): boolean {

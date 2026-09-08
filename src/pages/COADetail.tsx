@@ -629,8 +629,8 @@ export default function COADetail() {
               </thead>
               <tbody>
                 {mainPanels.map((r, i) => {
-                  const isNetContent = /net content|peptide content/i.test(r.panel_name)
-                    && !/^blend content\b/i.test(r.panel_name);
+                  const isNetContent = (/net content|peptide content|fill\s*volume/i.test(r.panel_name)
+                    && !/^blend content\b/i.test(r.panel_name));
                   const pass = resolvePanelPass(r);
                   const status = panelStatusLabel(pass);
                   const specification = isNetContent
