@@ -165,6 +165,37 @@ function isCollapsibleBundle(bundle: OrderBundle): boolean {
   return Boolean(bundle.order) && bundleItemCount(bundle) >= 2;
 }
 
+/** Newest activity first — issued/verified/published/created timestamps. */
+function timestampMs(raw: string | null | undefined): number {
+  if (!raw) return 0;
+  const t = Date.parse(raw);
+  return Number.isFinite(t) ? t : 0;
+}
+
+function coaRecencyMs(coa: COA): number {
+  return Math.max(
+    timestampMs(coa.published_at),
+    timestampMs(coa.verified_at),
+    timestampMs(coa.issued_at),
+    timestampMs(coa.created_at),
+  );
+}
+
+function pendingRecencyMs(item: QueueSampleItem): number {
+  return Math.max(
+    timestampMs(item.sample.created_at),
+    timestampMs(item.order.created_at),
+  );
+}
+
+function bundleRecencyMs(bundle: OrderBundle): number {
+  let max = 0;
+  for (const coa of bundle.coas) max = Math.max(max, coaRecencyMs(coa));
+  for (const item of bundle.pending) max = Math.max(max, pendingRecencyMs(item));
+  if (!max && bundle.order) max = timestampMs(bundle.order.created_at);
+  return max;
+}
+
 function buildOrderBundles(
   coas: COA[],
   pending: QueueSampleItem[],
@@ -590,7 +621,7 @@ export default function CoaWorkflowBoard({
     for (const coa of coas) {
       groups[coaWorkflowStage(coa)].push(coa);
     }
-    // Mine-first within each COA column; published pending-assay cards float to top.
+    // Newest cards at the top. Published/verified pending-assay cards still float first.
     for (const stage of COA_WORKFLOW_BOARD_COLUMNS) {
       if (stage === 'testing_in_progress') continue;
       groups[stage].sort((a, b) => {
@@ -599,13 +630,9 @@ export default function CoaWorkflowBoard({
           const bPend = canUpdatePendingPublishedCoa(b) ? 0 : 1;
           if (aPend !== bPend) return aPend - bPend;
         }
-        const aMine = currentUserId && (
-          a.review_assigned_to === currentUserId || assigneeForCoa(a) === currentUserId
-        ) ? 0 : 1;
-        const bMine = currentUserId && (
-          b.review_assigned_to === currentUserId || assigneeForCoa(b) === currentUserId
-        ) ? 0 : 1;
-        return aMine - bMine;
+        const byRecency = coaRecencyMs(b) - coaRecencyMs(a);
+        if (byRecency !== 0) return byRecency;
+        return (a.sample_name || '').localeCompare(b.sample_name || '');
       });
     }
     return groups;
@@ -614,10 +641,9 @@ export default function CoaWorkflowBoard({
   const sortedPending = useMemo(() => {
     const list = [...pendingSamples];
     list.sort((a, b) => {
-      const aMine = currentUserId && a.assigned_to === currentUserId ? 0 : 1;
-      const bMine = currentUserId && b.assigned_to === currentUserId ? 0 : 1;
-      if (aMine !== bMine) return aMine - bMine;
-      return 0;
+      const byRecency = pendingRecencyMs(b) - pendingRecencyMs(a);
+      if (byRecency !== 0) return byRecency;
+      return a.sample.sample_name.localeCompare(b.sample.sample_name);
     });
     return list;
   }, [pendingSamples, currentUserId]);
@@ -627,16 +653,18 @@ export default function CoaWorkflowBoard({
     for (const stage of COA_WORKFLOW_BOARD_COLUMNS) {
       const pending = stage === 'testing_in_progress' ? sortedPending : [];
       const bundles = buildOrderBundles(grouped[stage], pending, orders);
+      for (const bundle of bundles) {
+        bundle.coas.sort((a, b) => coaRecencyMs(b) - coaRecencyMs(a));
+        bundle.pending.sort((a, b) => pendingRecencyMs(b) - pendingRecencyMs(a));
+      }
       bundles.sort((a, b) => {
-        const aMine = currentUserId && (
-          a.coas.some(c => c.review_assigned_to === currentUserId || assigneeForCoa(c) === currentUserId)
-          || a.pending.some(p => p.assigned_to === currentUserId)
-        ) ? 0 : 1;
-        const bMine = currentUserId && (
-          b.coas.some(c => c.review_assigned_to === currentUserId || assigneeForCoa(c) === currentUserId)
-          || b.pending.some(p => p.assigned_to === currentUserId)
-        ) ? 0 : 1;
-        if (aMine !== bMine) return aMine - bMine;
+        if (stage === 'published' || stage === 'verified') {
+          const aPend = a.coas.some(c => canUpdatePendingPublishedCoa(c)) ? 0 : 1;
+          const bPend = b.coas.some(c => canUpdatePendingPublishedCoa(c)) ? 0 : 1;
+          if (aPend !== bPend) return aPend - bPend;
+        }
+        const byRecency = bundleRecencyMs(b) - bundleRecencyMs(a);
+        if (byRecency !== 0) return byRecency;
         return a.orderNumber.localeCompare(b.orderNumber);
       });
       out[stage] = bundles;
