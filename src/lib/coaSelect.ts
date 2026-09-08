@@ -24,6 +24,7 @@ export const COA_LIST_COLUMNS = [
   'overall_result',
   'is_public',
   'issued_at',
+  'created_at',
   'verified_at',
   'published_at',
   'coa_workflow_stage',
