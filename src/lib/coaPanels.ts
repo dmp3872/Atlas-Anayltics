@@ -19,6 +19,10 @@ export interface OrderSampleMetadata {
   conformity_extra?: number;
   include_fentanyl?: boolean;
   brand_names?: string[];
+  /** commercial (default) | rd — R&D is Purity & Quantity only, no COA. */
+  pathway?: 'commercial' | 'rd';
+  /** Chemist note when completing an R&D verification. */
+  rd_completion_note?: string;
 }
 
 export function parseSampleMetadata(metadata: OrderSample['metadata']): OrderSampleMetadata {
