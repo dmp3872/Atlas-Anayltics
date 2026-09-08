@@ -271,7 +271,8 @@ export function buildQueueItems(
     // Higher priority (lower score) first so urgent/high surface immediately.
     if (a.priorityScore !== b.priorityScore) return a.priorityScore - b.priorityScore;
     if (a.overdue !== b.overdue) return a.overdue ? -1 : 1;
-    return new Date(a.sample.created_at).getTime() - new Date(b.sample.created_at).getTime();
+    // Newest samples first within the same priority band.
+    return new Date(b.sample.created_at).getTime() - new Date(a.sample.created_at).getTime();
   });
 }
 
