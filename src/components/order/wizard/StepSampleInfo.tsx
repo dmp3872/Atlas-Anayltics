@@ -33,6 +33,8 @@ interface Props {
   onCompaniesChange: (companies: Company[]) => void;
   onProfileSynced: () => void;
   companiesLoading: boolean;
+  /** R&D orders skip COA profiles — results stay in the R&D folder. */
+  hideCoaProfile?: boolean;
 }
 
 export default function StepSampleInfo({
@@ -51,6 +53,7 @@ export default function StepSampleInfo({
   onCompaniesChange,
   onProfileSynced,
   companiesLoading,
+  hideCoaProfile = false,
 }: Props) {
   const [suggestFor, setSuggestFor] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<string[]>([]);
@@ -64,22 +67,32 @@ export default function StepSampleInfo({
       <div>
         <h2 className="text-xl font-bold text-black">Sample Information</h2>
         <p className="text-sm text-neutral-500 mt-1">
-          Add one or more samples to this laboratory order. Testing selections from step 1 are applied to each sample.
+          {hideCoaProfile
+            ? 'Add sample details for this R&D verification order. No certificate of analysis will be issued.'
+            : 'Add one or more samples to this laboratory order. Testing selections from step 1 are applied to each sample.'}
         </p>
       </div>
 
-      <OrderCoaProfileSection
-        userId={userId}
-        companies={companies}
-        selectedId={selectedCompanyId || null}
-        onSelect={onSelectCompany}
-        onCompaniesChange={onCompaniesChange}
-        onProfileSynced={onProfileSynced}
-      />
-      {!companiesLoading && companies.length === 0 && (
-        <p className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2" role="status">
-          Create a COA profile to print certificates against your brand after testing completes.
+      {hideCoaProfile ? (
+        <p className="text-xs text-violet-900 bg-violet-50 border border-violet-200 rounded-lg px-3 py-2" role="status">
+          R&amp;D pathway — results are shared in your portal when complete. No COA profile required.
         </p>
+      ) : (
+        <>
+          <OrderCoaProfileSection
+            userId={userId}
+            companies={companies}
+            selectedId={selectedCompanyId || null}
+            onSelect={onSelectCompany}
+            onCompaniesChange={onCompaniesChange}
+            onProfileSynced={onProfileSynced}
+          />
+          {!companiesLoading && companies.length === 0 && (
+            <p className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2" role="status">
+              Create a COA profile to print certificates against your brand after testing completes.
+            </p>
+          )}
+        </>
       )}
 
       {samples.map((sample, idx) => {
