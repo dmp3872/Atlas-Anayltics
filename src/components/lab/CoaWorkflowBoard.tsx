@@ -165,7 +165,7 @@ function isCollapsibleBundle(bundle: OrderBundle): boolean {
   return Boolean(bundle.order) && bundleItemCount(bundle) >= 2;
 }
 
-/** Newest activity first — issued/verified/published/created timestamps. */
+/** Newest activity first — prefer created_at (always set), then issued/verified/published. */
 function timestampMs(raw: string | null | undefined): number {
   if (!raw) return 0;
   const t = Date.parse(raw);
@@ -173,11 +173,13 @@ function timestampMs(raw: string | null | undefined): number {
 }
 
 function coaRecencyMs(coa: COA): number {
+  // Prefer created_at so brand-new certificates always beat older ones even when
+  // issued_at is missing, backdated, or identical to the day.
   return Math.max(
+    timestampMs(coa.created_at),
+    timestampMs(coa.issued_at),
     timestampMs(coa.published_at),
     timestampMs(coa.verified_at),
-    timestampMs(coa.issued_at),
-    timestampMs(coa.created_at),
   );
 }
 
@@ -621,32 +623,15 @@ export default function CoaWorkflowBoard({
     for (const coa of coas) {
       groups[coaWorkflowStage(coa)].push(coa);
     }
-    // Newest cards at the top. Published/verified pending-assay cards still float first.
     for (const stage of COA_WORKFLOW_BOARD_COLUMNS) {
-      if (stage === 'testing_in_progress') continue;
-      groups[stage].sort((a, b) => {
-        if (stage === 'published' || stage === 'verified') {
-          const aPend = canUpdatePendingPublishedCoa(a) ? 0 : 1;
-          const bPend = canUpdatePendingPublishedCoa(b) ? 0 : 1;
-          if (aPend !== bPend) return aPend - bPend;
-        }
-        const byRecency = coaRecencyMs(b) - coaRecencyMs(a);
-        if (byRecency !== 0) return byRecency;
-        return (a.sample_name || '').localeCompare(b.sample_name || '');
-      });
+      groups[stage].sort((a, b) => coaRecencyMs(b) - coaRecencyMs(a));
     }
     return groups;
-  }, [coas, samples, currentUserId]);
+  }, [coas]);
 
   const sortedPending = useMemo(() => {
-    const list = [...pendingSamples];
-    list.sort((a, b) => {
-      const byRecency = pendingRecencyMs(b) - pendingRecencyMs(a);
-      if (byRecency !== 0) return byRecency;
-      return a.sample.sample_name.localeCompare(b.sample.sample_name);
-    });
-    return list;
-  }, [pendingSamples, currentUserId]);
+    return [...pendingSamples].sort((a, b) => pendingRecencyMs(b) - pendingRecencyMs(a));
+  }, [pendingSamples]);
 
   const bundlesByStage = useMemo(() => {
     const out = {} as Record<CoaWorkflowStage, OrderBundle[]>;
@@ -657,20 +642,17 @@ export default function CoaWorkflowBoard({
         bundle.coas.sort((a, b) => coaRecencyMs(b) - coaRecencyMs(a));
         bundle.pending.sort((a, b) => pendingRecencyMs(b) - pendingRecencyMs(a));
       }
+      // Pure newest-first — do not float pending-assay or "mine" cards above newer work.
       bundles.sort((a, b) => {
-        if (stage === 'published' || stage === 'verified') {
-          const aPend = a.coas.some(c => canUpdatePendingPublishedCoa(c)) ? 0 : 1;
-          const bPend = b.coas.some(c => canUpdatePendingPublishedCoa(c)) ? 0 : 1;
-          if (aPend !== bPend) return aPend - bPend;
-        }
         const byRecency = bundleRecencyMs(b) - bundleRecencyMs(a);
         if (byRecency !== 0) return byRecency;
-        return a.orderNumber.localeCompare(b.orderNumber);
+        // Higher / later order numbers first when timestamps tie.
+        return b.orderNumber.localeCompare(a.orderNumber, undefined, { numeric: true });
       });
       out[stage] = bundles;
     }
     return out;
-  }, [grouped, sortedPending, orders, samples, currentUserId]);
+  }, [grouped, sortedPending, orders]);
 
   const columnCounts = useMemo(() => {
     const counts = {} as Record<CoaWorkflowStage, number>;
