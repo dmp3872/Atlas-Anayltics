@@ -9,7 +9,8 @@ export type CoaPdfFieldValues = Record<string, string>;
 
 function findPanel(panels: PanelResult[], ...keywords: string[]): PanelResult | undefined {
   const lowered = keywords.map(k => k.toLowerCase());
-  const lookingForContent = lowered.some(k => k.includes('net content') || k.includes('peptide content'));
+  const lookingForContent = lowered.some(k =>
+    k.includes('net content') || k.includes('peptide content') || k.includes('fill volume'));
   return panels.find(p => {
     const name = p.panel_name.toLowerCase();
     // Per-peptide blend rows must not steal the total Net Content field.
@@ -39,7 +40,7 @@ function panelTriplet(
   const panel = findPanel(panels, ...keywords);
   const lookingForContent = keywords.some(k => {
     const n = k.toLowerCase();
-    return n.includes('net content') || n.includes('peptide content');
+    return n.includes('net content') || n.includes('peptide content') || n.includes('fill volume');
   });
   return {
     specification: panel?.specification?.trim() ?? '',
@@ -51,7 +52,7 @@ function panelTriplet(
 function usedPanelNames(panels: PanelResult[]): Set<PanelResult> {
   const keys = [
     ['ident'],
-    ['net content', 'peptide content'],
+    ['net content', 'peptide content', 'fill volume'],
     ['purity', 'hplc'],
     ['steril'],
     ['endotoxin', 'lal'],
@@ -125,7 +126,7 @@ export function buildCoaPdfFieldValues(coa: COA): CoaPdfFieldValues {
     ),
   );
   const identity = panelTriplet(panels, ['ident']);
-  const netContent = panelTriplet(panels, ['net content', 'peptide content']);
+  const netContent = panelTriplet(panels, ['net content', 'peptide content', 'fill volume']);
   const purity = panelTriplet(panels, ['purity', 'hplc']);
   const sterility = resolveSterility(coa, panels);
   const endotoxin = resolveEndotoxin(coa, panels);
@@ -264,9 +265,13 @@ export function buildCoaPdfFieldValues(coa: COA): CoaPdfFieldValues {
       fields[`Text2_T${i + 1}`] = panel
         ? (/^\s*ph\b/i.test(panel.panel_name)
           ? `pH ${panel.result || 'Pending'} (${panel.specification || '4.5–7.0'})`
-          : (panel.panel_name.toLowerCase().startsWith('blend content')
+          : (/benzyl/i.test(panel.panel_name)
+            ? `Benzyl Alcohol Assay (HPLC) ${panel.result || 'Pending'} (${panel.specification || '0.9% (v/v) ± 20%'})`
+            : (/fill\s*volume/i.test(panel.panel_name)
+              ? `Fill Volume / Net Content ${applyQuantityUnit(panel.result || 'Pending', claimUnit)}`
+              : (panel.panel_name.toLowerCase().startsWith('blend content')
             ? `${panel.panel_name.replace(/^blend content\s*[—–-]\s*/i, '').trim()}: ${applyQuantityUnit(panel.result || 'Pending', claimUnit)}`
-            : (panel.result || panel.panel_name)))
+            : (panel.result || panel.panel_name)))))
         : '';
       fields[`Text2_T${i + 6}`] = panel ? conformityLabel(panel) : '';
     }

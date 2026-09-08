@@ -21,6 +21,8 @@ import {
   MAX_PURITY_PERCENT, PURITY_INPUT_HINT, sanitizePurityInput, purityExceedsMax,
   ASSAY_METHOD_LABELS, AssayMethod,
   PH_SPEC_LABEL, formatPhResult, phPassFromResult,
+  formatBenzylPurity, benzylPqPassFromResult, isBacWaterLabResults,
+  BENZYL_PQ_SPEC_LABEL,
 } from '../lib/labCoaForm';
 import { COA_WORKFLOW_LABELS, canPrepareCoa, coaWorkflowStage, buildWorkflowStagePatch, CoaWorkflowStage } from '../lib/coaWorkflow';
 import {
@@ -1017,9 +1019,20 @@ export default function Lab() {
       setMsg({ type: 'error', text: 'Enter the received date.' });
       return;
     }
-    const overMaxPurity =
+    const orderedIncludes = linkedSample
+      ? buildLabResultsFromSample(linkedSample.metadata, linkedSample.sample_name)
+      : null;
+    const bacWater = sampleIsBacWater(linkedSample?.metadata) || /bac\s*water/i.test(form.matrixType);
+    const isBacCoa = isBacWaterLabResults({
+      includeBenzylPq: labResults.includeBenzylPq
+        || !!orderedIncludes?.includeBenzylPq
+        || bacWater,
+      includePh: true,
+    });
+    const overMaxPurity = !isBacCoa && (
       purityExceedsMax(labResults.netPurity)
-      || labResults.conformityPeptides.some(r => purityExceedsMax(r.netPurity));
+      || labResults.conformityPeptides.some(r => purityExceedsMax(r.netPurity))
+    );
     if (overMaxPurity) {
       setMsg({
         type: 'error',
@@ -1035,19 +1048,18 @@ export default function Lab() {
       const intakeForProjection = form.receivedDate.trim()
         || isoToLocalDateInput(sampleIntakeAt(linkedSample))
         || localDateInputValue();
-      const orderedIncludes = linkedSample
-        ? buildLabResultsFromSample(linkedSample.metadata, linkedSample.sample_name)
-        : null;
       const resultsForPanels: LabCoaResults = {
         ...labResults,
         includeSterility: labResults.includeSterility || !!orderedIncludes?.includeSterility,
         includeEndotoxin: labResults.includeEndotoxin || !!orderedIncludes?.includeEndotoxin,
         includeHeavyMetals: labResults.includeHeavyMetals || !!orderedIncludes?.includeHeavyMetals,
         includeFentanyl: labResults.includeFentanyl || !!orderedIncludes?.includeFentanyl,
+        includeBenzylPq: labResults.includeBenzylPq
+          || !!orderedIncludes?.includeBenzylPq
+          || bacWater,
         includePh: labResults.includePh
           || !!orderedIncludes?.includePh
-          || sampleIsBacWater(linkedSample?.metadata)
-          || /bac\s*water/i.test(form.matrixType),
+          || bacWater,
         sterilityMethod:
           labResults.includeSterility || orderedIncludes?.includeSterility
             ? (labResults.sterilityMethod === 'pcr' && orderedIncludes?.sterilityMethod === 'culture_14_day'
@@ -1241,6 +1253,13 @@ export default function Lab() {
             include_fentanyl: !!resultsForPanels.includeFentanyl,
             include_ph: !!resultsForPanels.includePh,
             ph_result: resultsForPanels.includePh ? formatPhResult(resultsForPanels.phResult) : '',
+            include_benzyl_pq: !!resultsForPanels.includeBenzylPq,
+            benzyl_purity: resultsForPanels.includeBenzylPq
+              ? formatBenzylPurity(resultsForPanels.benzylPurity)
+              : '',
+            benzyl_quantity: resultsForPanels.includeBenzylPq
+              ? (resultsForPanels.benzylQuantity || '').trim()
+              : '',
             labeled_content: form.labeledContent.trim() || linkedMeta?.labeled_content || '',
             label_claim_unit: form.labelClaimUnit.trim() || linkedMeta?.label_claim_unit || 'mg',
             include_cas_number: !!looksLikeCasNumber(form.casNumber.trim())
@@ -1875,7 +1894,12 @@ export default function Lab() {
                     onChange={e => {
                       const matrixType = e.target.value;
                       update({ matrixType });
-                      if (/bac\s*water/i.test(matrixType)) updateResults({ includePh: true });
+                      if (/bac\s*water/i.test(matrixType)) {
+                        updateResults({ includePh: true, includeBenzylPq: true });
+                        if (!form.labelClaimUnit.trim() || form.labelClaimUnit === 'mg') {
+                          update({ labelClaimUnit: 'mL' });
+                        }
+                      }
                     }}
                   >
                     <option value="">Select matrix type…</option>
@@ -1977,6 +2001,75 @@ export default function Lab() {
               <div>
                 <label className="label mb-3 block">Test Results</label>
                 <div className="space-y-4 rounded-lg border border-atlas-border p-4 bg-neutral-50/50">
+                  {isBacWaterLabResults(labResults) ? (
+                  <div className="grid sm:grid-cols-2 gap-4">
+                    <div className="sm:col-span-2">
+                      <p className="text-sm font-semibold text-black">Bacteriostatic Water COA</p>
+                      <p className="text-xs text-neutral-500 mt-0.5">
+                        Certificate assays: Benzyl Alcohol Assay (HPLC), pH ({PH_SPEC_LABEL}), and Fill Volume / Net Content (Gravimetric).
+                      </p>
+                    </div>
+                    <div>
+                      <label className="label">Benzyl Alcohol Assay (HPLC) — result (% v/v)</label>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={labResults.benzylPurity}
+                        onChange={e => updateResults({ benzylPurity: e.target.value, benzylQuantity: '' })}
+                        className="input-field"
+                        placeholder="e.g. 0.88"
+                      />
+                      <p className="text-xs text-neutral-500 mt-1">
+                        Method: HPLC · Spec: {BENZYL_PQ_SPEC_LABEL}
+                        {labResults.benzylPurity.trim() ? (
+                          <>
+                            {' · '}
+                            <span className={benzylPqPassFromResult(labResults.benzylPurity) ? 'text-emerald-700 font-semibold' : 'text-red-700 font-semibold'}>
+                              {benzylPqPassFromResult(labResults.benzylPurity) ? 'PASS' : 'FAIL'}
+                            </span>
+                          </>
+                        ) : (
+                          <> · type the measured result</>
+                        )}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="label">pH</label>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={labResults.phResult}
+                        onChange={e => updateResults({ phResult: e.target.value })}
+                        className="input-field"
+                        placeholder="e.g. 5.8"
+                      />
+                      <p className="text-xs text-neutral-500 mt-1">
+                        Spec: {PH_SPEC_LABEL}
+                        {labResults.phResult.trim() ? (
+                          <>
+                            {' · '}
+                            <span className={phPassFromResult(labResults.phResult) ? 'text-emerald-700 font-semibold' : 'text-red-700 font-semibold'}>
+                              {phPassFromResult(labResults.phResult) ? 'PASS' : 'FAIL'}
+                            </span>
+                          </>
+                        ) : (
+                          <> · type the measured result</>
+                        )}
+                      </p>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="label">Fill Volume / Net Content (Gravimetric)</label>
+                      <input
+                        value={labResults.netContent}
+                        onChange={e => updateResults({ netContent: e.target.value })}
+                        className="input-field max-w-md"
+                        placeholder={`Measured ${form.labelClaimUnit || 'mL'} — not label claim`}
+                      />
+                      <p className="text-xs text-neutral-500 mt-1">Method: Gravimetric</p>
+                    </div>
+                  </div>
+                  ) : (
+                  <>
                   <div className="grid sm:grid-cols-2 gap-4">
                     <div className="sm:col-span-2">
                       <label className="label">Assay method (ID / Content / Purity)</label>
@@ -2060,7 +2153,9 @@ export default function Lab() {
                       />
                     </div>
                   </div>
-                  {labResults.blendPeptides.length > 0 && (
+                  </>
+                  )}
+                  {!isBacWaterLabResults(labResults) && labResults.blendPeptides.length > 0 && (
                     <div className="rounded-lg border border-brand-200 bg-white p-3 space-y-2">
                       <div className="flex items-center justify-between gap-2">
                         <div>
@@ -2236,7 +2331,7 @@ export default function Lab() {
                         </div>
                       </>
                     )}
-                    {labResults.includePh && (
+                    {labResults.includePh && !isBacWaterLabResults(labResults) && (
                       <div>
                         <label className="label">pH (calculated)</label>
                         <input

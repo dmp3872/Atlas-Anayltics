@@ -125,6 +125,62 @@ export function phPassFromResult(raw: string): boolean | null {
   return n >= PH_SPEC_MIN && n <= PH_SPEC_MAX;
 }
 
+/** BAC water — benzyl alcohol assay by HPLC. Spec: 0.9% (v/v) ± 20%. */
+export const BENZYL_ASSAY_NOMINAL_PCT = 0.9;
+export const BENZYL_ASSAY_TOLERANCE = 0.2;
+export const BENZYL_SPEC_MIN = BENZYL_ASSAY_NOMINAL_PCT * (1 - BENZYL_ASSAY_TOLERANCE); // 0.72
+export const BENZYL_SPEC_MAX = BENZYL_ASSAY_NOMINAL_PCT * (1 + BENZYL_ASSAY_TOLERANCE); // 1.08
+export const BENZYL_PQ_SPEC_LABEL = '0.9% (v/v) ± 20%';
+
+export function benzylPqPanelName(): string {
+  return 'Benzyl Alcohol Assay (HPLC)';
+}
+
+export function isBenzylPqPanel(name: string): boolean {
+  return /benzyl\s*alcohol\s*assay|benzyl\s*p\s*&\s*q|benzyl\s*alcohol|benzyl\s*pq/i.test((name || '').trim());
+}
+
+export function fillVolumePanelName(): string {
+  return 'Fill Volume / Net Content (Gravimetric)';
+}
+
+export function isFillVolumePanel(name: string): boolean {
+  const n = (name || '').trim().toLowerCase();
+  return /fill\s*volume/.test(n)
+    || /net content\s*\(\s*measured\s*\)/.test(n)
+    || /net content\s*\(\s*gravimetric\s*\)/.test(n);
+}
+
+/** Measured benzyl alcohol as % (v/v), e.g. "0.88". */
+export function formatBenzylPurity(raw: string): string {
+  const trimmed = (raw || '').trim();
+  if (!trimmed) return '';
+  const n = parseFloat(trimmed.replace(/,/g, '').match(/-?\d+(?:\.\d+)?/)?.[0] ?? '');
+  if (!Number.isFinite(n)) return trimmed.replace(/%/g, '').trim();
+  const frac = trimmed.match(/-?\d+\.(\d+)/)?.[1] ?? '';
+  const decimals = frac.length === 0 ? 2 : Math.min(frac.length, 2);
+  return n.toFixed(decimals);
+}
+
+/** Certificate result cell for benzyl alcohol assay. */
+export function formatBenzylPqResult(purity: string, _quantity = ''): string {
+  const formatted = formatBenzylPurity(purity);
+  if (!formatted) return '';
+  if (/%/.test(formatted)) return formatted;
+  return `${formatted}% (v/v)`;
+}
+
+/** Pending until a result is entered; PASS when within 0.9% (v/v) ± 20%. */
+export function benzylPqPassFromResult(purity: string, _quantity = ''): boolean | null {
+  const n = parseFloat(formatBenzylPurity(purity));
+  if (!Number.isFinite(n)) return null;
+  return n >= BENZYL_SPEC_MIN && n <= BENZYL_SPEC_MAX;
+}
+
+export function isBacWaterLabResults(results: Pick<LabCoaResults, 'includeBenzylPq' | 'includePh'>): boolean {
+  return !!results.includeBenzylPq;
+}
+
 /** Append sterility method to a specification cell (PDF AcroForm). */
 export function withSterilityMethodSpec(specification: string, method: SterilityMethod): string {
   const label = STERILITY_METHOD_LABELS[method];
@@ -455,6 +511,12 @@ export interface LabCoaResults {
   blendPeptides: BlendPeptideRow[];
   includeFentanyl: boolean;
   fentanylPass: boolean;
+  /** BAC water COA — benzyl alcohol HPLC assay + pH + fill volume / net content. */
+  includeBenzylPq: boolean;
+  /** Measured benzyl alcohol % (v/v). */
+  benzylPurity: string;
+  /** @deprecated Kept for older COA hydration; unused on new BAC forms. */
+  benzylQuantity: string;
   /** BAC water only — calculated pH on the certificate. */
   includePh: boolean;
   phResult: string;
@@ -481,6 +543,9 @@ export const EMPTY_LAB_RESULTS: LabCoaResults = {
   blendPeptides: [],
   includeFentanyl: false,
   fentanylPass: true,
+  includeBenzylPq: false,
+  benzylPurity: '',
+  benzylQuantity: '',
   includePh: false,
   phResult: '',
 };
@@ -737,6 +802,7 @@ export function buildLabResultsFromSample(metadata: OrderSample['metadata'], sam
   const includeSterility =
     includeSterilityCulture || sampleIncludesAssay(orderRef, 'sterility_pcr');
   const includePh = sampleIsBacWater(metadata);
+  const includeBenzylPq = includePh;
   return {
     ...EMPTY_LAB_RESULTS,
     identification,
@@ -746,6 +812,7 @@ export function buildLabResultsFromSample(metadata: OrderSample['metadata'], sam
     includeHeavyMetals,
     includeEndotoxin,
     includeSterility,
+    includeBenzylPq,
     includePh,
     sterilityMethod: includeSterilityCulture ? 'culture_14_day' : 'pcr',
     conformityPeptides: isBlend
@@ -835,6 +902,24 @@ export function resolveIncludePh(
   return sampleIsBacWater(sampleMetadata);
 }
 
+/** Benzyl alcohol HPLC assay appears on bacteriostatic water COAs (with pH + fill volume). */
+export function resolveIncludeBenzylPq(
+  coa: Pick<COA, 'panel_results' | 'result_summary'>,
+  sampleMetadata?: OrderSample['metadata'] | null,
+): boolean {
+  if (sampleMetadata != null && sampleIsBacWater(sampleMetadata)) return true;
+  const summary = (coa.result_summary && typeof coa.result_summary === 'object')
+    ? (coa.result_summary as Record<string, unknown>)
+    : {};
+  const panels = Array.isArray(coa.panel_results) ? coa.panel_results : [];
+  if (panels.some(p => isBenzylPqPanel(p.panel_name))) return true;
+  if (typeof summary.include_benzyl_pq === 'boolean') return summary.include_benzyl_pq;
+  if (summary.category === 'bac_water') return true;
+  const matrix = `${summary.sample_matrix || ''} ${summary.matrix_type || ''}`.toLowerCase();
+  if (/\bbac\s*water\b|\bbacteriostatic\b/.test(matrix)) return true;
+  return resolveIncludePh(coa, sampleMetadata);
+}
+
 /** Rebuild Issue COA form values from an existing certificate (restart / re-issue). */
 export function buildLabResultsFromCoa(
   coa: Pick<COA, 'panel_results' | 'purity_percent' | 'molecular_weight' | 'result_summary' | 'sample_name'>,
@@ -860,6 +945,7 @@ export function buildLabResultsFromCoa(
   const endotoxinPanel = findPanel('endotoxin');
   const fentanylPanel = findPanel('fentanyl');
   const phPanel = panels.find(p => isPhPanel(p.panel_name));
+  const benzylPanel = panels.find(p => isBenzylPqPanel(p.panel_name));
 
   const summaryContentValues = Array.isArray(summary.content_values)
     ? summary.content_values.map(v => String(v || '').trim()).filter(Boolean)
@@ -1065,6 +1151,31 @@ export function buildLabResultsFromCoa(
     heavyMetals,
     includeFentanyl: sampleMetadata != null ? base.includeFentanyl : (!!fentanylPanel || base.includeFentanyl),
     fentanylPass: fentanylPanel ? fentanylPanel.pass !== false : true,
+    includeBenzylPq: sampleMetadata != null
+      ? (base.includeBenzylPq || !!benzylPanel)
+      : (base.includeBenzylPq
+        || !!benzylPanel
+        || summary.include_benzyl_pq === true
+        || summary.include_ph === true
+        || !!phPanel
+        || summary.category === 'bac_water'),
+    benzylPurity: (() => {
+      if (typeof summary.benzyl_purity === 'string' && summary.benzyl_purity.trim()) {
+        return formatBenzylPurity(String(summary.benzyl_purity));
+      }
+      const raw = benzylPanel?.result && !/^pending\b/i.test(benzylPanel.result) ? benzylPanel.result : '';
+      // Prefer first numeric part (supports older "purity · quantity" cells).
+      const purityPart = raw.split('·')[0]?.trim() || raw;
+      return formatBenzylPurity(purityPart);
+    })(),
+    benzylQuantity: (() => {
+      if (typeof summary.benzyl_quantity === 'string' && summary.benzyl_quantity.trim()) {
+        return String(summary.benzyl_quantity).trim();
+      }
+      const raw = benzylPanel?.result && !/^pending\b/i.test(benzylPanel.result) ? benzylPanel.result : '';
+      const parts = raw.split('·').map(s => s.trim()).filter(Boolean);
+      return parts.length > 1 ? parts.slice(1).join(' · ') : '';
+    })(),
     includePh: sampleMetadata != null
       ? (base.includePh || !!phPanel)
       : (base.includePh || !!phPanel || summary.include_ph === true),
@@ -1093,6 +1204,100 @@ export function labResultsToPanelResults(
   );
   const method = results.assayMethod || 'hplc_uv_vis';
   const methodLabel = ASSAY_METHOD_LABELS[method];
+
+  // Bacteriostatic water: dedicated certificate panels (not peptide ID / purity).
+  if (isBacWaterLabResults(results)) {
+    const bacRows: PanelResult[] = [
+      {
+        panel_name: benzylPqPanelName(),
+        specification: BENZYL_PQ_SPEC_LABEL,
+        result: formatBenzylPqResult(results.benzylPurity, results.benzylQuantity),
+        pass: benzylPqPassFromResult(results.benzylPurity, results.benzylQuantity),
+      },
+      {
+        panel_name: phPanelName(),
+        specification: PH_SPEC_LABEL,
+        result: (() => {
+          const formatted = formatPhResult(results.phResult);
+          return phPassFromResult(formatted) === null ? '' : formatted;
+        })(),
+        pass: phPassFromResult(results.phResult),
+      },
+      {
+        panel_name: fillVolumePanelName(),
+        specification: claimLabel ? `Label claim: ${claimLabel}` : 'Fill volume',
+        result: formatMgAmount(results.netContent, claimUnit) || results.netContent,
+        pass: results.netContent.trim() ? true : null,
+      },
+    ];
+
+    if (results.includeSterility) {
+      const sterilityMethodLabel = STERILITY_METHOD_LABELS[results.sterilityMethod];
+      const projected = results.sterilityMethod === 'culture_14_day'
+        ? (results.sterilityProjectedCompletion || '').trim()
+        : '';
+      if (results.sterilityPass === null) {
+        bacRows.push({
+          panel_name: sterilityPanelName(results.sterilityMethod),
+          specification: 'Not Detected',
+          result: formatSterilityPendingResult(projected),
+          pass: null,
+        });
+      } else {
+        bacRows.push({
+          panel_name: sterilityPanelName(results.sterilityMethod),
+          specification: 'Not Detected',
+          result: results.sterilityPass
+            ? `Not Detected (${sterilityMethodLabel})`
+            : `Detected (${sterilityMethodLabel})`,
+          pass: results.sterilityPass,
+        });
+      }
+    }
+
+    if (results.includeEndotoxin) {
+      if (results.endotoxinPass === null) {
+        bacRows.push({
+          panel_name: endotoxinPanelName(),
+          specification: ENDOTOXIN_SPEC_EU_ML,
+          result: 'Pending',
+          pass: null,
+        });
+      } else {
+        bacRows.push({
+          panel_name: endotoxinPanelName(),
+          specification: ENDOTOXIN_SPEC_EU_ML,
+          result: formatEndotoxinResult(results.endotoxinEuMl),
+          pass: results.endotoxinPass,
+        });
+      }
+    }
+
+    if (results.includeHeavyMetals) {
+      for (const metal of HEAVY_METAL_NAMES) {
+        const filled = (results.heavyMetals[metal] ?? '').trim();
+        const pending = results.heavyMetalsPass === null;
+        bacRows.push({
+          panel_name: metal,
+          specification: HEAVY_METAL_USP_SPECS[metal],
+          result: pending ? 'Pending' : filled,
+          pass: pending ? null : results.heavyMetalsPass === true,
+        });
+      }
+    }
+
+    if (results.includeFentanyl) {
+      bacRows.push({
+        panel_name: 'Fentanyl Detection',
+        specification: 'Not Detected',
+        result: results.fentanylPass ? 'Not Detected' : 'Detected',
+        pass: results.fentanylPass,
+      });
+    }
+
+    return bacRows;
+  }
+
   const rows: PanelResult[] = [
     {
       panel_name: `Identification (${methodLabel})`,
