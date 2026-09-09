@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import {
   Activity, BarChart3, Beaker, ClipboardList, ExternalLink, FlaskConical,
-  LayoutGrid, LogOut, Menu, Shield, UserPlus, Users, Building2, X,
+  LayoutGrid, LogOut, Menu, MessageCircle, Shield, UserPlus, Users, Building2, X,
 } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import AtlasLogo from '../brand/AtlasLogo';
@@ -12,6 +12,7 @@ export type AdminSection =
   | 'dispatch'
   | 'lab'
   | 'rd'
+  | 'livechat'
   | 'operations'
   | 'orders'
   | 'coas'
@@ -41,6 +42,7 @@ const NAV_GROUPS: NavGroup[] = [
       { id: 'dispatch', label: 'Dispatch', desc: 'Assign unassigned samples', icon: UserPlus },
       { id: 'lab', label: 'Staff load', desc: 'Who is behind on assigned work', icon: FlaskConical },
       { id: 'rd', label: 'R&D Folder', desc: 'Purity & Quantity — no COA', icon: Beaker },
+      { id: 'livechat', label: 'Live Chat', desc: 'Client inbox · forward to chemists', icon: MessageCircle },
       { id: 'operations', label: 'Lab Analytics', desc: 'Intake & turnaround', icon: BarChart3 },
     ],
   },

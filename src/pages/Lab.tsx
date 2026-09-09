@@ -39,6 +39,7 @@ import ChemistOrderBriefDrawer from '../components/lab/ChemistOrderBriefDrawer';
 import QueueFilters, { QueueFilterValues } from '../components/lab/QueueFilters';
 import ClaimVsResultStrip from '../components/lab/ClaimVsResultStrip';
 import RdFolderPanel from '../components/lab/RdFolderPanel';
+import ChemistLiveChatPanel from '../components/lab/ChemistLiveChatPanel';
 import { sampleIsRd, orderIsRd } from '../lib/rdPathway';
 import { buildQueueItems, filterQueueItems, getTestAssignments, normalizeLabPriority } from '../lib/labQueue';
 import { sampleIntakeAt, sampleReceivedBy, setSampleStatus } from '../lib/services/orderWorkflow';
@@ -75,14 +76,15 @@ import { parseOrderNotes } from '../lib/orderMeta';
 const MAX_COA_IMAGE_BYTES = 1024 * 1024;
 
 type Message = { type: 'success' | 'error'; text: string; slug?: string } | null;
-type LabTab = 'bench' | 'receive' | 'queue' | 'rd' | 'issue' | 'workflow';
+type LabTab = 'bench' | 'receive' | 'queue' | 'rd' | 'chat' | 'issue' | 'workflow';
 
-const LAB_TABS: LabTab[] = ['bench', 'receive', 'queue', 'rd', 'issue', 'workflow'];
+const LAB_TABS: LabTab[] = ['bench', 'receive', 'queue', 'rd', 'chat', 'issue', 'workflow'];
 const LAB_TAB_LABELS: Record<LabTab, string> = {
   bench: 'My Bench',
   receive: 'Receive',
   queue: 'Testing Queue',
   rd: 'R&D Folder',
+  chat: 'Client Chat',
   issue: 'Issue COA',
   workflow: 'COA Workflow',
 };
@@ -1471,6 +1473,7 @@ export default function Lab() {
     { id: 'receive', label: LAB_TAB_LABELS.receive, count: receiveCount || undefined },
     { id: 'queue', label: LAB_TAB_LABELS.queue, count: pendingQueueCount || undefined },
     { id: 'rd', label: LAB_TAB_LABELS.rd, count: rdActiveCount || undefined },
+    { id: 'chat', label: LAB_TAB_LABELS.chat },
     { id: 'issue', label: LAB_TAB_LABELS.issue },
     { id: 'workflow', label: LAB_TAB_LABELS.workflow, count: workflowActiveCount || undefined },
   ];
@@ -1645,6 +1648,10 @@ export default function Lab() {
             currentUserId={user?.id}
             onChanged={loadAll}
           />
+        )}
+
+        {tab === 'chat' && (
+          <ChemistLiveChatPanel orders={normalizedOrders} />
         )}
 
         {tab === 'issue' && (

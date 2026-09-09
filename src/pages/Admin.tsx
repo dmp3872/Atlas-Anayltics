@@ -16,6 +16,7 @@ import AdminClientsPanel from '../components/admin/AdminClientsPanel';
 import OpsDashboard from '../components/admin/OpsDashboard';
 import LabManagerDashboard from '../components/admin/LabManagerDashboard';
 import RdFolderPanel from '../components/lab/RdFolderPanel';
+import AdminLiveChatInbox from '../components/admin/AdminLiveChatInbox';
 import { COA_LIST_COLUMNS } from '../lib/coaSelect';
 
 const SECTION_META: Record<AdminSection, { title: string; subtitle: string }> = {
@@ -23,6 +24,7 @@ const SECTION_META: Record<AdminSection, { title: string; subtitle: string }> = 
   dispatch: { title: 'Dispatch Board', subtitle: 'Assign unassigned samples by chemist load.' },
   lab: { title: 'Staff load', subtitle: 'Chemist workload and lagging assignments.' },
   rd: { title: 'R&D Folder', subtitle: 'Purity & Quantity verification — complete without issuing a COA.' },
+  livechat: { title: 'Live Chat', subtitle: 'Client messages hit admin first. Forward to chemists; only admin replies to clients.' },
   operations: { title: 'Lab Analytics', subtitle: 'Intake trends, test volume, and turnaround.' },
   orders: { title: 'Orders & money', subtitle: 'Priority, payment, refunds, and order detail.' },
   coas: { title: 'COA Registry', subtitle: 'Overrides, stage resets, and audit notes.' },
@@ -293,6 +295,19 @@ export default function Admin() {
             clients={users}
             currentUserId={user?.id}
             onChanged={loadAll}
+          />
+        )}
+
+        {section === 'livechat' && (
+          <AdminLiveChatInbox
+            chemists={users
+              .filter(u => u.role === 'chemist')
+              .map(c => ({
+                id: c.id,
+                name: c.full_name || c.email || 'Chemist',
+              }))}
+            clients={users}
+            orders={normalizedOrders}
           />
         )}
 
