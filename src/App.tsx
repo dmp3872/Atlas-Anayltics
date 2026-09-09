@@ -23,6 +23,7 @@ import Lab from './pages/Lab';
 import Admin from './pages/Admin';
 import MedicalDirector from './pages/MedicalDirector';
 import AdminOrderDetail from './pages/admin/AdminOrderDetail';
+import LiveChatWidget from './components/chat/LiveChatWidget';
 
 function PublicLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -99,6 +100,7 @@ export default function App() {
           <Route path="/account" element={<Navigate to="/dashboard?tab=account" replace />} />
           <Route path="/support" element={<Support />} />
         </Routes>
+        <LiveChatWidget />
       </AuthProvider>
     </BrowserRouter>
   );
