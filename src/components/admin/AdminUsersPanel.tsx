@@ -1,8 +1,14 @@
-import { useMemo, useState } from 'react';
-import { UserProfile, UserRole } from '../../lib/types';
-import { ROLE_LABELS } from '../../lib/roles';
+import { useMemo, useState } from "react";
+import { UserProfile, UserRole } from "../../lib/types";
+import { ROLE_LABELS } from "../../lib/roles";
 
-const ROLES: UserRole[] = ['client', 'chemist', 'verifier', 'reviewer', 'admin'];
+const ROLES: UserRole[] = [
+  "client",
+  "chemist",
+  "verifier",
+  "reviewer",
+  "admin",
+];
 
 interface Props {
   users: UserProfile[];
@@ -14,19 +20,27 @@ interface Props {
 }
 
 export default function AdminUsersPanel({
-  users, loading, savingId, onChangeRole, onTogglePreboarded, onToggleRdSubmissions,
+  users,
+  loading,
+  savingId,
+  onChangeRole,
+  onTogglePreboarded,
+  onToggleRdSubmissions,
 }: Props) {
-  const [search, setSearch] = useState('');
-  const [roleFilter, setRoleFilter] = useState<UserRole | 'all'>('all');
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(0);
+  const [roleFilter, setRoleFilter] = useState<UserRole | "all">("all");
 
   const filtered = useMemo(() => {
     let list = [...users];
-    if (roleFilter !== 'all') list = list.filter(u => (u.role ?? 'client') === roleFilter);
+    if (roleFilter !== "all")
+      list = list.filter((u) => (u.role ?? "client") === roleFilter);
     const q = search.trim().toLowerCase();
     if (q) {
-      list = list.filter(u =>
-        (u.full_name ?? '').toLowerCase().includes(q)
-        || (u.company_name ?? '').toLowerCase().includes(q),
+      list = list.filter(
+        (u) =>
+          (u.full_name ?? "").toLowerCase().includes(q) ||
+          (u.company_name ?? "").toLowerCase().includes(q),
       );
     }
     return list;
@@ -34,23 +48,37 @@ export default function AdminUsersPanel({
 
   const roleCounts = useMemo(() => {
     const c: Record<string, number> = {};
-    for (const u of users) c[u.role ?? 'client'] = (c[u.role ?? 'client'] ?? 0) + 1;
+    for (const u of users)
+      c[u.role ?? "client"] = (c[u.role ?? "client"] ?? 0) + 1;
     return c;
   }, [users]);
 
+  const currentPage = Math.min(
+    page,
+    Math.max(0, Math.ceil(filtered.length / 25) - 1),
+  );
+
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-        {ROLES.map(r => (
+      <div className="admin-role-filters">
+        {ROLES.map((r) => (
           <button
             key={r}
             type="button"
-            onClick={() => setRoleFilter(roleFilter === r ? 'all' : r)}
+            aria-pressed={roleFilter === r}
+            onClick={() => {
+              setRoleFilter(roleFilter === r ? "all" : r);
+              setPage(0);
+            }}
             className={`card p-3 text-left transition-colors ${
-              roleFilter === r ? 'border-brand-400 bg-brand-50' : 'hover:border-neutral-300'
+              roleFilter === r
+                ? "border-brand-400 bg-brand-50"
+                : "hover:border-neutral-300"
             }`}
           >
-            <p className="text-[10px] uppercase tracking-wider text-neutral-500">{ROLE_LABELS[r]}</p>
+            <p className="text-[10px] uppercase tracking-wider text-neutral-500">
+              {ROLE_LABELS[r]}
+            </p>
             <p className="text-xl font-bold text-black">{roleCounts[r] ?? 0}</p>
           </button>
         ))}
@@ -58,7 +86,11 @@ export default function AdminUsersPanel({
 
       <input
         value={search}
-        onChange={e => setSearch(e.target.value)}
+        aria-label="Search team and accounts"
+        onChange={(e) => {
+          setSearch(e.target.value);
+          setPage(0);
+        }}
         placeholder="Search name or company…"
         className="input-field max-w-md"
       />
@@ -67,8 +99,8 @@ export default function AdminUsersPanel({
         {loading ? (
           <p className="p-6 text-sm text-neutral-500">Loading accounts…</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+          <div className="admin-table-scroll">
+            <table className="admin-table">
               <thead>
                 <tr className="coa-table-header">
                   <th className="text-left px-5 py-3">Name</th>
@@ -80,64 +112,111 @@ export default function AdminUsersPanel({
                 </tr>
               </thead>
               <tbody className="divide-y divide-atlas-border">
-                {filtered.map(u => (
-                  <tr key={u.id} className="bg-white hover:bg-neutral-50">
-                    <td className="px-5 py-3 font-medium text-black">{u.full_name || '—'}</td>
-                    <td className="px-5 py-3 text-neutral-600">{u.company_name || '—'}</td>
-                    <td className="px-5 py-3">
-                      <select
-                        value={u.role ?? 'client'}
-                        disabled={savingId === u.id}
-                        onChange={e => onChangeRole(u.id, e.target.value as UserRole)}
-                        className="input-field py-1.5 text-sm w-auto"
-                      >
-                        {ROLES.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
-                      </select>
-                      {(u.role ?? 'client') === 'verifier' && (
-                        <p className="text-[10px] text-neutral-400 mt-1 max-w-[11rem]">
-                          Isolated portal — cannot open Admin, Lab, or Client.
-                        </p>
-                      )}
-                    </td>
-                    <td className="px-5 py-3">
-                      {(u.role ?? 'client') === 'client' ? (
-                        <label className="inline-flex items-center gap-2 text-xs text-neutral-700">
-                          <input
-                            type="checkbox"
-                            checked={!!u.shipping_preboarded}
-                            disabled={savingId === u.id || !onTogglePreboarded}
-                            onChange={e => onTogglePreboarded?.(u.id, e.target.checked)}
-                            className="accent-brand-500"
-                          />
-                          UPS + plaque
-                        </label>
-                      ) : (
-                        <span className="text-xs text-neutral-400">—</span>
-                      )}
-                    </td>
-                    <td className="px-5 py-3">
-                      {(u.role ?? 'client') === 'client' ? (
-                        <label className="inline-flex items-center gap-2 text-xs text-neutral-700">
-                          <input
-                            type="checkbox"
-                            checked={!!u.rd_submissions_enabled}
-                            disabled={savingId === u.id || !onToggleRdSubmissions}
-                            onChange={e => onToggleRdSubmissions?.(u.id, e.target.checked)}
-                            className="accent-brand-500"
-                          />
-                          Allow R&amp;D
-                        </label>
-                      ) : (
-                        <span className="text-xs text-neutral-400">—</span>
-                      )}
-                    </td>
-                    <td className="px-5 py-3 text-xs font-mono text-neutral-400">{u.id.slice(0, 13)}…</td>
-                  </tr>
-                ))}
+                {filtered
+                  .slice(currentPage * 25, currentPage * 25 + 25)
+                  .map((u) => (
+                    <tr key={u.id} className="bg-white hover:bg-neutral-50">
+                      <td className="px-5 py-3 font-medium text-black">
+                        {u.full_name || "—"}
+                      </td>
+                      <td className="px-5 py-3 text-neutral-600">
+                        {u.company_name || "—"}
+                      </td>
+                      <td className="px-5 py-3">
+                        <select
+                          aria-label={`Role for ${u.full_name || u.id}`}
+                          value={u.role ?? "client"}
+                          disabled={savingId === u.id}
+                          onChange={(e) =>
+                            onChangeRole(u.id, e.target.value as UserRole)
+                          }
+                          className="input-field py-1.5 text-sm w-auto"
+                        >
+                          {ROLES.map((r) => (
+                            <option key={r} value={r}>
+                              {ROLE_LABELS[r]}
+                            </option>
+                          ))}
+                        </select>
+                        {(u.role ?? "client") === "verifier" && (
+                          <p className="text-[10px] text-neutral-400 mt-1 max-w-[11rem]">
+                            Isolated portal — cannot open Admin, Lab, or Client.
+                          </p>
+                        )}
+                      </td>
+                      <td className="px-5 py-3">
+                        {(u.role ?? "client") === "client" ? (
+                          <label className="inline-flex items-center gap-2 text-xs text-neutral-700">
+                            <input
+                              type="checkbox"
+                              checked={!!u.shipping_preboarded}
+                              disabled={
+                                savingId === u.id || !onTogglePreboarded
+                              }
+                              onChange={(e) =>
+                                onTogglePreboarded?.(u.id, e.target.checked)
+                              }
+                              className="accent-brand-500"
+                            />
+                            UPS + plaque
+                          </label>
+                        ) : (
+                          <span className="text-xs text-neutral-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3">
+                        {(u.role ?? "client") === "client" ? (
+                          <label className="inline-flex items-center gap-2 text-xs text-neutral-700">
+                            <input
+                              type="checkbox"
+                              checked={!!u.rd_submissions_enabled}
+                              disabled={
+                                savingId === u.id || !onToggleRdSubmissions
+                              }
+                              onChange={(e) =>
+                                onToggleRdSubmissions?.(u.id, e.target.checked)
+                              }
+                              className="accent-brand-500"
+                            />
+                            Allow R&amp;D
+                          </label>
+                        ) : (
+                          <span className="text-xs text-neutral-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3 text-xs font-mono text-neutral-400">
+                        {u.id.slice(0, 13)}…
+                      </td>
+                    </tr>
+                  ))}
               </tbody>
             </table>
           </div>
         )}
+        {!loading && filtered.length === 0 && (
+          <div className="admin-empty">
+            <h3>No accounts found</h3>
+            <p>Try another name, company, or role.</p>
+          </div>
+        )}
+        <div className="admin-table-footer">
+          <span>{filtered.length} accounts</span>
+          <div className="admin-pagination">
+            <button
+              disabled={currentPage === 0}
+              onClick={() => setPage(currentPage - 1)}
+            >
+              Previous
+            </button>
+            <span>Page {currentPage + 1}</span>
+            <button
+              disabled={(currentPage + 1) * 25 >= filtered.length}
+              onClick={() => setPage(currentPage + 1)}
+            >
+              Next
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
