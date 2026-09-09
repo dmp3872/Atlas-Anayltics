@@ -139,6 +139,14 @@ export function AdminDetailChrome({
           ← All orders
         </Link>
         <span>{title}</span>
+        <div className="admin-detail-links">
+          <Link to="/lab" className="admin-text-link">
+            Chemist console
+          </Link>
+          <Link to="/dashboard" className="admin-text-link">
+            Client portal
+          </Link>
+        </div>
         <button
           className="admin-icon-button"
           onClick={() => signOut()}
@@ -168,6 +176,7 @@ export default function AdminShell({
   useEffect(() => {
     if (!open) return;
     const previous = document.body.style.overflow;
+    const menuButton = menuRef.current;
     document.body.style.overflow = "hidden";
     drawerRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
     const handleKey = (e: KeyboardEvent) => {
@@ -191,7 +200,7 @@ export default function AdminShell({
     return () => {
       document.body.style.overflow = previous;
       window.removeEventListener("keydown", handleKey);
-      menuRef.current?.focus();
+      menuButton?.focus();
     };
   }, [open]);
   const sidebar = (
@@ -364,4 +373,3 @@ export default function AdminShell({
     </div>
   );
 }
-export { NAV, NAV_GROUPS };
