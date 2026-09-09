@@ -1,319 +1,437 @@
-import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { AlertTriangle, CheckCircle2, Clock, Zap } from 'lucide-react';
-import { COA, Order, OrderSample, LabPriority } from '../../lib/types';
+import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import { ArrowUpRight, Search } from "lucide-react";
+import { COA, Order, OrderSample, LabPriority } from "../../lib/types";
 import {
-  formatDateTime, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS, normalizePaymentStatus,
-} from '../../lib/utils';
+  formatDateTime,
+  ORDER_STATUS_LABELS,
+  PAYMENT_STATUS_LABELS,
+  normalizePaymentStatus,
+} from "../../lib/utils";
 import {
-  LAB_PRIORITIES, LAB_PRIORITY_LABELS, LAB_PRIORITY_STYLES,
-  normalizeLabPriority, orderLabPriority, prioritySortScore,
-} from '../../lib/labQueue';
-import { hasIssuedCoaForSample } from '../../lib/coaPanels';
-import { etaHeat, etaHeatPercent, resolveEtaAt } from '../../lib/etaHeat';
-import PriorityBanner from '../lab/PriorityBanner';
-
-type OrdersFilter = 'active' | 'unpaid' | 'awaiting_sample' | 'overdue' | 'urgent' | 'rush' | 'all';
-
+  LAB_PRIORITIES,
+  LAB_PRIORITY_LABELS,
+  normalizeLabPriority,
+  orderLabPriority,
+  prioritySortScore,
+} from "../../lib/labQueue";
+import { hasIssuedCoaForSample } from "../../lib/coaPanels";
+import { resolveEtaAt } from "../../lib/etaHeat";
+import { formatAgeHours } from "../../lib/adminMetrics";
+export type OrdersFilter =
+  | "active"
+  | "unpaid"
+  | "awaiting_sample"
+  | "overdue"
+  | "urgent"
+  | "rush"
+  | "all";
+export const ORDER_FILTERS: { id: OrdersFilter; label: string }[] = [
+  { id: "active", label: "Active" },
+  { id: "unpaid", label: "Unpaid" },
+  { id: "awaiting_sample", label: "Awaiting sample" },
+  { id: "overdue", label: "Overdue" },
+  { id: "urgent", label: "Urgent" },
+  { id: "rush", label: "Rush" },
+  { id: "all", label: "All orders" },
+];
 interface Props {
   orders: Order[];
   samples?: OrderSample[];
   coas?: COA[];
   savingOrderId?: string | null;
   onSetPriority: (orderId: string, priority: LabPriority) => void;
-  onMarkPaid?: (orderId: string, opts?: { note?: string; waived?: boolean }) => void;
+  onMarkPaid?: (
+    orderId: string,
+    opts?: { note?: string; waived?: boolean },
+  ) => void;
   savingPaymentId?: string | null;
+  initialFilter?: OrdersFilter;
 }
-
 interface OrderQueueStats {
   sampleCount: number;
   pendingCount: number;
   oldestPendingHours: number;
 }
-
-function isOverdue(order: Order): boolean {
+function isOverdue(order: Order) {
   const eta = resolveEtaAt(order);
-  if (!eta) return false;
-  if (order.status === 'complete' || order.status === 'cancelled') return false;
-  return new Date(eta).getTime() < Date.now();
+  return (
+    !!eta &&
+    order.status !== "complete" &&
+    order.status !== "cancelled" &&
+    Date.parse(eta) < Date.now()
+  );
 }
-
 export default function AdminOrdersPanel({
-  orders, samples = [], coas = [], savingOrderId, onSetPriority, onMarkPaid, savingPaymentId,
+  orders,
+  samples = [],
+  coas = [],
+  savingOrderId,
+  onSetPriority,
+  onMarkPaid,
+  savingPaymentId,
+  initialFilter = "active",
 }: Props) {
-  const [filter, setFilter] = useState<OrdersFilter>('active');
-  const [search, setSearch] = useState('');
-
+  const [filter, setFilter] = useState<OrdersFilter>(initialFilter);
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(0);
+  const [sort, setSort] = useState("priority");
   const statsByOrder = useMemo(() => {
     const map = new Map<string, OrderQueueStats>();
+    const coasBySample = new Map<string, COA[]>();
+    for (const coa of coas)
+      if (coa.sample_id)
+        coasBySample.set(coa.sample_id, [
+          ...(coasBySample.get(coa.sample_id) || []),
+          coa,
+        ]);
     for (const sample of samples) {
-      const stats = map.get(sample.order_id) ?? { sampleCount: 0, pendingCount: 0, oldestPendingHours: 0 };
-      stats.sampleCount += 1;
-      // Strict sample_id match — matches the queue's pending logic so a fuzzy
-      // batch/name hit elsewhere never hides a still-pending sample here.
-      const isPending = sample.status !== 'complete' && !hasIssuedCoaForSample(sample, coas);
-      if (isPending) {
-        const ageHours = Math.max(0, (Date.now() - new Date(sample.created_at).getTime()) / (1000 * 60 * 60));
-        stats.pendingCount += 1;
-        stats.oldestPendingHours = Math.max(stats.oldestPendingHours, ageHours);
+      const stats = map.get(sample.order_id) ?? {
+        sampleCount: 0,
+        pendingCount: 0,
+        oldestPendingHours: 0,
+      };
+      stats.sampleCount++;
+      if (
+        sample.status !== "complete" &&
+        !hasIssuedCoaForSample(sample, coasBySample.get(sample.id) || [])
+      ) {
+        stats.pendingCount++;
+        stats.oldestPendingHours = Math.max(
+          stats.oldestPendingHours,
+          Math.max(0, (Date.now() - Date.parse(sample.created_at)) / 3600000),
+        );
       }
       map.set(sample.order_id, stats);
     }
     return map;
   }, [samples, coas]);
-
-  const filtered = useMemo(() => {
-    let list = [...orders];
-    if (filter === 'active') list = list.filter(o => o.status !== 'complete' && o.status !== 'cancelled');
-    if (filter === 'unpaid') list = list.filter(o => normalizePaymentStatus(o.payment_status) === 'unpaid');
-    if (filter === 'awaiting_sample') list = list.filter(o => o.status === 'awaiting_sample');
-    if (filter === 'overdue') list = list.filter(o => isOverdue(o));
-    if (filter === 'urgent') list = list.filter(o => orderLabPriority(o) === 'urgent');
-    if (filter === 'rush') list = list.filter(o => o.rush_processing);
-    const q = search.trim().toLowerCase();
-    if (q) {
-      list = list.filter(o =>
-        o.order_number.toLowerCase().includes(q)
-        || (o.company_name ?? '').toLowerCase().includes(q),
+  function matches(o: Order, f: OrdersFilter) {
+    if (f === "active")
+      return o.status !== "complete" && o.status !== "cancelled";
+    if (f === "unpaid")
+      return normalizePaymentStatus(o.payment_status) === "unpaid";
+    if (f === "awaiting_sample") return o.status === "awaiting_sample";
+    if (f === "overdue") return isOverdue(o);
+    if (f === "urgent") return orderLabPriority(o) === "urgent";
+    if (f === "rush") return o.rush_processing;
+    return true;
+  }
+  const filtered = orders
+    .filter(
+      (o) =>
+        matches(o, filter) &&
+        `${o.order_number} ${o.company_name}`
+          .toLowerCase()
+          .includes(search.toLowerCase()),
+    )
+    .sort((a, b) => {
+      if (sort === "newest")
+        return Date.parse(b.created_at) - Date.parse(a.created_at);
+      if (sort === "oldest")
+        return Date.parse(a.created_at) - Date.parse(b.created_at);
+      return (
+        prioritySortScore(a) - prioritySortScore(b) ||
+        Number(isOverdue(b)) - Number(isOverdue(a)) ||
+        Date.parse(a.created_at) - Date.parse(b.created_at)
       );
-    }
-    return list.sort((a, b) => {
-      const byPriority = prioritySortScore(a) - prioritySortScore(b);
-      if (byPriority !== 0) return byPriority;
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
-  }, [orders, filter, search]);
-
-  const agingOrders = useMemo(() => {
-    return orders
-      .filter(o => o.status !== 'complete' && o.status !== 'cancelled')
-      .map(o => ({ order: o, stats: statsByOrder.get(o.id) }))
-      .filter((row): row is { order: Order; stats: OrderQueueStats } => !!row.stats && row.stats.pendingCount > 0)
-      .sort((a, b) => b.stats.oldestPendingHours - a.stats.oldestPendingHours)
-      .slice(0, 5);
-  }, [orders, statsByOrder]);
-
-  const FILTERS: { id: OrdersFilter; label: string }[] = [
-    { id: 'active', label: 'Active' },
-    { id: 'unpaid', label: 'Unpaid' },
-    { id: 'awaiting_sample', label: 'Awaiting Sample' },
-    { id: 'overdue', label: 'Overdue' },
-    { id: 'urgent', label: 'Urgent' },
-    { id: 'rush', label: 'Rush' },
-    { id: 'all', label: 'All' },
-  ];
-
+  const aging = orders
+    .filter((o) => matches(o, "active"))
+    .map((order) => ({ order, stats: statsByOrder.get(order.id) }))
+    .filter(
+      (x): x is { order: Order; stats: OrderQueueStats } =>
+        !!x.stats &&
+        x.stats.pendingCount > 0 &&
+        x.stats.oldestPendingHours >= 48,
+    )
+    .sort((a, b) => b.stats.oldestPendingHours - a.stats.oldestPendingHours)
+    .slice(0, 5);
+  const currentPage = Math.min(
+    page,
+    Math.max(0, Math.ceil(filtered.length / 25) - 1),
+  );
   return (
-    <div className="space-y-4">
-      {agingOrders.length > 0 && (
-        <div className="card p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <AlertTriangle size={15} className="text-amber-500" />
-            <h3 className="font-bold text-sm text-black">Aging queue — needs priority review</h3>
-          </div>
-          <div className="space-y-2">
-            {agingOrders.map(({ order, stats }) => {
-              const priority = orderLabPriority(order);
-              return (
-                <div
-                  key={order.id}
-                  className="overflow-hidden rounded-lg border border-atlas-border bg-neutral-50"
+    <div>
+      {aging.length > 0 && (
+        <details className="admin-aging-summary">
+          <summary>
+            {aging.length} oldest orders need priority review · open samples
+            older than 48 hours
+          </summary>
+          {aging.map(({ order, stats }) => (
+            <div className="admin-aging-row" key={order.id}>
+              <div>
+                <Link
+                  className="admin-order-id"
+                  to={`/admin/orders/${order.id}`}
                 >
-                  <PriorityBanner priority={priority} rush={order.rush_processing} compact />
-                  <div className="flex flex-wrap items-center justify-between gap-3 px-3 py-2.5">
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-black">
-                        {order.order_number}
-                        <span className="text-neutral-500 font-normal"> · {order.company_name || '—'}</span>
-                      </p>
-                      <p className="text-xs text-neutral-500">
-                        {stats.pendingCount} sample{stats.pendingCount === 1 ? '' : 's'} pending · waiting {Math.round(stats.oldestPendingHours)}h
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <button
-                        type="button"
-                        disabled={savingOrderId === order.id || priority === 'urgent'}
-                        onClick={() => onSetPriority(order.id, 'urgent')}
-                        className="px-2.5 py-1 text-[11px] font-bold uppercase rounded-md border bg-red-50 text-red-800 border-red-200 hover:bg-red-100 disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        Urgent
-                      </button>
-                      <button
-                        type="button"
-                        disabled={savingOrderId === order.id || priority === 'high'}
-                        onClick={() => onSetPriority(order.id, 'high')}
-                        className="px-2.5 py-1 text-[11px] font-bold uppercase rounded-md border bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100 disabled:opacity-40 disabled:cursor-not-allowed"
-                      >
-                        High
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+                  {order.order_number} · {order.company_name}
+                </Link>
+                <span className="admin-cell-sub">
+                  {stats.pendingCount} pending · oldest{" "}
+                  {formatAgeHours(stats.oldestPendingHours)}
+                </span>
+              </div>
+              <button
+                className="admin-button"
+                disabled={
+                  savingOrderId === order.id ||
+                  orderLabPriority(order) === "high"
+                }
+                onClick={() => onSetPriority(order.id, "high")}
+              >
+                Set high
+              </button>
+              <button
+                className="admin-button"
+                disabled={
+                  savingOrderId === order.id ||
+                  orderLabPriority(order) === "urgent"
+                }
+                onClick={() => onSetPriority(order.id, "urgent")}
+              >
+                Set urgent
+              </button>
+            </div>
+          ))}
+        </details>
+      )}
+      <section className="admin-surface" aria-label="Order management">
+        <div className="admin-order-controls">
+          <div className="admin-tabs" aria-label="Order filters">
+            {ORDER_FILTERS.map((f) => (
+              <button
+                key={f.id}
+                aria-pressed={filter === f.id}
+                className={filter === f.id ? "is-active" : ""}
+                onClick={() => {
+                  setFilter(f.id);
+                  setPage(0);
+                }}
+              >
+                {f.label}
+                <span>{orders.filter((o) => matches(o, f.id)).length}</span>
+              </button>
+            ))}
           </div>
         </div>
-      )}
-
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <p className="text-sm text-neutral-600">
-          Set order priority here — chemists see a numbered, color-coded queue in the Lab Console. Rush orders auto-start as High.
-        </p>
-        <div className="flex flex-wrap gap-2">
-          {FILTERS.map(f => (
-            <button
-              key={f.id}
-              type="button"
-              onClick={() => setFilter(f.id)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md border ${
-                filter === f.id ? 'bg-black text-white border-black' : 'border-atlas-border'
-              }`}
+        <div className="admin-toolbar">
+          <label className="admin-search">
+            <Search size={16} />
+            <span className="sr-only">Search orders</span>
+            <input
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(0);
+              }}
+              placeholder="Search order number or company"
+            />
+          </label>
+          <label className="admin-field">
+            Sort
+            <select
+              value={sort}
+              onChange={(e) => {
+                setSort(e.target.value);
+                setPage(0);
+              }}
             >
-              {f.label}
-            </button>
-          ))}
+              <option value="priority">Priority & age</option>
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+            </select>
+          </label>
         </div>
-      </div>
-
-      <input
-        value={search}
-        onChange={e => setSearch(e.target.value)}
-        placeholder="Search order # or company…"
-        className="input-field max-w-md"
-      />
-
-      <div className="card overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+        <div className="admin-table-scroll">
+          <table className="admin-table">
             <thead>
-              <tr className="coa-table-header">
-                <th className="w-2 p-0" aria-hidden />
-                <th className="text-left px-5 py-3">Order</th>
-                <th className="text-left px-5 py-3">Company</th>
-                <th className="text-left px-5 py-3">Status</th>
-                <th className="text-left px-5 py-3">Payment</th>
-                <th className="text-left px-5 py-3">ETA</th>
-                <th className="text-left px-5 py-3">Rush</th>
-                <th className="text-left px-5 py-3">Samples</th>
-                <th className="text-left px-5 py-3">Pending</th>
-                <th className="text-left px-5 py-3">Priority</th>
-                <th className="text-left px-5 py-3">Total</th>
-                <th className="text-left px-5 py-3">Received</th>
+              <tr>
+                <th>Order / client</th>
+                <th>Status / samples</th>
+                <th>Priority</th>
+                <th>Payment</th>
+                <th>Estimated ready</th>
+                <th>Total / placed</th>
+                <th>
+                  <span className="sr-only">Open</span>
+                </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-atlas-border">
-              {filtered.length === 0 ? (
-                <tr><td colSpan={12} className="px-5 py-8 text-center text-neutral-500">No orders match this filter.</td></tr>
-              ) : filtered.map(order => {
-                const priority = orderLabPriority(order);
-                const styles = LAB_PRIORITY_STYLES[priority];
-                const stats = statsByOrder.get(order.id);
-                const payment = normalizePaymentStatus(order.payment_status);
-                const paid = payment === 'paid' || payment === 'waived';
-                const heat = etaHeat(resolveEtaAt(order), {
-                  complete: order.status === 'complete' || order.status === 'cancelled',
-                });
-                const heatPct = etaHeatPercent(heat.level);
-                return (
-                  <tr key={order.id} className={`hover:bg-neutral-50 ${heat.level === 'overdue' || heat.level === 'today' ? heat.bg : styles.bg}`}>
-                    <td className="px-0 py-0 align-middle">
-                      <div className={`w-1.5 h-full min-h-[3.5rem] ${styles.banner}`} title={`${LAB_PRIORITY_LABELS[priority]} priority`} />
-                    </td>
-                    <td className="px-5 py-3 font-semibold text-black">
-                      <Link to={`/admin/orders/${order.id}`} className="hover:text-brand-600 hover:underline">
-                        {order.order_number}
-                      </Link>
-                      <p className={`text-[10px] font-bold uppercase tracking-wide mt-0.5 ${
-                        priority === 'urgent' ? 'text-red-700' : priority === 'high' ? 'text-amber-800' : 'text-neutral-400'
-                      }`}>
-                        {LAB_PRIORITY_LABELS[priority]}
-                      </p>
-                    </td>
-                    <td className="px-5 py-3 text-neutral-600">{order.company_name || '—'}</td>
-                    <td className="px-5 py-3 text-neutral-600">{ORDER_STATUS_LABELS[order.status]}</td>
-                    <td className="px-5 py-3">
-                      <div className="flex items-center gap-1.5">
-                        <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full border flex items-center gap-1 w-fit ${
-                          paid
-                            ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                            : 'bg-amber-50 text-amber-900 border-amber-200'
-                        }`}>
-                          {paid && <CheckCircle2 size={10} />}
+            <tbody>
+              {filtered
+                .slice(currentPage * 25, currentPage * 25 + 25)
+                .map((order) => {
+                  const priority = orderLabPriority(order),
+                    stats = statsByOrder.get(order.id),
+                    payment = normalizePaymentStatus(order.payment_status),
+                    paid = payment === "paid" || payment === "waived",
+                    eta = resolveEtaAt(order),
+                    overdue = isOverdue(order);
+                  return (
+                    <tr key={order.id}>
+                      <td>
+                        <Link
+                          className="admin-order-id"
+                          to={`/admin/orders/${order.id}`}
+                        >
+                          {order.order_number}
+                        </Link>
+                        <span className="admin-cell-sub">
+                          {order.company_name || "Company not provided"}
+                        </span>
+                      </td>
+                      <td>
+                        <span className="admin-status">
+                          {ORDER_STATUS_LABELS[order.status]}
+                        </span>
+                        <span className="admin-cell-sub">
+                          {stats?.sampleCount ?? 0} samples ·{" "}
+                          {stats?.pendingCount ?? 0} pending
+                        </span>
+                      </td>
+                      <td>
+                        <select
+                          className="admin-select"
+                          aria-label={`Priority for ${order.order_number}`}
+                          value={normalizeLabPriority(order.lab_priority)}
+                          disabled={savingOrderId === order.id}
+                          onChange={(e) =>
+                            onSetPriority(
+                              order.id,
+                              e.target.value as LabPriority,
+                            )
+                          }
+                        >
+                          {LAB_PRIORITIES.map((p) => (
+                            <option key={p} value={p}>
+                              {LAB_PRIORITY_LABELS[p]}
+                            </option>
+                          ))}
+                        </select>
+                        {order.rush_processing && (
+                          <span className="admin-cell-sub">
+                            Rush · {LAB_PRIORITY_LABELS[priority]} minimum
+                          </span>
+                        )}
+                      </td>
+                      <td>
+                        <span
+                          className={
+                            paid ? "admin-status" : "admin-priority is-high"
+                          }
+                        >
                           {PAYMENT_STATUS_LABELS[payment]}
                         </span>
                         {!paid && onMarkPaid && (
                           <button
-                            type="button"
+                            className="admin-text-link admin-cell-sub"
                             disabled={savingPaymentId === order.id}
                             onClick={() => onMarkPaid(order.id)}
-                            className="px-2 py-0.5 text-[10px] font-bold uppercase rounded-md border bg-white text-neutral-700 border-atlas-border hover:bg-neutral-100 disabled:opacity-40 disabled:cursor-not-allowed"
                           >
-                            Mark Paid
+                            {savingPaymentId === order.id
+                              ? "Saving…"
+                              : "Mark paid"}
                           </button>
                         )}
-                      </div>
-                    </td>
-                    <td className="px-5 py-3 whitespace-nowrap min-w-[140px]">
-                      {heat.at ? (
-                        <div className="space-y-1.5">
-                          <span className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full border inline-flex items-center gap-1 ${heat.chip}`}>
-                            {(heat.level === 'overdue' || heat.level === 'today') && <AlertTriangle size={10} />}
-                            {heat.level === 'ok' && <Clock size={10} />}
-                            {heat.label}
+                      </td>
+                      <td>
+                        <span className={overdue ? "admin-danger" : ""}>
+                          {eta
+                            ? new Date(eta).toLocaleDateString("en-US", {
+                                month: "short",
+                                day: "numeric",
+                                year: "numeric",
+                              })
+                            : "Not set"}
+                        </span>
+                        {overdue ? (
+                          <span className="admin-cell-sub admin-danger">
+                            Overdue
                           </span>
-                          <div className="h-1 w-28 rounded-full bg-neutral-200 overflow-hidden">
-                            <div className={`h-full ${heat.bar}`} style={{ width: `${heatPct}%` }} />
-                          </div>
-                          <p className="text-[10px] text-neutral-400 tabular-nums">{formatDateTime(heat.at)}</p>
-                        </div>
-                      ) : (
-                        <span className="text-neutral-400">—</span>
-                      )}
-                    </td>
-                    <td className="px-5 py-3">
-                      {order.rush_processing ? (
-                        <span className="text-[10px] font-bold uppercase text-purple-700 bg-purple-50 px-2 py-0.5 rounded-full border border-purple-200 flex items-center gap-0.5 w-fit">
-                          <Zap size={10} /> Yes
+                        ) : (
+                          eta && (
+                            <span className="admin-cell-sub">
+                              {new Date(eta).toLocaleTimeString([], {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </span>
+                          )
+                        )}
+                      </td>
+                      <td>
+                        <strong>
+                          $
+                          {(order.total ?? 0).toLocaleString("en-US", {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 2,
+                          })}
+                        </strong>
+                        <span className="admin-cell-sub">
+                          {formatDateTime(order.created_at)}
                         </span>
-                      ) : (
-                        <span className="text-neutral-400">—</span>
-                      )}
-                    </td>
-                    <td className="px-5 py-3 text-neutral-600 tabular-nums">{stats?.sampleCount ?? 0}</td>
-                    <td className="px-5 py-3 tabular-nums">
-                      {stats && stats.pendingCount > 0 ? (
-                        <span className="text-[11px] font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
-                          {stats.pendingCount}
-                        </span>
-                      ) : (
-                        <span className="text-neutral-400">0</span>
-                      )}
-                    </td>
-                    <td className="px-5 py-3">
-                      <select
-                        value={normalizeLabPriority(order.lab_priority)}
-                        disabled={savingOrderId === order.id}
-                        onChange={e => onSetPriority(order.id, e.target.value as LabPriority)}
-                        className={`input-field py-1.5 text-xs w-auto font-semibold ${styles.badge}`}
-                        title={order.rush_processing && normalizeLabPriority(order.lab_priority) === 'normal'
-                          ? 'Rush floors display/sort to High until you set High or Urgent'
-                          : undefined}
-                      >
-                        {LAB_PRIORITIES.map(p => (
-                          <option key={p} value={p}>{LAB_PRIORITY_LABELS[p]}</option>
-                        ))}
-                      </select>
-                    </td>
-                    <td className="px-5 py-3 tabular-nums">${order.total?.toFixed(2) ?? '0.00'}</td>
-                    <td className="px-5 py-3 text-xs text-neutral-500 whitespace-nowrap">{formatDateTime(order.created_at)}</td>
-                  </tr>
-                );
-              })}
+                      </td>
+                      <td>
+                        <Link
+                          className="admin-row-open"
+                          aria-label={`Open ${order.order_number}`}
+                          to={`/admin/orders/${order.id}`}
+                        >
+                          <ArrowUpRight size={16} />
+                        </Link>
+                      </td>
+                    </tr>
+                  );
+                })}
             </tbody>
           </table>
         </div>
-      </div>
+        {!filtered.length && (
+          <div className="admin-empty">
+            <h3>No orders found</h3>
+            <p>
+              {search
+                ? "Try a different order number or company."
+                : "Orders matching this filter will appear here."}
+            </p>
+            <button
+              className="admin-button"
+              onClick={() => {
+                setSearch("");
+                setFilter("all");
+                setPage(0);
+              }}
+            >
+              View all orders
+            </button>
+          </div>
+        )}
+        <div className="admin-table-footer">
+          <span>
+            {filtered.length
+              ? `${currentPage * 25 + 1}–${Math.min((currentPage + 1) * 25, filtered.length)}`
+              : "0"}{" "}
+            of {filtered.length} orders
+          </span>
+          <div className="admin-pagination">
+            <button
+              disabled={currentPage === 0}
+              onClick={() => setPage(currentPage - 1)}
+            >
+              Previous
+            </button>
+            <span>Page {currentPage + 1}</span>
+            <button
+              disabled={(currentPage + 1) * 25 >= filtered.length}
+              onClick={() => setPage(currentPage + 1)}
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }

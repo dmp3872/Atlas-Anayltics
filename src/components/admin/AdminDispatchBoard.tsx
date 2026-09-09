@@ -1,153 +1,315 @@
-import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { UserPlus, Users } from 'lucide-react';
-import { COA, Order, OrderSample, UserProfile } from '../../lib/types';
+import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import { ArrowUpRight, CheckCircle2, Search } from "lucide-react";
+import { COA, Order, OrderSample, UserProfile } from "../../lib/types";
 import {
-  buildQueueItems, isFullyUnassigned, LAB_PRIORITY_LABELS,
-} from '../../lib/labQueue';
-import PriorityBanner from '../lab/PriorityBanner';
-import { chemistWorkloadStats } from '../../lib/labAnalytics';
-
+  buildQueueItems,
+  isFullyUnassigned,
+  LAB_PRIORITY_LABELS,
+} from "../../lib/labQueue";
+import { chemistWorkloadStats } from "../../lib/labAnalytics";
+import { formatAgeHours } from "../../lib/adminMetrics";
 interface Props {
   samples: OrderSample[];
   orders: Order[];
   coas: COA[];
   chemists: UserProfile[];
-  onAssignSample: (sampleId: string, userId: string | null) => void;
+  onAssignSample: (
+    sampleId: string,
+    userId: string | null,
+  ) => void | Promise<void>;
 }
-
-/** Unassigned dispatch board — assign backlog by chemist load. */
 export default function AdminDispatchBoard({
-  samples, orders, coas, chemists, onAssignSample,
+  samples,
+  orders,
+  coas,
+  chemists,
+  onAssignSample,
 }: Props) {
   const [assigningId, setAssigningId] = useState<string | null>(null);
-
+  const [search, setSearch] = useState("");
+  const [priority, setPriority] = useState("all");
+  const [page, setPage] = useState(0);
+  const [error, setError] = useState<string | null>(null);
   const workload = useMemo(
     () => chemistWorkloadStats(samples, orders, coas, chemists),
     [samples, orders, coas, chemists],
   );
-
-  const loadByChemist = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const row of workload) map.set(row.chemistId, row.assignedCount);
-    return map;
-  }, [workload]);
-
-  const unassigned = useMemo(() => {
-    return buildQueueItems(samples, orders, coas, true)
-      .filter(item => isFullyUnassigned(item.sample, item.tests));
-  }, [samples, orders, coas]);
-
+  const loadByChemist = useMemo(
+    () => new Map(workload.map((w) => [w.chemistId, w.assignedCount])),
+    [workload],
+  );
+  const rankedChemists = useMemo(
+    () =>
+      [...chemists].sort(
+        (a, b) =>
+          (loadByChemist.get(a.id) ?? 0) - (loadByChemist.get(b.id) ?? 0),
+      ),
+    [chemists, loadByChemist],
+  );
+  const unassigned = useMemo(
+    () =>
+      buildQueueItems(samples, orders, coas, true).filter((item) =>
+        isFullyUnassigned(item.sample, item.tests),
+      ),
+    [samples, orders, coas],
+  );
+  const filtered = unassigned.filter(
+    (item) =>
+      (priority === "all" || item.priority === priority) &&
+      `${item.sample.display_name} ${item.sample.sample_name} ${item.order.order_number} ${item.order.company_name}`
+        .toLowerCase()
+        .includes(search.toLowerCase()),
+  );
+  const currentPage = Math.min(
+    page,
+    Math.max(0, Math.ceil(filtered.length / 20) - 1),
+  );
+  const lightest = rankedChemists[0];
   async function handleAssign(sampleId: string, userId: string) {
+    if (assigningId) return;
     setAssigningId(sampleId);
-    onAssignSample(sampleId, userId || null);
-    setAssigningId(null);
+    setError(null);
+    try {
+      await onAssignSample(sampleId, userId);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Assignment failed. Please try again.",
+      );
+    } finally {
+      setAssigningId(null);
+    }
   }
-
-  const lightestChemistId = useMemo(() => {
-    if (chemists.length === 0) return '';
-    return [...chemists].sort((a, b) =>
-      (loadByChemist.get(a.id) ?? 0) - (loadByChemist.get(b.id) ?? 0),
-    )[0]?.id ?? '';
-  }, [chemists, loadByChemist]);
-
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h3 className="font-bold text-black flex items-center gap-2">
-            <UserPlus size={16} className="text-brand-600" />
-            Unassigned dispatch
-          </h3>
-          <p className="text-xs text-neutral-500 mt-0.5">
-            Assign backlog by chemist load. Higher priority samples are listed first.
-          </p>
+    <div>
+      {error && (
+        <div className="aa-admin-toast is-err mb-4" role="alert">
+          {error}
         </div>
-        <span className={`text-xs font-bold uppercase px-2.5 py-1 rounded-full border ${
-          unassigned.length
-            ? 'bg-amber-50 text-amber-900 border-amber-200'
-            : 'bg-emerald-50 text-emerald-800 border-emerald-200'
-        }`}>
-          {unassigned.length} unassigned
-        </span>
-      </div>
-
-      {chemists.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {chemists.map(c => (
-            <span
-              key={c.id}
-              className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border border-atlas-border bg-white text-neutral-700"
-            >
-              <Users size={11} className="text-neutral-400" />
-              {c.full_name || 'Chemist'}
-              <span className="font-bold tabular-nums text-black">{loadByChemist.get(c.id) ?? 0}</span>
+      )}
+      <div className="admin-dispatch-layout">
+        <section className="admin-surface" aria-label="Unassigned samples">
+          <div className="admin-surface-heading">
+            <div>
+              <h2>Ready for assignment</h2>
+              <p>
+                Paid, received samples. Priority first, then overdue and oldest
+                work.
+              </p>
+            </div>
+            <span className="admin-status">{unassigned.length} samples</span>
+          </div>
+          <div className="admin-toolbar">
+            <label className="admin-search">
+              <Search size={16} />
+              <span className="sr-only">Search dispatch queue</span>
+              <input
+                value={search}
+                placeholder="Search sample, order or company"
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setPage(0);
+                }}
+              />
+            </label>
+            <label className="admin-field">
+              Priority
+              <select
+                value={priority}
+                onChange={(e) => {
+                  setPriority(e.target.value);
+                  setPage(0);
+                }}
+              >
+                <option value="all">All priorities</option>
+                <option value="urgent">Urgent</option>
+                <option value="high">High</option>
+                <option value="normal">Normal</option>
+              </select>
+            </label>
+          </div>
+          <div className="admin-table-scroll">
+            <table className="admin-table">
+              <thead>
+                <tr>
+                  <th>Sample / order</th>
+                  <th>Priority</th>
+                  <th>Age</th>
+                  <th>Assignment</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered
+                  .slice(currentPage * 20, currentPage * 20 + 20)
+                  .map(
+                    ({
+                      sample,
+                      order,
+                      priority: level,
+                      testsLabel,
+                      ageHours,
+                      overdue,
+                    }) => (
+                      <tr key={sample.id}>
+                        <td>
+                          <strong>
+                            {sample.display_name || sample.sample_name}
+                          </strong>
+                          <span className="admin-cell-sub">
+                            <Link
+                              className="admin-order-id"
+                              to={`/admin/orders/${order.id}`}
+                            >
+                              {order.order_number}
+                            </Link>{" "}
+                            · {order.company_name || "—"}
+                          </span>
+                          <span className="admin-cell-sub" title={testsLabel}>
+                            {testsLabel}
+                          </span>
+                        </td>
+                        <td>
+                          <span className={`admin-priority is-${level}`}>
+                            <i />
+                            {LAB_PRIORITY_LABELS[level]}
+                          </span>
+                          {order.rush_processing && (
+                            <span className="admin-cell-sub">Rush</span>
+                          )}
+                        </td>
+                        <td>
+                          <span className={overdue ? "admin-danger" : ""}>
+                            {formatAgeHours(ageHours)}
+                          </span>
+                          {overdue && (
+                            <span className="admin-cell-sub admin-danger">
+                              Overdue
+                            </span>
+                          )}
+                        </td>
+                        <td>
+                          <div className="admin-assignment">
+                            <select
+                              className="admin-select"
+                              aria-label={`Assign ${sample.display_name || sample.sample_name}, ${order.order_number}`}
+                              value=""
+                              disabled={!!assigningId || !chemists.length}
+                              onChange={(e) => {
+                                if (e.target.value)
+                                  void handleAssign(sample.id, e.target.value);
+                              }}
+                            >
+                              <option value="">
+                                {assigningId === sample.id
+                                  ? "Assigning…"
+                                  : "Select chemist"}
+                              </option>
+                              {rankedChemists.map((c) => (
+                                <option key={c.id} value={c.id}>
+                                  {c.full_name || "Chemist"} ·{" "}
+                                  {loadByChemist.get(c.id) ?? 0} open
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          {lightest && (
+                            <button
+                              className="admin-text-link mt-2"
+                              title={`Assign to ${lightest.full_name || "chemist"} with ${loadByChemist.get(lightest.id) ?? 0} open samples`}
+                              disabled={!!assigningId}
+                              onClick={() =>
+                                void handleAssign(sample.id, lightest.id)
+                              }
+                            >
+                              Assign lightest load <ArrowUpRight size={12} />
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ),
+                  )}
+              </tbody>
+            </table>
+          </div>
+          {filtered.length === 0 && (
+            <div className="admin-empty">
+              <CheckCircle2 size={26} />
+              <h3>
+                {unassigned.length
+                  ? "No matching samples"
+                  : "Dispatch queue is clear"}
+              </h3>
+              <p>
+                {unassigned.length
+                  ? "Try another search or priority."
+                  : "Every testing-ready sample has an assignee."}
+              </p>
+            </div>
+          )}
+          <div className="admin-table-footer">
+            <span>
+              {filtered.length
+                ? `${currentPage * 20 + 1}–${Math.min((currentPage + 1) * 20, filtered.length)}`
+                : "0"}{" "}
+              of {filtered.length} samples
             </span>
-          ))}
-        </div>
-      )}
-
-      {unassigned.length === 0 ? (
-        <div className="card p-8 text-center text-sm text-neutral-500">
-          Dispatch queue is clear — every testing-ready sample has an assignee.
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {unassigned.map(item => {
-            const { sample, order, priority, testsLabel, ageHours } = item;
-            return (
-              <div key={sample.id} className="card overflow-hidden">
-                <PriorityBanner priority={priority} rush={order.rush_processing} compact />
-                <div className="p-4 flex flex-col sm:flex-row sm:items-center gap-3">
-                  <div className="min-w-0 flex-1">
-                    <p className="font-semibold text-black truncate">
-                      {sample.display_name || sample.sample_name}
-                    </p>
-                    <p className="text-xs text-neutral-500 mt-0.5">
-                      <Link to={`/admin/orders/${order.id}`} className="font-mono font-semibold text-brand-700 hover:underline">
-                        {order.order_number}
-                      </Link>
-                      {' · '}{order.company_name || '—'}
-                      {' · '}{LAB_PRIORITY_LABELS[priority]}
-                      {' · '}{Math.round(ageHours)}h waiting
-                    </p>
-                    <p className="text-xs text-neutral-400 mt-1 truncate">{testsLabel}</p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2 flex-shrink-0">
-                    {lightestChemistId && (
-                      <button
-                        type="button"
-                        disabled={assigningId === sample.id}
-                        onClick={() => handleAssign(sample.id, lightestChemistId)}
-                        className="btn-outline text-xs py-1.5 px-2.5"
-                      >
-                        Assign lightest load
-                      </button>
-                    )}
-                    <select
-                      value=""
-                      disabled={assigningId === sample.id || chemists.length === 0}
-                      onChange={e => {
-                        if (e.target.value) handleAssign(sample.id, e.target.value);
-                      }}
-                      className="input-field py-1.5 text-xs w-auto min-w-[160px]"
-                    >
-                      <option value="">Assign chemist…</option>
-                      {[...chemists]
-                        .sort((a, b) => (loadByChemist.get(a.id) ?? 0) - (loadByChemist.get(b.id) ?? 0))
-                        .map(c => (
-                          <option key={c.id} value={c.id}>
-                            {c.full_name || 'Chemist'} ({loadByChemist.get(c.id) ?? 0})
-                          </option>
-                        ))}
-                    </select>
-                  </div>
+            <div className="admin-pagination">
+              <button
+                disabled={currentPage === 0}
+                onClick={() => setPage(currentPage - 1)}
+              >
+                Previous
+              </button>
+              <span>Page {currentPage + 1}</span>
+              <button
+                disabled={(currentPage + 1) * 20 >= filtered.length}
+                onClick={() => setPage(currentPage + 1)}
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        </section>
+        <aside className="admin-surface admin-workload">
+          <div className="admin-surface-heading">
+            <h2>Available team</h2>
+            <span className="admin-status">{chemists.length}</span>
+          </div>
+          <p className="admin-rail-description">
+            Sorted by open assignments. Includes sample leads and per-test
+            assignments.
+          </p>
+          {rankedChemists.map((c) => (
+            <div className="admin-workload-row" key={c.id}>
+              <span className="admin-avatar">
+                {(c.full_name || "C")
+                  .split(" ")
+                  .map((n) => n[0])
+                  .slice(0, 2)
+                  .join("")}
+              </span>
+              <div>
+                <div className="admin-workload-name">
+                  <span>{c.full_name || "Chemist"}</span>
+                  <strong>{loadByChemist.get(c.id) ?? 0}</strong>
                 </div>
+                <span className="admin-cell-sub">
+                  {c.role === "admin" ? "Administrator" : "Chemist"} · open
+                  samples
+                </span>
               </div>
-            );
-          })}
-        </div>
-      )}
+            </div>
+          ))}
+          {!chemists.length && (
+            <div className="admin-empty">
+              <h3>No chemists available</h3>
+              <p>Add a chemist in Team & access before assigning samples.</p>
+            </div>
+          )}
+        </aside>
+      </div>
     </div>
   );
 }
