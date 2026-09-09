@@ -18,23 +18,7 @@ import {
 import { hasIssuedCoaForSample } from "../../lib/coaPanels";
 import { resolveEtaAt } from "../../lib/etaHeat";
 import { formatAgeHours } from "../../lib/adminMetrics";
-export type OrdersFilter =
-  | "active"
-  | "unpaid"
-  | "awaiting_sample"
-  | "overdue"
-  | "urgent"
-  | "rush"
-  | "all";
-export const ORDER_FILTERS: { id: OrdersFilter; label: string }[] = [
-  { id: "active", label: "Active" },
-  { id: "unpaid", label: "Unpaid" },
-  { id: "awaiting_sample", label: "Awaiting sample" },
-  { id: "overdue", label: "Overdue" },
-  { id: "urgent", label: "Urgent" },
-  { id: "rush", label: "Rush" },
-  { id: "all", label: "All orders" },
-];
+import { ORDER_FILTERS, type OrdersFilter } from "../../lib/adminOrderFilters";
 interface Props {
   orders: Order[];
   samples?: OrderSample[];
@@ -263,8 +247,7 @@ export default function AdminOrdersPanel({
               {filtered
                 .slice(currentPage * 25, currentPage * 25 + 25)
                 .map((order) => {
-                  const priority = orderLabPriority(order),
-                    stats = statsByOrder.get(order.id),
+                  const stats = statsByOrder.get(order.id),
                     payment = normalizePaymentStatus(order.payment_status),
                     paid = payment === "paid" || payment === "waived",
                     eta = resolveEtaAt(order),
@@ -296,7 +279,7 @@ export default function AdminOrdersPanel({
                           className="admin-select"
                           aria-label={`Priority for ${order.order_number}`}
                           value={normalizeLabPriority(order.lab_priority)}
-                          disabled={savingOrderId === order.id}
+                          disabled={!!savingOrderId}
                           onChange={(e) =>
                             onSetPriority(
                               order.id,
@@ -312,7 +295,7 @@ export default function AdminOrdersPanel({
                         </select>
                         {order.rush_processing && (
                           <span className="admin-cell-sub">
-                            Rush · {LAB_PRIORITY_LABELS[priority]} minimum
+                            Rush · High minimum
                           </span>
                         )}
                       </td>

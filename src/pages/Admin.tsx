@@ -19,10 +19,8 @@ import {
 import { useAuth } from "../context/AuthContext";
 import AdminShell, { AdminSection } from "../components/admin/AdminShell";
 import AdminCommandCenter from "../components/admin/AdminCommandCenter";
-import AdminOrdersPanel, {
-  ORDER_FILTERS,
-  type OrdersFilter,
-} from "../components/admin/AdminOrdersPanel";
+import AdminOrdersPanel from "../components/admin/AdminOrdersPanel";
+import { ORDER_FILTERS, type OrdersFilter } from "../lib/adminOrderFilters";
 import AdminCoaRegistry from "../components/admin/AdminCoaRegistry";
 import AdminUsersPanel from "../components/admin/AdminUsersPanel";
 import AdminDispatchBoard from "../components/admin/AdminDispatchBoard";
@@ -87,12 +85,14 @@ export default function Admin() {
   const [params, setParams] = useSearchParams();
   const requestedSection = params.get("section");
   const section: AdminSection =
-    requestedSection && requestedSection in SECTION_META
+    requestedSection &&
+    Object.prototype.hasOwnProperty.call(SECTION_META, requestedSection)
       ? (requestedSection as AdminSection)
       : "command";
   const orderFilter =
     ORDER_FILTERS.find((f) => f.id === params.get("filter"))?.id ?? "active";
   function setSection(next: AdminSection, filter?: string) {
+    setMsg(null);
     setParams((previous) => {
       const updated = new URLSearchParams(previous);
       updated.set("section", next);
@@ -307,23 +307,34 @@ export default function Admin() {
   }
 
   async function setOrderPriority(orderId: string, priority: LabPriority) {
+    if (savingOrderId) return;
     setSavingOrderId(orderId);
     setMsg(null);
-    const { error } = await supabase
-      .from("orders")
-      .update({ lab_priority: priority, updated_at: new Date().toISOString() })
-      .eq("id", orderId);
-    if (error) {
-      setMsg({ type: "error", text: error.message });
-    } else {
+    try {
+      const { data, error } = await supabase
+        .from("orders")
+        .update({
+          lab_priority: priority,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", orderId)
+        .select("id, lab_priority, updated_at")
+        .single();
+      if (error || !data)
+        throw new Error(error?.message || "Priority could not be saved.");
       setOrders((prev) =>
-        prev.map((o) =>
-          o.id === orderId ? { ...o, lab_priority: priority } : o,
-        ),
+        prev.map((o) => (o.id === orderId ? { ...o, ...data } : o)),
       );
       setMsg({ type: "success", text: `Priority set to ${priority}.` });
+    } catch (err) {
+      setMsg({
+        type: "error",
+        text:
+          err instanceof Error ? err.message : "Priority could not be saved.",
+      });
+    } finally {
+      setSavingOrderId(null);
     }
-    setSavingOrderId(null);
   }
 
   async function handleMarkPaid(
