@@ -93,7 +93,11 @@ export default function COADetail() {
   const [logoWatermark, setLogoWatermark] = useState('');
   const [hplcPhoto, setHplcPhoto] = useState('');
   const [clientLogo, setClientLogo] = useState('');
+<<<<<<< HEAD
   const [downloadingPdf, setDownloadingPdf] = useState(false);
+=======
+  const [downloadingPng, setDownloadingPng] = useState(false);
+>>>>>>> origin/Kyle2.0July2
   const [brandModalOpen, setBrandModalOpen] = useState(false);
 
   useEffect(() => {
