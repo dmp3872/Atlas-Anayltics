@@ -30,7 +30,7 @@ export default function COALibrary() {
       .eq('user_id', user.id)
       .order('issued_at', { ascending: false })
       .then(({ data }) => {
-        if (data) setCoas(data);
+        if (data) setCoas(data as unknown as COA[]);
         setLoading(false);
       });
   }, [user]);

@@ -3,7 +3,7 @@ import { Link, Navigate, useLocation, useNavigate, useSearchParams } from 'react
 import {
   Truck, Copy, Check, X, Search, Download, FileText, ExternalLink,
   CheckCircle, XCircle, Clock, CreditCard, FlaskConical,
-  Shield, Bell, Key, UserPlus, Lock, AlertTriangle, AlertCircle, Package, MapPin,
+  Shield, Bell, Key, UserPlus, Lock, AlertTriangle, AlertCircle,
   ChevronDown, ChevronUp, Building2,
 } from 'lucide-react';
 import { coaClientStatus } from '../lib/statusVocabulary';

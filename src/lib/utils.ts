@@ -52,13 +52,13 @@ export const PAYMENT_STATUS_LABELS: Record<PaymentStatus, string> = {
 };
 
 /** Client-visible pipeline (excludes cancelled). */
-export const ORDER_STATUS_STEPS: OrderStatus[] = [
+export const ORDER_STATUS_STEPS = [
   'awaiting_sample',
   'processing',
   'analyzing',
   'in_review',
   'complete',
-];
+] as const satisfies readonly OrderStatus[];
 
 /** Standard TAT days from physical receipt → due_at. */
 export const STANDARD_TAT_DAYS = 7;
@@ -66,7 +66,7 @@ export const RUSH_TAT_DAYS = 3;
 
 export function getStatusStep(status: OrderStatus): number {
   if (status === 'received') return 0;
-  const idx = ORDER_STATUS_STEPS.indexOf(status);
+  const idx = (ORDER_STATUS_STEPS as readonly OrderStatus[]).indexOf(status);
   return idx >= 0 ? idx : 0;
 }
 

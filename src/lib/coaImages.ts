@@ -325,6 +325,15 @@ export async function resolveImageAsDataUrl(src: string): Promise<string> {
 /** Mild contain-zoom for uploaded HPLC chromatograms (keeps chart axes visible). */
 export const COA_CHROMATOGRAM_ZOOM = 1.08;
 
+async function loadHtmlImage(dataUrl: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const el = new Image();
+    el.onload = () => resolve(el);
+    el.onerror = () => reject(new Error('image load failed'));
+    el.src = dataUrl;
+  });
+}
+
 /**
  * Crop near-white / empty margins so a vial photo shows just the vial
  * (Vanguard-style product shot), with a small padding margin.

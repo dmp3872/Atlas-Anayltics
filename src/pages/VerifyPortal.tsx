@@ -84,7 +84,7 @@ export default function VerifyPortal() {
       supabase.from('coas').select(COA_LIST_COLUMNS).order('issued_at', { ascending: false }),
       supabase.from('companies').select('*').order('name'),
     ]);
-    setCoas(coaRes.data ?? []);
+    setCoas((coaRes.data as unknown as COA[] | null) ?? []);
     setCompanies(coRes.data ?? []);
     setLoading(false);
   }

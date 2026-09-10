@@ -188,12 +188,13 @@ export function parseChromatogramText(text: string, filename?: string): ParsedCh
   }
 
   type Candidate = { points: ChromatogramPoint[]; score: number };
-  let best: Candidate | null = null;
+  // Object wrapper so assignments inside `consider` stay visible to the type checker.
+  const state: { best: Candidate | null } = { best: null };
 
   const consider = (points: ChromatogramPoint[]) => {
     const score = scoreSeries(points);
     if (score < 2) return;
-    if (!best || score > best.score) best = { points, score };
+    if (!state.best || score > state.best.score) state.best = { points, score };
   };
 
   // 1) Prefer an explicit time/intensity header anywhere in the file.
@@ -218,10 +219,11 @@ export function parseChromatogramText(text: string, filename?: string): ParsedCh
     if (ok < 5) continue;
     consider(extractSeries(lines, defaultCol, i));
     // Jump ahead a bit once we found a strong start.
-    if (best && best.score > 100) break;
+    if (state.best && state.best.score > 100) break;
     i += Math.max(0, ok - 1);
   }
 
+  const best = state.best;
   if (!best || best.points.length < 2) {
     throw new Error(
       'Could not read time/intensity pairs. Export a CSV or TSV (not Excel/PDF/image) with retention time and intensity columns.',
