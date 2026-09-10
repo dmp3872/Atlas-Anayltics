@@ -3,7 +3,6 @@
 export type OrderNotesMeta = {
   prepaid_label?: boolean;
   promo_code?: string | null;
-  pathway?: 'commercial' | 'rd';
   coa_profile_id?: string | null;
   coa_profile_name?: string | null;
   samples_detail?: Record<string, unknown>[];

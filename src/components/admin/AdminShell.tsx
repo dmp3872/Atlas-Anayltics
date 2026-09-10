@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import {
-  Activity, BarChart3, Beaker, ClipboardList, ExternalLink, FlaskConical,
+  Activity, BarChart3, ClipboardList, ExternalLink, FlaskConical,
   LayoutGrid, LogOut, Menu, Shield, UserPlus, Users, Building2, X,
 } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
@@ -11,7 +11,6 @@ export type AdminSection =
   | 'command'
   | 'dispatch'
   | 'lab'
-  | 'rd'
   | 'operations'
   | 'orders'
   | 'coas'
@@ -40,7 +39,6 @@ const NAV_GROUPS: NavGroup[] = [
       { id: 'command', label: 'Ops Bench', desc: 'Customers, ETAs, exceptions', icon: LayoutGrid },
       { id: 'dispatch', label: 'Dispatch', desc: 'Assign unassigned samples', icon: UserPlus },
       { id: 'lab', label: 'Staff load', desc: 'Who is behind on assigned work', icon: FlaskConical },
-      { id: 'rd', label: 'R&D Folder', desc: 'Purity & Quantity — no COA', icon: Beaker },
       { id: 'operations', label: 'Lab Analytics', desc: 'Intake & turnaround', icon: BarChart3 },
     ],
   },

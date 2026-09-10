@@ -50,7 +50,7 @@ export const SAMPLE_CATEGORIES: {
   { id: 'other', label: 'Other Research Material', description: 'Non-peptide research materials' },
 ];
 
-export type TestMode = 'atlas_pro' | 'full_qc' | 'individual' | 'rd';
+export type TestMode = 'atlas_pro' | 'full_qc' | 'individual';
 
 export interface LabTestService {
   id: string;
@@ -102,18 +102,6 @@ export const LAB_TEST_SERVICES: LabTestService[] = [
     description: 'HPLC identity confirmation, purity analysis (%), and net content quantitation',
     price: 450,
     turnaroundDays: 3,
-    vialsRequired: 1,
-    available: true,
-    canBePrimary: true,
-    kind: 'assay',
-  },
-  {
-    id: 'rd_purity_quantity',
-    name: 'R&D Purity & Quantity',
-    description: 'Quick product verification — purity and net content only. No certificate of analysis.',
-    price: 150,
-    turnaroundDays: 3,
-    turnaroundLabel: '1–3 business days',
     vialsRequired: 1,
     available: true,
     canBePrimary: true,
@@ -216,7 +204,7 @@ export const LAB_TEST_SERVICES: LabTestService[] = [
 /** Legacy alias — individual (non-package) services. */
 export type IndividualTestOption = LabTestService;
 export const INDIVIDUAL_TESTS: LabTestService[] = LAB_TEST_SERVICES.filter(
-  t => t.id !== 'atlas_pro' && t.id !== 'full_qc' && t.id !== 'rd_purity_quantity',
+  t => t.id !== 'atlas_pro' && t.id !== 'full_qc',
 );
 
 export const FENTANYL_TEST_ID = 'fentanyl_detection';
@@ -391,14 +379,11 @@ export interface WizardSample {
   include_fentanyl: boolean;
   client_reference: string;
   special_instructions: string;
-  /** commercial (default) | rd — R&D orders cannot mix with commercial samples. */
-  pathway: 'commercial' | 'rd';
 }
 
 export function resolveTestMode(primaryId: string): TestMode {
   if (primaryId === 'atlas_pro') return 'atlas_pro';
   if (primaryId === 'full_qc') return 'full_qc';
-  if (primaryId === 'rd_purity_quantity') return 'rd';
   return 'individual';
 }
 
@@ -410,27 +395,6 @@ export function bundledTestsForMode(mode: TestMode): string[] {
 
 export function isPackageMode(mode: TestMode): boolean {
   return mode === 'atlas_pro' || mode === 'full_qc';
-}
-
-export function isRdSample(sample: Pick<WizardSample, 'pathway' | 'primary_test_id' | 'test_mode'>): boolean {
-  return sample.pathway === 'rd'
-    || sample.test_mode === 'rd'
-    || sample.primary_test_id === 'rd_purity_quantity';
-}
-
-/** Empty R&D sample — fixed $150 Purity & Quantity, no COA. */
-export function createRdSample(partial?: Partial<WizardSample>): WizardSample {
-  return createEmptySample({
-    ...partial,
-    pathway: 'rd',
-    primary_test_id: 'rd_purity_quantity',
-    test_mode: 'rd',
-    individual_tests: [],
-    conformity_extra: 0,
-    include_fentanyl: false,
-    rush: false,
-    brand_names: [],
-  });
 }
 
 export function panelVialsRequired(mode: TestMode): number {
@@ -473,7 +437,6 @@ export function createEmptySample(partial?: Partial<WizardSample>): WizardSample
     include_fentanyl: false,
     client_reference: '',
     special_instructions: '',
-    pathway: 'commercial',
     ...categoryDefaults,
     ...partial,
     // One wizard row is one physical sample. Add another sample instead of
@@ -532,24 +495,11 @@ export function normalizeWizardSample(sample: Partial<WizardSample> & Pick<Wizar
     else if (merged.individual_tests[0]) merged.primary_test_id = merged.individual_tests[0];
   }
   merged.test_mode = resolveTestMode(merged.primary_test_id);
-  if (merged.test_mode === 'rd' || merged.primary_test_id === 'rd_purity_quantity') {
-    merged.pathway = 'rd';
-    merged.primary_test_id = 'rd_purity_quantity';
-    merged.test_mode = 'rd';
-    merged.individual_tests = [];
-    merged.conformity_extra = 0;
-    merged.include_fentanyl = false;
-    merged.rush = false;
-    merged.brand_names = [];
-  } else {
-    merged.pathway = merged.pathway === 'rd' ? 'commercial' : (merged.pathway || 'commercial');
-  }
   if (isPackageMode(merged.test_mode)) {
     merged.individual_tests = bundledTestsForMode(merged.test_mode);
-  } else if (merged.test_mode !== 'rd') {
+  } else {
     merged.individual_tests = (merged.individual_tests || []).filter(id => id !== merged.primary_test_id);
   }
-  if (typeof merged.pathway !== 'string') merged.pathway = 'commercial';
   if (!merged.label_claim_unit) merged.label_claim_unit = 'mg';
   if (typeof merged.client_reference !== 'string') merged.client_reference = '';
   if (typeof merged.special_instructions !== 'string') merged.special_instructions = '';
@@ -650,9 +600,6 @@ export function sampleChipLabel(sample: WizardSample, index: number): string {
 }
 
 export function sampleTestPrice(sample: WizardSample, catalog: LabTestService[] = LAB_TEST_SERVICES): number {
-  if (isRdSample(sample) || sample.test_mode === 'rd') {
-    return findTestService('rd_purity_quantity', catalog)?.price ?? 150;
-  }
   if (sample.test_mode === 'atlas_pro') {
     return findTestService('atlas_pro', catalog)?.price ?? ATLAS_PRO_PANEL.price;
   }
@@ -663,7 +610,6 @@ export function sampleTestPrice(sample: WizardSample, catalog: LabTestService[] 
 }
 
 export function sampleAddOnPrice(sample: WizardSample, primaryBrand = ''): number {
-  if (isRdSample(sample)) return 0;
   const conformity = sample.conformity_extra * CONFORMITY_PRICE;
   const brands = billableBrandCount(sample, primaryBrand) * MULTI_BRAND_PRICE;
   const rush = sample.rush ? RUSH_PRICE_PER_SAMPLE : 0;
@@ -746,10 +692,6 @@ export function formatOrderTurnaround(
 
 export function validateTestingSelection(samples: WizardSample[]): string | null {
   if (!samples.length) return 'Add at least one sample configuration.';
-  const rdCount = samples.filter(isRdSample).length;
-  if (rdCount > 0 && rdCount < samples.length) {
-    return 'R&D verification cannot be mixed with standard COA testing. Place a separate order.';
-  }
   for (let i = 0; i < samples.length; i++) {
     const s = samples[i];
     if (!s.category) return `Sample ${i + 1}: choose a sample category.`;
@@ -799,9 +741,6 @@ export function formatSampleTests(
   sample: WizardSample,
   catalog: LabTestService[] = LAB_TEST_SERVICES,
 ): string {
-  if (isRdSample(sample) || sample.test_mode === 'rd') {
-    return findTestService('rd_purity_quantity', catalog)?.name ?? 'R&D Purity & Quantity';
-  }
   if (sample.test_mode === 'atlas_pro') {
     const base = findTestService('atlas_pro', catalog)?.name ?? ATLAS_PRO_PANEL.name;
     if (sample.include_fentanyl) return `${base} (+ ${FENTANYL_OPTION_LABEL})`;
@@ -876,7 +815,6 @@ export function sampleMetadataPayload(
     blend_label: sample.sample_type === 'blend' ? formatBlendLabel(sample.blend_components) : undefined,
     primary_test_id: sample.primary_test_id,
     test_mode: sample.test_mode,
-    pathway: isRdSample(sample) ? 'rd' : 'commercial',
     individual_tests: assayIds,
     conformity_extra: sample.conformity_extra,
     ...alloc,

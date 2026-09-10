@@ -262,8 +262,6 @@ export interface UserProfile {
   is_first_order: boolean;
   /** RFID plaque + UPS pickup enrolled. */
   shipping_preboarded?: boolean;
-  /** When true, account may place R&D (no-COA) verification orders. */
-  rd_submissions_enabled?: boolean;
   /** Prefer email stage updates (default true). */
   notify_email?: boolean;
   /** Prefer SMS stage updates when phone is on file. */
