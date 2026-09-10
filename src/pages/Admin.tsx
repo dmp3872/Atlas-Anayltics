@@ -28,7 +28,6 @@ import AdminApplicationsPanel from "../components/admin/AdminApplicationsPanel";
 import AdminClientsPanel from "../components/admin/AdminClientsPanel";
 import OpsDashboard from "../components/admin/OpsDashboard";
 import LabManagerDashboard from "../components/admin/LabManagerDashboard";
-import RdFolderPanel from "../components/lab/RdFolderPanel";
 import AdminLiveChatInbox from "../components/admin/AdminLiveChatInbox";
 import { COA_LIST_COLUMNS } from "../lib/coaSelect";
 
@@ -47,11 +46,6 @@ const SECTION_META: Record<AdminSection, { title: string; subtitle: string }> =
     lab: {
       title: "Chemist workload",
       subtitle: "Balance assignments and resolve aging work across your team.",
-    },
-    rd: {
-      title: "R&D Folder",
-      subtitle:
-        "Purity & Quantity verification — complete without issuing a COA.",
     },
     livechat: {
       title: "Live Chat",
@@ -278,31 +272,6 @@ export default function Admin() {
         text: shippingPreboarded
           ? "Client marked as RFID preboarded (UPS pickup)."
           : "Client set to standard ship-in (no RFID plaque).",
-      });
-    }
-    setSavingId(null);
-  }
-
-  async function toggleRdSubmissions(id: string, enabled: boolean) {
-    setSavingId(id);
-    setMsg(null);
-    const { error } = await supabase
-      .from("user_profiles")
-      .update({ rd_submissions_enabled: enabled })
-      .eq("id", id);
-    if (error) {
-      setMsg({ type: "error", text: error.message });
-    } else {
-      setUsers((prev) =>
-        prev.map((u) =>
-          u.id === id ? { ...u, rd_submissions_enabled: enabled } : u,
-        ),
-      );
-      setMsg({
-        type: "success",
-        text: enabled
-          ? "R&D submissions enabled for this account."
-          : "R&D submissions disabled for this account.",
       });
     }
     setSavingId(null);
@@ -546,16 +515,6 @@ export default function Admin() {
               />
             )}
 
-            {section === "rd" && (
-              <RdFolderPanel
-                samples={samples}
-                orders={normalizedOrders}
-                clients={users}
-                currentUserId={user?.id}
-                onChanged={loadAll}
-              />
-            )}
-
             {section === "livechat" && (
               <AdminLiveChatInbox
                 chemists={users
@@ -607,7 +566,6 @@ export default function Admin() {
                 savingId={savingId}
                 onChangeRole={changeRole}
                 onTogglePreboarded={togglePreboarded}
-                onToggleRdSubmissions={toggleRdSubmissions}
               />
             )}
           </>

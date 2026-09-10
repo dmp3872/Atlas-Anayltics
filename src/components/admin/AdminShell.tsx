@@ -3,7 +3,6 @@ import {
   Activity,
   ArrowUpRight,
   BarChart3,
-  Beaker,
   Building2,
   ClipboardList,
   FlaskConical,
@@ -26,7 +25,6 @@ export type AdminSection =
   | "command"
   | "dispatch"
   | "lab"
-  | "rd"
   | "livechat"
   | "operations"
   | "orders"
@@ -68,12 +66,6 @@ const NAV_GROUPS: { id: string; label: string; items: NavItem[] }[] = [
         label: "Chemist workload",
         desc: "Assignments & aging",
         icon: FlaskConical,
-      },
-      {
-        id: "rd",
-        label: "Research & development",
-        desc: "R&D samples",
-        icon: Beaker,
       },
       {
         id: "coas",

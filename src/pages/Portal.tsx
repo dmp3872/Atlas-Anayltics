@@ -26,7 +26,6 @@ import { canDiscardOrder, discardOrder } from '../lib/orderDiscard';
 import { expectedPanelNames, matchCoaForSample, coasForSample } from '../lib/coaPanels';
 import SampleCoaPicker from '../components/portal/SampleCoaPicker';
 import { testsForSample } from '../lib/labQueue';
-import { sampleIsRd, orderIsRd } from '../lib/rdPathway';
 import { SHIPPING_ADDRESS } from '../lib/submissionUtils';
 import AccountSettings from '../components/account/AccountSettings';
 import ClientPortalLayout from '../components/layout/ClientPortalLayout';
@@ -430,6 +429,7 @@ export default function Portal() {
   const [loading, setLoading] = useState(true);
   const [shippingOpen, setShippingOpen] = useState(true);
   const [copiedAddr, setCopiedAddr] = useState(false);
+  const [copiedEmbedSlug, setCopiedEmbedSlug] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [sampleProduct, setSampleProduct] = useState('all');
@@ -523,6 +523,14 @@ export default function Portal() {
 
   if (!user) return <Navigate to="/auth" replace />;
 
+  function setTab(t: PortalTab) {
+    setParams({ tab: t }, { replace: true });
+    setSearch('');
+    setStatusFilter('all');
+    setSampleProduct('all');
+    setCoaPeptide('all');
+  }
+
   /** Jump from Samples → Orders with that order expanded. */
   function openOrder(order: Order) {
     setSearch('');
@@ -547,6 +555,14 @@ export default function Portal() {
     await navigator.clipboard.writeText(text);
     setCopiedAddr(true);
     setTimeout(() => setCopiedAddr(false), 2000);
+  }
+
+  async function copyCoaEmbed(slug: string) {
+    const embedUrl = `${window.location.origin}/embed/coa/${encodeURIComponent(slug)}`;
+    const code = `<iframe src="${embedUrl}" title="Atlas Analytics Verified COA" width="390" height="780" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" style="border:0;width:100%;max-width:390px;"></iframe>`;
+    await navigator.clipboard.writeText(code);
+    setCopiedEmbedSlug(slug);
+    window.setTimeout(() => setCopiedEmbedSlug(current => (current === slug ? null : current)), 2200);
   }
 
   function toggleNotif(key: keyof NotificationPrefs) {
@@ -972,14 +988,6 @@ export default function Portal() {
                                       compact
                                       onOpenCoa={c => openSampleCoa(s, c)}
                                     />
-                                  ) : sampleIsRd(s) || (order && orderIsRd(order)) ? (
-                                    s.status === 'complete' ? (
-                                      <span className="text-[11px] font-medium text-violet-800 bg-violet-50 border border-violet-200 rounded-md px-2 py-1">
-                                        R&amp;D complete
-                                      </span>
-                                    ) : (
-                                      <span className="text-[11px] text-neutral-400">R&amp;D in progress</span>
-                                    )
                                   ) : s.status === 'complete' ? (
                                     <Link to={`/sample/${s.id}/coa`} className="btn-outline text-[11px] py-1 px-2 gap-1 inline-flex">
                                       <ExternalLink size={11} /> COA
@@ -1016,8 +1024,7 @@ export default function Portal() {
                     <button
                       onClick={() => setExpandedOrders(prev => {
                         const next = new Set(prev);
-                        if (next.has(order.id)) next.delete(order.id);
-                        else next.add(order.id);
+                        next.has(order.id) ? next.delete(order.id) : next.add(order.id);
                         return next;
                       })}
                       className="w-full text-left p-5 hover:bg-neutral-50 transition-colors"
@@ -1133,11 +1140,6 @@ export default function Portal() {
                                   <span className="text-xs text-neutral-400 capitalize">
                                     {meta?.sample_matrix || meta?.category || s.sample_type}
                                   </span>
-                                  {(sampleIsRd(s) || orderIsRd(order)) && (
-                                    <span className="text-[10px] font-semibold uppercase tracking-wide text-violet-800 bg-violet-50 border border-violet-200 rounded px-1.5 py-0.5">
-                                      R&amp;D
-                                    </span>
-                                  )}
                                   {coa ? <ResultBadge result={coa.overall_result} /> : <span className="badge-pending"><Clock size={10} /> {SAMPLE_STATUS_LABELS[s.status]}</span>}
                                 </div>
                                 {(() => {
@@ -1162,14 +1164,6 @@ export default function Portal() {
                                   ))}
                                 </div>
                                 <div className="mt-4 max-w-[280px]">
-                                  {(sampleIsRd(s) || orderIsRd(order)) ? (
-                                    <div className="rounded-lg border border-violet-100 bg-violet-50/40 p-3">
-                                      <p className="text-[11px] font-semibold uppercase tracking-wider text-violet-800 mb-2">
-                                        R&amp;D results
-                                      </p>
-                                      <SampleTestResultsList sample={s} coa={coa} panels={panels} />
-                                    </div>
-                                  ) : (
                                   <AtlasDigitalCoaCard
                                     samples={[trackerSample]}
                                     companyName={coa?.company_name || order.company_name || profile?.company_name || ''}
@@ -1206,20 +1200,11 @@ export default function Portal() {
                                         : null
                                     }
                                   />
-                                  )}
                                 </div>
                               </div>
                               <div className="flex-shrink-0">
                                 {sampleCoas.length > 0 ? (
                                   <SampleCoaPicker sample={s} coas={coas} />
-                                ) : sampleIsRd(s) || orderIsRd(order) ? (
-                                  s.status === 'complete' ? (
-                                    <span className="text-xs font-medium text-violet-800 bg-violet-50 border border-violet-200 rounded-md px-2.5 py-1.5">
-                                      R&amp;D complete · not a COA
-                                    </span>
-                                  ) : (
-                                    <span className="text-xs text-neutral-400 whitespace-nowrap">R&amp;D in progress</span>
-                                  )
                                 ) : s.status === 'complete' ? (
                                   <Link to={`/sample/${s.id}/coa`} className="btn-outline text-xs py-1.5 gap-1 inline-flex whitespace-nowrap">
                                     <ExternalLink size={12} /> View COA
