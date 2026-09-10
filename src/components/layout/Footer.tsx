@@ -37,7 +37,7 @@ export default function Footer() {
               <li><Link to="/order-new" className="hover:text-brand-400 transition-colors">Submit Samples</Link></li>
               <li><Link to="/pricing" className="hover:text-brand-400 transition-colors">Pricing Calculator</Link></li>
               <li><Link to="/verify" className="hover:text-brand-400 transition-colors">Verify a COA</Link></li>
-              <li><Link to="/coa-library" className="hover:text-brand-400 transition-colors">COA Library</Link></li>
+              <li><Link to="/clients" className="hover:text-brand-400 transition-colors">Become a client</Link></li>
             </ul>
           </div>
 

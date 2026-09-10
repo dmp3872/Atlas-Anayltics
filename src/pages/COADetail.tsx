@@ -4,13 +4,12 @@ import {
   Shield, CheckCircle, XCircle,
   ArrowLeft, Copy, Check, Droplets, Boxes, AlertTriangle, Download, Building2,
 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
 import { COA } from '../lib/types';
 import { formatDate } from '../lib/utils';
 import { verifyCoaIntegrity } from '../lib/coaVerify';
 import { hydrateCoaImages, readCoaPdfStats, resolveCoaHeaderLogo, resolveCoaWatermark, trimImageWhitespace } from '../lib/coaImages';
 import { partitionCoaPanels, panelStatusLabel, panelStatusToneClass, resolvePanelPass, formatCoaResultDisplay } from '../lib/coaDisplayPanels';
-import { COA_DETAIL_COLUMNS, fetchCoaImageRow } from '../lib/coaSelect';
+import { fetchCoaByCode, fetchImagesByCode } from '../lib/publicCoa';
 import { formatCoaDecimal, parseAssayMethod, ASSAY_METHOD_LABELS, assayMethodFromPanels, hydrateMultiVialPanelResults, resolveCasNumber, applyQuantityUnit } from '../lib/labCoaForm';
 import { labelClaimFromSummary, netContentSpecificationDisplay } from '../lib/orderCatalog';
 import { compressImageDataUrl } from '../lib/imageCompress';
@@ -104,11 +103,7 @@ export default function COADetail() {
     (async () => {
       try {
         // Phase 1: certificate shell without multi‑MB image columns (those freeze the tab).
-        const { data, error } = await supabase
-          .from('coas')
-          .select(COA_DETAIL_COLUMNS)
-          .eq('slug', slug)
-          .maybeSingle();
+        const { data, error } = await fetchCoaByCode(slug, !!user?.id);
 
         if (cancelled) return;
         if (error || !data) {
@@ -128,9 +123,9 @@ export default function COADetail() {
         // Phase 2: images + profile fallbacks (non-blocking). Compress before state so a
         // leftover multi‑MB base64 row cannot freeze the tab / IDE embedded browser.
         const [imgRow, header, watermark] = await Promise.all([
-          fetchCoaImageRow(hydrated.id),
-          resolveCoaHeaderLogo(hydrated),
-          resolveCoaWatermark(hydrated),
+          fetchImagesByCode(hydrated),
+          hydrated.user_id ? resolveCoaHeaderLogo(hydrated) : Promise.resolve(''),
+          hydrated.user_id ? resolveCoaWatermark(hydrated) : Promise.resolve(''),
         ]);
         if (cancelled) return;
 
@@ -179,7 +174,7 @@ export default function COADetail() {
     return () => {
       cancelled = true;
     };
-  }, [slug, authLoading, exportMode]);
+  }, [slug, authLoading, exportMode, user?.id]);
 
   useEffect(() => {
     // print=1 used to auto-open the browser print dialog; keep param harmless.
@@ -252,12 +247,12 @@ export default function COADetail() {
     role === 'verifier' ? '/medical-director'
       : isStaff ? '/lab?tab=workflow'
         : isOwner ? '/dashboard/coas'
-          : '/coa-library';
+          : '/verify';
   const backLabel =
     role === 'verifier' ? 'Back to Medical Director'
       : isStaff ? 'Back to Lab Console'
         : isOwner ? 'Back to My COAs'
-          : 'Public Library';
+          : 'Verify another COA';
 
   function goBack() {
     const ref = document.referrer;

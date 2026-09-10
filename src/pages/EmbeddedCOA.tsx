@@ -5,7 +5,7 @@ import AtlasDigitalCoaCard from '../components/order/AtlasDigitalCoaCard';
 import { assayResultsFromPanels, assayChipStatusesFromPanels } from '../lib/coaDisplayPanels';
 import { createEmptySample, type TestMode, type WizardSample, isOtherResearchMaterial } from '../lib/orderCatalog';
 import { hydrateMultiVialPanelResults } from '../lib/labCoaForm';
-import { supabase } from '../lib/supabase';
+import { fetchPublicCoa } from '../lib/publicCoa';
 import type { COA, PanelResult } from '../lib/types';
 
 function stringValue(value: unknown): string {
@@ -127,19 +127,15 @@ export default function EmbeddedCOA() {
     async function load() {
       setLoading(true);
       setNotFound(false);
-      const { data, error } = await supabase
-        .from('coas')
-        .select('*')
-        .eq('slug', slug)
-        .eq('is_public', true)
-        .maybeSingle();
+      const { data, error } = await fetchPublicCoa(slug || '');
 
       if (cancelled) return;
       if (error || !data) {
         setNotFound(true);
         setCoa(null);
       } else {
-        setCoa(data as unknown as COA);
+        const images = await fetchPublicCoa(slug || '', true);
+        if (!cancelled) setCoa({ ...data, ...(images.data || {}) } as COA);
       }
       setLoading(false);
     }

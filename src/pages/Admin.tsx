@@ -24,6 +24,7 @@ import { ORDER_FILTERS, type OrdersFilter } from "../lib/adminOrderFilters";
 import AdminCoaRegistry from "../components/admin/AdminCoaRegistry";
 import AdminUsersPanel from "../components/admin/AdminUsersPanel";
 import AdminDispatchBoard from "../components/admin/AdminDispatchBoard";
+import AdminApplicationsPanel from "../components/admin/AdminApplicationsPanel";
 import AdminClientsPanel from "../components/admin/AdminClientsPanel";
 import OpsDashboard from "../components/admin/OpsDashboard";
 import LabManagerDashboard from "../components/admin/LabManagerDashboard";
@@ -70,6 +71,7 @@ const SECTION_META: Record<AdminSection, { title: string; subtitle: string }> =
       title: "COA Registry",
       subtitle: "Overrides, stage resets, and audit notes.",
     },
+    applications: { title: "Client applications", subtitle: "Review company details and approve new clients for ordering." },
     clients: {
       title: "Clients",
       subtitle: "Research companies, account activity, and order history.",
@@ -593,6 +595,7 @@ export default function Admin() {
               <AdminCoaRegistry coas={coas} onSave={updateCoa} />
             )}
 
+            {section === "applications" && <AdminApplicationsPanel />}
             {section === "clients" && (
               <AdminClientsPanel users={users} orders={normalizedOrders} />
             )}

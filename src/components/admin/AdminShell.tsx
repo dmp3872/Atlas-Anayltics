@@ -31,6 +31,7 @@ export type AdminSection =
   | "operations"
   | "orders"
   | "coas"
+  | "applications"
   | "clients"
   | "users";
 interface NavItem {
@@ -86,6 +87,9 @@ const NAV_GROUPS: { id: string; label: string; items: NavItem[] }[] = [
     id: "manage",
     label: "Management",
     items: [
+      {
+        id: "applications", label: "Applications", desc: "Review new client applications", icon: UserPlus,
+      },
       {
         id: "clients",
         label: "Clients",

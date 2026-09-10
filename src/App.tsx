@@ -16,7 +16,9 @@ import SampleCOA from './pages/SampleCOA';
 import APIKeys from './pages/APIKeys';
 import Support from './pages/Support';
 import PublicVerify from './pages/PublicVerify';
-import PublicLibrary from './pages/PublicLibrary';
+import PublicLab from './pages/PublicLab';
+import ClientApplication from './pages/ClientApplication';
+import ClientAccessGate from './components/ClientAccessGate';
 import Trust from './pages/Trust';
 import Roadmap from './pages/Roadmap';
 import Lab from './pages/Lab';
@@ -60,10 +62,13 @@ export default function App() {
           <Route path="/" element={<PublicLayout><Landing /></PublicLayout>} />
           <Route path="/auth" element={<Auth />} />
           <Route path="/pricing" element={<PublicLayout><Pricing /></PublicLayout>} />
-          <Route path="/order-new" element={<OrderWizard />} />
+          <Route path="/order-new" element={<ClientAccessGate><OrderWizard /></ClientAccessGate>} />
           <Route path="/order" element={<PublicLayout><Order /></PublicLayout>} />
           <Route path="/verify" element={<PublicVerify />} />
-          <Route path="/coa-library" element={<PublicLibrary />} />
+          <Route path="/coa-library" element={<Navigate to="/verify" replace />} />
+          <Route path="/about" element={<PublicLayout><PublicLab /></PublicLayout>} />
+          <Route path="/clients" element={<PublicLayout><PublicLab clients /></PublicLayout>} />
+          <Route path="/application" element={<RoleRoute allow={['client', 'admin']}><PublicLayout><ClientApplication /></PublicLayout></RoleRoute>} />
           <Route path="/coa/:slug" element={<COADetail />} />
           <Route path="/embed/coa/:slug" element={<EmbeddedCOA />} />
           <Route path="/sample/:sampleId/coa" element={<SampleCOA />} />
@@ -71,10 +76,10 @@ export default function App() {
           <Route path="/roadmap" element={<Roadmap />} />
 
           {/* Client portal */}
-          <Route path="/dashboard" element={<RoleRoute allow={['client', 'admin']}><Portal /></RoleRoute>} />
-          <Route path="/dashboard/orders" element={<RoleRoute allow={['client', 'admin']}><Portal /></RoleRoute>} />
-          <Route path="/dashboard/coas" element={<RoleRoute allow={['client', 'admin']}><Portal /></RoleRoute>} />
-          <Route path="/dashboard/api" element={<RoleRoute allow={['client', 'admin']}><APIKeys /></RoleRoute>} />
+          <Route path="/dashboard" element={<RoleRoute allow={['client', 'admin']}><ClientAccessGate><Portal /></ClientAccessGate></RoleRoute>} />
+          <Route path="/dashboard/orders" element={<RoleRoute allow={['client', 'admin']}><ClientAccessGate><Portal /></ClientAccessGate></RoleRoute>} />
+          <Route path="/dashboard/coas" element={<RoleRoute allow={['client', 'admin']}><ClientAccessGate><Portal /></ClientAccessGate></RoleRoute>} />
+          <Route path="/dashboard/api" element={<RoleRoute allow={['client', 'admin']}><ClientAccessGate><APIKeys /></ClientAccessGate></RoleRoute>} />
 
           {/* Kyle submission workflow — client (superseded by unified orders) */}
           <Route path="/dashboard/submissions/*" element={<Navigate to="/dashboard/orders" replace />} />

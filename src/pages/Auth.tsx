@@ -12,10 +12,10 @@ export default function Auth() {
   const { user, profile, loading, signIn, signUp } = useAuth();
   const location = useLocation();
   const role = resolveUserRole(profile, user?.email);
-  const requested = (location.state as { from?: string } | null)?.from;
+  const requested = (location.state as { from?: string } | null)?.from || (new URLSearchParams(location.search).get('mode') === 'signup' ? '/application' : undefined);
   const destination = postAuthDestination(role, requested);
 
-  const [mode, setMode] = useState<Mode>('signin');
+  const [mode, setMode] = useState<Mode>(new URLSearchParams(location.search).get('mode') === 'signup' ? 'signup' : 'signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
@@ -67,7 +67,7 @@ export default function Auth() {
         if (signUpError) {
           setError(signUpError.message);
         } else {
-          setInfo('Account created. If you are not redirected automatically, sign in with your new credentials.');
+          setInfo('Check your email if confirmation is required, then sign in to complete your client application.');
           setMode('signin');
         }
       }
