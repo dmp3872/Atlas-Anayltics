@@ -4,6 +4,7 @@ import {
   Shield, CheckCircle, XCircle,
   ArrowLeft, Copy, Check, Droplets, Boxes, AlertTriangle, Download, Building2,
 } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 import { COA } from '../lib/types';
 import { formatDate } from '../lib/utils';
 import { verifyCoaIntegrity } from '../lib/coaVerify';
@@ -107,6 +108,7 @@ export default function COADetail() {
     setClientLogo('');
 
     (async () => {
+      let shellLoaded = false;
       try {
         // Phase 1: certificate shell without multi‑MB image columns (those freeze the tab).
         const { data, error } = await fetchCoaByCode(slug, !!user?.id);
@@ -124,6 +126,7 @@ export default function COADetail() {
         setLogoWatermark(hydrated.chromatogram_image || '');
         setHplcPhoto(hydrated.hplc_image || '');
         setClientLogo(hydrated.company_logo || '');
+        shellLoaded = true;
         setLoading(false);
 
         // Phase 2: images + profile fallbacks (non-blocking). Compress before state so a
@@ -233,11 +236,12 @@ export default function COADetail() {
             company_logo: rawHeader || prev.company_logo,
           } : prev);
         }
-      } catch {
-        if (!cancelled) {
-          setNotFound(true);
-          setLoading(false);
-        }
+      } catch (err) {
+        if (cancelled) return;
+        // Phase-1 already painted the certificate — don't wipe it for image/backfill failures.
+        console.warn('COA enrichment failed:', err instanceof Error ? err.message : err);
+        setLoading(false);
+        if (!shellLoaded) setNotFound(true);
       }
     })();
 
