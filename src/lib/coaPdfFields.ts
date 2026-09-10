@@ -106,7 +106,9 @@ function resolveEndotoxin(coa: COA, panels: PanelResult[]) {
     };
   }
   const value = stats.endotoxin_eu_ml.trim();
-  const raw = value ? `${value} EU/mL` : (panel?.result ?? '').trim();
+  const raw = value
+    ? (/eu\s*\/\s*ml/i.test(value) ? value : `${value} EU/mL`)
+    : (panel?.result ?? '').trim();
   const result = raw && !/\(\s*lal\s*\)/i.test(raw) ? `${raw.replace(/\s+$/, '')} (LAL)` : raw;
   return {
     specification: ENDOTOXIN_SPEC_EU_ML,

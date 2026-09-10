@@ -325,10 +325,6 @@ export async function resolveImageAsDataUrl(src: string): Promise<string> {
 /** Mild contain-zoom for uploaded HPLC chromatograms (keeps chart axes visible). */
 export const COA_CHROMATOGRAM_ZOOM = 1.08;
 
-/**
- * Crop near-white / empty margins so a vial photo shows just the vial
- * (Vanguard-style product shot), with a small padding margin.
- */
 async function loadHtmlImage(dataUrl: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const el = new Image();
@@ -338,6 +334,10 @@ async function loadHtmlImage(dataUrl: string): Promise<HTMLImageElement> {
   });
 }
 
+/**
+ * Crop near-white / empty margins so a vial photo shows just the vial
+ * (Vanguard-style product shot), with a small padding margin.
+ */
 export async function trimImageWhitespace(
   src: string,
   opts?: { threshold?: number; padRatio?: number },

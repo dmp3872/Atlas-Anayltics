@@ -1,5 +1,5 @@
 import { COA, Order, OrderSample, UserProfile } from './types';
-import { buildQueueItems, testsForSample } from './labQueue';
+import { buildQueueItems, testsForSample, isAssignedToChemist } from './labQueue';
 
 export interface DailyIntakePoint {
   date: string;
@@ -155,10 +155,12 @@ export function chemistWorkloadStats(
   const pendingItems = buildQueueItems(samples, orders, coas, true);
   const pendingByChemist = new Map<string, typeof pendingItems>();
   for (const item of pendingItems) {
-    if (!item.assigned_to) continue;
-    const list = pendingByChemist.get(item.assigned_to) ?? [];
-    list.push(item);
-    pendingByChemist.set(item.assigned_to, list);
+    const assignees = new Set([item.assigned_to, ...item.tests.map(test => item.testAssignments[test])].filter((id): id is string => !!id));
+    for (const id of assignees) {
+      const list = pendingByChemist.get(id) ?? [];
+      list.push(item);
+      pendingByChemist.set(id, list);
+    }
   }
 
   const cutoff30 = Date.now() - 30 * DAY_MS;
@@ -169,7 +171,7 @@ export function chemistWorkloadStats(
       item => item.sample.status === 'analyzing' || item.sample.status === 'in_review',
     );
 
-    const assignedSamples = samples.filter(s => s.assigned_to === chemist.id);
+    const assignedSamples = samples.filter(s => isAssignedToChemist(s, chemist.id));
 
     let sumDays = 0;
     let turnaroundCount = 0;

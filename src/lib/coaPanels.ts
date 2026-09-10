@@ -26,6 +26,7 @@ export function parseSampleMetadata(metadata: OrderSample['metadata']): OrderSam
   return metadata as OrderSampleMetadata;
 }
 
+/** Product form shown on COAs (Lyophilized, Liquid/Solution, etc.). */
 export function matrixTypeFromSampleMetadata(
   metadata: OrderSample['metadata'] | OrderSampleMetadata | null | undefined,
 ): string {
@@ -71,7 +72,7 @@ export const DEFAULT_COA_TEST_PANELS: PanelResult[] = [
   { panel_name: 'Purity & Quantitation (HPLC)', specification: '≥98%', result: '', pass: true },
   { panel_name: 'Identity Confirmation (MS)', specification: '± 2 Da', result: '', pass: true },
   { panel_name: 'Net Content (Weight)', specification: '', result: '', pass: true },
-  { panel_name: 'Endotoxin (USP <85>)', specification: '<= 5.0 EU/mL', result: '', pass: true },
+  { panel_name: 'Endotoxin (USP <85>)', specification: '≤ 5.0 EU/mL', result: '', pass: true },
 ];
 
 /** Prefill test rows from client intake metadata (labeled content → net content result). */
