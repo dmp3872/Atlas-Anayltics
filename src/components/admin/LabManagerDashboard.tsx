@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowUpRight, Download, Search } from "lucide-react";
 import { COA, Order, OrderSample, UserProfile } from "../../lib/types";
@@ -34,6 +34,18 @@ export default function LabManagerDashboard({
   const [assigningId, setAssigningId] = useState<string | null>(null);
   const [assignmentError, setAssignmentError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
+  const assignmentsRef = useRef<HTMLElement>(null);
+  const [viewRequest, setViewRequest] = useState(0);
+
+  // Reveal after React commits the selected chemist and clears old filters.
+  // A request counter also handles clicking the already-selected chemist.
+  useLayoutEffect(() => {
+    if (viewRequest === 0) return;
+    const panel = assignmentsRef.current;
+    if (!panel) return;
+    panel.focus({ preventScroll: true });
+    panel.scrollIntoView({ block: "start", behavior: "instant" });
+  }, [viewRequest]);
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
   const stats = useMemo(
@@ -213,11 +225,14 @@ export default function LabManagerDashboard({
                   <td>
                     <button
                       aria-pressed={selectedChemist?.chemistId === c.chemistId}
+                      aria-controls="lab-assignments"
+                      aria-label={`View assignments for ${c.name}`}
                       className="admin-text-link"
                       onClick={() => {
                         setSelected(c.chemistId);
                         setPage(0);
                         setSearch("");
+                        setViewRequest(request => request + 1);
                       }}
                     >
                       View assignments <ArrowUpRight size={13} />
@@ -236,10 +251,17 @@ export default function LabManagerDashboard({
         )}
       </section>
       {selectedChemist && (
-        <section className="admin-surface">
+        <section
+          id="lab-assignments"
+          ref={assignmentsRef}
+          className="admin-surface"
+          tabIndex={-1}
+          aria-labelledby="lab-assignments-heading"
+          style={{ scrollMarginTop: 24 }}
+        >
           <div className="admin-surface-heading">
             <div>
-              <h2>{selectedChemist.name} · assignments</h2>
+              <h2 id="lab-assignments-heading">{selectedChemist.name} · assignments</h2>
               <p>
                 Change the sample lead here. Per-test assignments remain
                 available in the chemist console.
