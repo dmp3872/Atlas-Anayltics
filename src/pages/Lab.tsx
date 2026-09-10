@@ -38,6 +38,7 @@ import TestingQueuePanel from '../components/lab/TestingQueuePanel';
 import ChemistOrderBriefDrawer from '../components/lab/ChemistOrderBriefDrawer';
 import QueueFilters, { QueueFilterValues } from '../components/lab/QueueFilters';
 import ClaimVsResultStrip from '../components/lab/ClaimVsResultStrip';
+import ChemistLiveChatPanel from '../components/lab/ChemistLiveChatPanel';
 import { buildQueueItems, filterQueueItems, getTestAssignments, normalizeLabPriority } from '../lib/labQueue';
 import { sampleIntakeAt, sampleReceivedBy, setSampleStatus } from '../lib/services/orderWorkflow';
 import { allocateUniqueSampleCode, isValidSampleCode } from '../lib/sampleCode';
@@ -73,13 +74,14 @@ import { parseOrderNotes } from '../lib/orderMeta';
 const MAX_COA_IMAGE_BYTES = 1024 * 1024;
 
 type Message = { type: 'success' | 'error'; text: string; slug?: string } | null;
-type LabTab = 'bench' | 'receive' | 'queue' | 'issue' | 'workflow';
+type LabTab = 'bench' | 'receive' | 'queue' | 'chat' | 'issue' | 'workflow';
 
-const LAB_TABS: LabTab[] = ['bench', 'receive', 'queue', 'issue', 'workflow'];
+const LAB_TABS: LabTab[] = ['bench', 'receive', 'queue', 'chat', 'issue', 'workflow'];
 const LAB_TAB_LABELS: Record<LabTab, string> = {
   bench: 'My Bench',
   receive: 'Receive',
   queue: 'Testing Queue',
+  chat: 'Client Chat',
   issue: 'Issue COA',
   workflow: 'COA Workflow',
 };
@@ -260,7 +262,7 @@ export default function Lab() {
     if (s.data) setSamples(s.data);
     if (o.data) setOrders(o.data);
     if (c.data) {
-      const rows = (c.data as COA[]).map(hydrateCoaImages);
+      const rows = (c.data as unknown as COA[]).map(hydrateCoaImages);
       rows.sort((a, b) => {
         const ta = Math.max(
           Date.parse(a.created_at || '') || 0,
@@ -960,7 +962,7 @@ export default function Lab() {
       return;
     }
 
-    const updatedCoa = hydrateCoaImages({ ...coa, ...(updatedRow as COA) });
+    const updatedCoa = hydrateCoaImages({ ...coa, ...(updatedRow as unknown as COA) });
     if (coaWorkflowStage(updatedCoa) !== targetStage) {
       setMsg({
         type: 'error',
@@ -1457,6 +1459,7 @@ export default function Lab() {
     { id: 'bench', label: LAB_TAB_LABELS.bench },
     { id: 'receive', label: LAB_TAB_LABELS.receive, count: receiveCount || undefined },
     { id: 'queue', label: LAB_TAB_LABELS.queue, count: pendingQueueCount || undefined },
+    { id: 'chat', label: LAB_TAB_LABELS.chat },
     { id: 'issue', label: LAB_TAB_LABELS.issue },
     { id: 'workflow', label: LAB_TAB_LABELS.workflow, count: workflowActiveCount || undefined },
   ];
@@ -1621,6 +1624,10 @@ export default function Lab() {
               onOpenOrderBrief={setBriefOrderId}
             />
           </div>
+        )}
+
+        {tab === 'chat' && (
+          <ChemistLiveChatPanel orders={normalizedOrders} />
         )}
 
         {tab === 'issue' && (

@@ -85,6 +85,7 @@ function toWinAnsi(value: string): string {
     .replace(/\u201C|\u201D/g, '"') // “ ”
     .replace(/\u2026/g, '...') // …
     .replace(/\u00A0/g, ' ') // nbsp
+    // eslint-disable-next-line no-control-regex -- intentional Latin-1 range including NUL
     .replace(/[^\x00-\xFF]/g, ''); // drop anything else outside Latin-1
 }
 

@@ -11,7 +11,7 @@ import { verifyCoaIntegrity } from '../lib/coaVerify';
 import { hydrateCoaImages, prepareVialImage, readCoaPdfStats, resolveCoaHeaderLogo, resolveCoaWatermark } from '../lib/coaImages';
 import { matrixTypeFromSampleMetadata } from '../lib/coaPanels';
 import { partitionCoaPanels, panelStatusLabel, panelStatusToneClass, resolvePanelPass, formatCoaResultDisplay } from '../lib/coaDisplayPanels';
-import { COA_DETAIL_COLUMNS, fetchCoaImageRow } from '../lib/coaSelect';
+import { fetchCoaByCode, fetchImagesByCode } from '../lib/publicCoa';
 import { formatCoaDecimal, parseAssayMethod, ASSAY_METHOD_LABELS, assayMethodFromPanels, hydrateMultiVialPanelResults, resolveCasNumber, applyQuantityUnit } from '../lib/labCoaForm';
 import { labelClaimFromSummary, netContentSpecificationDisplay } from '../lib/orderCatalog';
 import { compressImageDataUrl } from '../lib/imageCompress';
@@ -19,7 +19,7 @@ import { coaDigitalPdfFilename, downloadCoaPdfFromElement } from '../lib/coaPdf'
 import { coaHasDirectorSignature, coaSignatureProgress, coaWorkflowStage } from '../lib/coaWorkflow';
 import { sampleIntakeAt } from '../lib/services/orderWorkflow';
 import { useAuth } from '../context/AuthContext';
-import { resolveUserRole, roleHome } from '../lib/roles';
+import { resolveUserRole } from '../lib/roles';
 import { COA_MEDICAL_DIRECTOR } from '../lib/coaSignatories';
 import Header from '../components/layout/Header';
 import Footer from '../components/layout/Footer';
@@ -108,13 +108,10 @@ export default function COADetail() {
     setClientLogo('');
 
     (async () => {
+      let shellLoaded = false;
       try {
         // Phase 1: certificate shell without multi‑MB image columns (those freeze the tab).
-        const { data, error } = await supabase
-          .from('coas')
-          .select(COA_DETAIL_COLUMNS)
-          .eq('slug', slug)
-          .maybeSingle();
+        const { data, error } = await fetchCoaByCode(slug, !!user?.id);
 
         if (cancelled) return;
         if (error || !data) {
@@ -124,11 +121,12 @@ export default function COADetail() {
           return;
         }
 
-        const hydrated = hydrateCoaImages(data as COA);
+        const hydrated = hydrateCoaImages(data as unknown as COA);
         setCoa(hydrated);
         setLogoWatermark(hydrated.chromatogram_image || '');
         setHplcPhoto(hydrated.hplc_image || '');
         setClientLogo(hydrated.company_logo || '');
+        shellLoaded = true;
         setLoading(false);
 
         // Phase 2: images + profile fallbacks (non-blocking). Compress before state so a
@@ -199,9 +197,9 @@ export default function COADetail() {
           : Promise.resolve(null);
 
         const [imgRow, header, watermark] = await Promise.all([
-          fetchCoaImageRow(hydrated.id),
-          resolveCoaHeaderLogo(hydrated),
-          resolveCoaWatermark(hydrated),
+          fetchImagesByCode(hydrated),
+          hydrated.user_id ? resolveCoaHeaderLogo(hydrated) : Promise.resolve(''),
+          hydrated.user_id ? resolveCoaWatermark(hydrated) : Promise.resolve(''),
           sampleFieldBackfill,
         ]);
         if (cancelled) return;
@@ -238,18 +236,19 @@ export default function COADetail() {
             company_logo: rawHeader || prev.company_logo,
           } : prev);
         }
-      } catch {
-        if (!cancelled) {
-          setNotFound(true);
-          setLoading(false);
-        }
+      } catch (err) {
+        if (cancelled) return;
+        // Phase-1 already painted the certificate — don't wipe it for image/backfill failures.
+        console.warn('COA enrichment failed:', err instanceof Error ? err.message : err);
+        setLoading(false);
+        if (!shellLoaded) setNotFound(true);
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [slug, authLoading, exportMode]);
+  }, [slug, authLoading, exportMode, user?.id]);
 
   useEffect(() => {
     // print=1 used to auto-open the browser print dialog; keep param harmless.
@@ -333,12 +332,12 @@ export default function COADetail() {
     role === 'verifier' ? '/medical-director'
       : isStaff ? '/lab?tab=workflow'
         : isOwner ? '/dashboard/coas'
-          : '/coa-library';
+          : '/verify';
   const backLabel =
     role === 'verifier' ? 'Back to Medical Director'
       : isStaff ? 'Back to Lab Console'
         : isOwner ? 'Back to My COAs'
-          : 'Public Library';
+          : 'Verify another COA';
 
   function goBack() {
     const ref = document.referrer;
@@ -700,7 +699,7 @@ export default function COADetail() {
                     <tr key={`metal-${i}`} className={i % 2 === 0 ? 'bg-white' : 'bg-neutral-50'}>
                       <td className="px-3 py-1 font-medium border-t border-atlas-border">{r.panel_name}</td>
                       <td className="px-3 py-1 text-neutral-600 border-t border-atlas-border">{r.specification || ''}</td>
-                      <td className="px-3 py-1 font-medium border-t border-atlas-border text-black">
+                      <td className={`px-3 py-1 border-t border-atlas-border ${pass === null || !r.result?.trim() ? 'italic text-neutral-500' : 'font-medium text-black'}`}>
                         {resultText}
                       </td>
                       <td className="px-3 py-1 border-t border-atlas-border">

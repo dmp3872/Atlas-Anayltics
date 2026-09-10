@@ -216,6 +216,7 @@ export function isFullyUnassigned(sample: OrderSample, tests: string[]): boolean
 
 /** Samples eligible for the chemist testing queue: paid + physically received. */
 export function sampleReadyForTesting(sample: OrderSample, order: Order): boolean {
+  if (order.status === 'cancelled' || order.status === 'complete') return false;
   if (!orderIsPayable(order.payment_status)) return false;
   if (sample.status === 'awaiting_sample') return false;
   return true;
@@ -229,6 +230,14 @@ export function buildQueueItems(
 ): QueueSampleItem[] {
   const orderMap = new Map(orders.map(o => [o.id, o]));
 
+  const coasBySample = new Map<string, COA[]>();
+  for (const coa of coas) {
+    if (coa.sample_id) {
+      const list = coasBySample.get(coa.sample_id) ?? [];
+      list.push(coa);
+      coasBySample.set(coa.sample_id, list);
+    }
+  }
   const items: QueueSampleItem[] = [];
 
   for (const sample of samples) {
@@ -240,7 +249,7 @@ export function buildQueueItems(
 
     // Queue visibility uses the strict sample_id-only check so fuzzy
     // batch/name matches never hide a sample that's still awaiting its COA.
-    const issued = hasIssuedCoaForSample(sample, coas);
+    const issued = hasIssuedCoaForSample(sample, coasBySample.get(sample.id) ?? []);
     if (pendingOnly && (issued || sample.status === 'complete')) continue;
 
     const hasCoa = issued || !!matchCoaForSample(sample, coas);
@@ -271,8 +280,8 @@ export function buildQueueItems(
     // Higher priority (lower score) first so urgent/high surface immediately.
     if (a.priorityScore !== b.priorityScore) return a.priorityScore - b.priorityScore;
     if (a.overdue !== b.overdue) return a.overdue ? -1 : 1;
-    // Newest samples first within the same priority band.
-    return new Date(b.sample.created_at).getTime() - new Date(a.sample.created_at).getTime();
+    // Oldest samples first so a steady stream of new work cannot starve older samples.
+    return new Date(a.sample.created_at).getTime() - new Date(b.sample.created_at).getTime();
   });
 }
 
