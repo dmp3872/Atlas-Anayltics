@@ -55,9 +55,7 @@ export default function StepSelectTesting({
     ...catalog.filter(t => t.id === 'atlas_pro'),
     ...catalog.filter(t => t.kind === 'package' && t.id !== 'full_qc' && t.id !== 'atlas_pro'),
   ];
-  const assays = catalog.filter(
-    t => t.kind !== 'package' && t.canBePrimary && t.available && t.id !== 'rd_purity_quantity',
-  );
+  const assays = catalog.filter(t => t.kind !== 'package' && t.canBePrimary && t.available);
   const onPackage = isPackageMode(sample.test_mode);
 
   return (

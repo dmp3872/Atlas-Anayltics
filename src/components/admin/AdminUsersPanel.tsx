@@ -10,12 +10,9 @@ interface Props {
   savingId?: string | null;
   onChangeRole: (id: string, role: UserRole) => void;
   onTogglePreboarded?: (id: string, shippingPreboarded: boolean) => void;
-  onToggleRdSubmissions?: (id: string, enabled: boolean) => void;
 }
 
-export default function AdminUsersPanel({
-  users, loading, savingId, onChangeRole, onTogglePreboarded, onToggleRdSubmissions,
-}: Props) {
+export default function AdminUsersPanel({ users, loading, savingId, onChangeRole, onTogglePreboarded }: Props) {
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState<UserRole | 'all'>('all');
 
@@ -75,7 +72,6 @@ export default function AdminUsersPanel({
                   <th className="text-left px-5 py-3">Company</th>
                   <th className="text-left px-5 py-3">Role</th>
                   <th className="text-left px-5 py-3">RFID preboard</th>
-                  <th className="text-left px-5 py-3">R&amp;D orders</th>
                   <th className="text-left px-5 py-3">User ID</th>
                 </tr>
               </thead>
@@ -110,22 +106,6 @@ export default function AdminUsersPanel({
                             className="accent-brand-500"
                           />
                           UPS + plaque
-                        </label>
-                      ) : (
-                        <span className="text-xs text-neutral-400">—</span>
-                      )}
-                    </td>
-                    <td className="px-5 py-3">
-                      {(u.role ?? 'client') === 'client' ? (
-                        <label className="inline-flex items-center gap-2 text-xs text-neutral-700">
-                          <input
-                            type="checkbox"
-                            checked={!!u.rd_submissions_enabled}
-                            disabled={savingId === u.id || !onToggleRdSubmissions}
-                            onChange={e => onToggleRdSubmissions?.(u.id, e.target.checked)}
-                            className="accent-brand-500"
-                          />
-                          Allow R&amp;D
                         </label>
                       ) : (
                         <span className="text-xs text-neutral-400">—</span>

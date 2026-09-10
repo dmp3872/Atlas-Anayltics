@@ -6,7 +6,6 @@ import {
 import { parseSampleMetadata, orderSampleIncludesFentanyl, matchCoaForSample, hasIssuedCoaForSample } from './coaPanels';
 import { orderIsPayable } from './utils';
 import { resolveEtaAt } from './etaHeat';
-import { orderIsRd, sampleIsRd, RD_TESTS_LABEL } from './rdPathway';
 
 export type { LabPriority };
 
@@ -108,12 +107,6 @@ export function testsForSample(sample: OrderSample): string[] {
   const meta = sample.metadata as Record<string, unknown> | null;
   if (!meta) return ['Full QC Panel'];
 
-  if (sampleIsRd(sample) || meta.test_mode === 'rd') {
-    return [typeof meta.tests_label === 'string' && meta.tests_label.trim()
-      ? meta.tests_label.trim()
-      : RD_TESTS_LABEL];
-  }
-
   if (typeof meta.tests_label === 'string' && meta.tests_label.trim()) {
     const mode = meta.test_mode as TestMode | undefined;
     if (mode === 'atlas_pro' || mode === 'full_qc') {
@@ -161,8 +154,6 @@ export function testsLabelForSample(sample: OrderSample): string {
 export function sampleHasTestsSpecified(sample: Pick<OrderSample, 'metadata'>): boolean {
   const meta = sample.metadata as Record<string, unknown> | null;
   if (!meta) return false;
-
-  if (sampleIsRd(sample) || meta.test_mode === 'rd' || meta.pathway === 'rd') return true;
 
   const mode = meta.test_mode as TestMode | undefined;
   if (mode === 'atlas_pro' || mode === 'full_qc') return true;
@@ -243,9 +234,6 @@ export function buildQueueItems(
   for (const sample of samples) {
     const order = orderMap.get(sample.order_id);
     if (!order) continue;
-
-    // R&D samples are handled in the R&D folder — never the commercial COA queue.
-    if (sampleIsRd(sample) || orderIsRd(order)) continue;
 
     // Gate: unpaid / in-transit samples never appear in the testing queue.
     if (!sampleReadyForTesting(sample, order)) continue;
