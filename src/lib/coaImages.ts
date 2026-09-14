@@ -964,35 +964,18 @@ export async function resolveCoaHeaderLogo(coa: COA): Promise<string> {
 
   if (applyLogo) {
     const companyName = (hydrated.company_name || '').trim().toLowerCase();
-    const { data: companies } = await supabase
-      .from('companies')
-      .select('name, logo, is_default')
-      .eq('user_id', hydrated.user_id);
-
-    if (Array.isArray(companies)) {
-      const named = companyName
+    // Brands are separate companies — never fall back to the account default
+    // (e.g. Valor) or any other profile when this COA names a specific brand.
+    if (companyName && hydrated.user_id) {
+      const { data: companies } = await supabase
+        .from('companies')
+        .select('name, logo')
+        .eq('user_id', hydrated.user_id);
+      const named = Array.isArray(companies)
         ? companies.find(c => (c.name || '').trim().toLowerCase() === companyName && c.logo)
         : undefined;
-      const partial = companyName
-        ? companies.find(c => {
-            const n = (c.name || '').trim().toLowerCase();
-            return !!c.logo && (n.includes(companyName) || companyName.includes(n));
-          })
-        : undefined;
-      const def = companies.find(c => c.is_default && c.logo);
-      const any = companies.find(c => c.logo);
       push(named?.logo);
-      push(partial?.logo);
-      push(def?.logo);
-      push(any?.logo);
     }
-
-    const { data: profile } = await supabase
-      .from('user_profiles')
-      .select('company_logo')
-      .eq('id', hydrated.user_id)
-      .maybeSingle();
-    push(profile?.company_logo);
   }
 
   const seen = new Set<string>();
@@ -1018,9 +1001,15 @@ export async function resolveCoaHeaderLogo(coa: COA): Promise<string> {
 /**
  * HPLC watermark from the client's COA profile (`chromatograph_background`),
  * snapshotted onto the COA as `chromatogram_image` when the chemist applies it.
+ * Never borrows another brand's watermark (e.g. default Valor on an ANG COA).
  */
 export async function resolveCoaWatermark(coa: COA): Promise<string> {
   const hydrated = hydrateCoaImages(coa);
+  const summary = (hydrated.result_summary && typeof hydrated.result_summary === 'object'
+    ? hydrated.result_summary
+    : {}) as Record<string, unknown>;
+  if (summary.apply_watermark === false) return '';
+
   const candidates: string[] = [];
   const push = (value: unknown) => {
     if (typeof value === 'string' && value.trim()) candidates.push(value.trim());
@@ -1028,22 +1017,19 @@ export async function resolveCoaWatermark(coa: COA): Promise<string> {
 
   // Snapshotted watermark (chemist applied at issue time).
   push(hydrated.chromatogram_image);
+  push(summary.chromatogram_image);
 
   const companyName = (hydrated.company_name || '').trim().toLowerCase();
-  const { data: companies } = await supabase
-    .from('companies')
-    .select('name, chromatograph_background, is_default')
-    .eq('user_id', hydrated.user_id);
+  if (companyName && hydrated.user_id) {
+    const { data: companies } = await supabase
+      .from('companies')
+      .select('name, chromatograph_background')
+      .eq('user_id', hydrated.user_id);
 
-  if (Array.isArray(companies)) {
-    const named = companyName
+    const named = Array.isArray(companies)
       ? companies.find(c => (c.name || '').trim().toLowerCase() === companyName && c.chromatograph_background)
       : undefined;
-    const def = companies.find(c => c.is_default && c.chromatograph_background);
-    const any = companies.find(c => c.chromatograph_background);
     push(named?.chromatograph_background);
-    push(def?.chromatograph_background);
-    push(any?.chromatograph_background);
   }
 
   const seen = new Set<string>();
