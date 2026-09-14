@@ -139,7 +139,7 @@ export async function cloneCoaForBrandServer(opts: {
   });
   summary.coa_profile_id = company.id;
   summary.apply_company_logo = true;
-  summary.apply_watermark = true;
+  summary.apply_watermark = !!company.chromatograph_background;
   summary.branded_from_coa_id = src.id;
   summary.client_website = company.website || summary.client_website || summary.website || '';
   summary.client_address = company.address || summary.client_address || summary.address || '';
@@ -167,7 +167,7 @@ export async function cloneCoaForBrandServer(opts: {
     sample_name: src.sample_name,
     display_name: src.display_name,
     company_name: company.name,
-    company_logo: company.logo || src.company_logo || '',
+    company_logo: company.logo || '',
     peptide_sequence: src.peptide_sequence,
     batch_number: src.batch_number,
     purity_percent: src.purity_percent,
@@ -181,7 +181,8 @@ export async function cloneCoaForBrandServer(opts: {
     signature: src.signature,
     pdf_url: '',
     vial_image: src.vial_image || '',
-    chromatogram_image: company.chromatograph_background || src.chromatogram_image || '',
+    // Never carry the source brand's HPLC watermark onto a different company.
+    chromatogram_image: company.chromatograph_background || '',
     hplc_image: src.hplc_image || '',
     seal_serial: src.seal_serial,
     accession_number: src.accession_number,
