@@ -123,9 +123,15 @@ export default function COADetail() {
 
         const hydrated = hydrateCoaImages(data as unknown as COA);
         setCoa(hydrated);
-        setLogoWatermark(hydrated.chromatogram_image || '');
+        const summaryFlags = (hydrated.result_summary && typeof hydrated.result_summary === 'object'
+          ? hydrated.result_summary
+          : {}) as Record<string, unknown>;
+        const allowWatermark = summaryFlags.apply_watermark !== false;
+        const allowLogo = summaryFlags.apply_company_logo !== false;
+        // Never seed from another brand via empty snapshots — only show snapshotted assets.
+        setLogoWatermark(allowWatermark ? (hydrated.chromatogram_image || '') : '');
         setHplcPhoto(hydrated.hplc_image || '');
-        setClientLogo(hydrated.company_logo || '');
+        setClientLogo(allowLogo ? (hydrated.company_logo || '') : '');
         shellLoaded = true;
         setLoading(false);
 
@@ -198,8 +204,8 @@ export default function COADetail() {
 
         const [imgRow, header, watermark] = await Promise.all([
           fetchImagesByCode(hydrated),
-          hydrated.user_id ? resolveCoaHeaderLogo(hydrated) : Promise.resolve(''),
-          hydrated.user_id ? resolveCoaWatermark(hydrated) : Promise.resolve(''),
+          (hydrated.user_id && allowLogo) ? resolveCoaHeaderLogo(hydrated) : Promise.resolve(''),
+          (hydrated.user_id && allowWatermark) ? resolveCoaWatermark(hydrated) : Promise.resolve(''),
           sampleFieldBackfill,
         ]);
         if (cancelled) return;
@@ -210,30 +216,40 @@ export default function COADetail() {
         // Header logo: keep the original src for display. Re-compressing large brand PNGs
         // can return '' and wipe the client mark from the certificate + PNG export.
         const rawHeader =
-          header
-          || imgRow?.company_logo
-          || hydrated.company_logo
-          || '';
+          allowLogo
+            ? (
+              header
+              || imgRow?.company_logo
+              || hydrated.company_logo
+              || ''
+            )
+            : '';
         const [vial, chrom, hplc, nextWatermark] = await Promise.all([
           compressImageDataUrl(preparedVial),
-          compressImageDataUrl(imgRow?.chromatogram_image || hydrated.chromatogram_image || ''),
+          compressImageDataUrl(
+            allowWatermark
+              ? (imgRow?.chromatogram_image || hydrated.chromatogram_image || '')
+              : '',
+          ),
           compressImageDataUrl(imgRow?.hplc_image || hydrated.hplc_image || ''),
-          compressImageDataUrl(watermark || ''),
+          compressImageDataUrl(allowWatermark ? (watermark || '') : ''),
         ]);
         if (cancelled) return;
 
-        const resolvedWatermark = nextWatermark || chrom || '';
+        const resolvedWatermark = allowWatermark ? (nextWatermark || chrom || '') : '';
 
-        if (resolvedWatermark) setLogoWatermark(resolvedWatermark);
+        setLogoWatermark(resolvedWatermark);
         if (hplc) setHplcPhoto(hplc);
-        if (rawHeader) setClientLogo(rawHeader);
-        if (vial || chrom || hplc || rawHeader || resolvedWatermark) {
+        setClientLogo(rawHeader);
+        if (vial || chrom || hplc || rawHeader || resolvedWatermark || !allowWatermark || !allowLogo) {
           setCoa(prev => prev ? {
             ...prev,
             vial_image: vial || prev.vial_image,
-            chromatogram_image: resolvedWatermark || chrom || prev.chromatogram_image,
+            chromatogram_image: allowWatermark
+              ? (resolvedWatermark || chrom || prev.chromatogram_image)
+              : '',
             hplc_image: hplc || prev.hplc_image,
-            company_logo: rawHeader || prev.company_logo,
+            company_logo: allowLogo ? (rawHeader || prev.company_logo) : '',
           } : prev);
         }
       } catch (err) {
