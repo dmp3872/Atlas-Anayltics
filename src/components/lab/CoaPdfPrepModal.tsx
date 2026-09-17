@@ -38,6 +38,7 @@ import {
   resolveIncludeHeavyMetals,
   resolveIncludePh,
   resolveIncludeBenzylPq,
+  isBacWaterCoaContext,
   PH_SPEC_LABEL,
   BENZYL_PQ_SPEC_LABEL,
   formatPhResult,
@@ -47,6 +48,7 @@ import {
   benzylPqPassFromResult,
   isBenzylPqPanel,
 } from '../../lib/labCoaForm';
+import { sampleIsBacWater } from '../../lib/coaPanels';
 import { downloadCoaPdf, openCoaPrintView } from '../../lib/coaPdf';
 import { LABEL_CLAIM_UNITS, labelClaimFromSummary } from '../../lib/orderCatalog';
 import {
@@ -156,11 +158,22 @@ function bootBenzylFields(coa: COA): { purity: string; quantity: string } {
 
 export default function CoaPdfPrepModal({ coa, sampleMetadata = null, onClose, onSaved }: Props) {
   const boot = applyPrepDefaults(coa);
-  const includeSterility = resolveIncludeSterility(coa, sampleMetadata);
-  const includeEndotoxin = resolveIncludeEndotoxin(coa, sampleMetadata);
-  const includeHeavyMetals = resolveIncludeHeavyMetals(coa, sampleMetadata);
-  const includePh = resolveIncludePh(coa, sampleMetadata);
-  const includeBenzylPq = resolveIncludeBenzylPq(coa, sampleMetadata);
+  const [includeSterility, setIncludeSterility] = useState(() => resolveIncludeSterility(coa, sampleMetadata));
+  const [includeEndotoxin, setIncludeEndotoxin] = useState(() => resolveIncludeEndotoxin(coa, sampleMetadata));
+  const [includeHeavyMetals, setIncludeHeavyMetals] = useState(() => resolveIncludeHeavyMetals(coa, sampleMetadata));
+  const [includePh, setIncludePh] = useState(() => resolveIncludePh(coa, sampleMetadata));
+  const [includeBenzylPq, setIncludeBenzylPq] = useState(() => resolveIncludeBenzylPq(coa, sampleMetadata));
+  const bacWaterMode = isBacWaterCoaContext({
+    metadata: sampleMetadata,
+    matrixType: typeof (coa.result_summary as { matrix_type?: string } | null)?.matrix_type === 'string'
+      ? (coa.result_summary as { matrix_type?: string }).matrix_type
+      : typeof (coa.result_summary as { sample_matrix?: string } | null)?.sample_matrix === 'string'
+        ? (coa.result_summary as { sample_matrix?: string }).sample_matrix
+        : undefined,
+    category: typeof (coa.result_summary as { category?: string } | null)?.category === 'string'
+      ? (coa.result_summary as { category?: string }).category
+      : undefined,
+  }) || sampleIsBacWater(sampleMetadata);
   const [vialImage, setVialImage] = useState(boot.next.vial_image || '');
   const [hplcImage, setHplcImage] = useState(boot.next.hplc_image || '');
   const [watermarkImage, setWatermarkImage] = useState(boot.next.chromatogram_image || '');
@@ -362,7 +375,7 @@ export default function CoaPdfPrepModal({ coa, sampleMetadata = null, onClose, o
         include_benzyl_pq: includeBenzylPq,
         benzyl_purity: benzylPurity,
         benzyl_quantity: benzylQuantity,
-        measured_net_content: includeBenzylPq ? measuredNetContent : undefined,
+        measured_net_content: bacWaterMode ? measuredNetContent : undefined,
       });
       if (saveError) {
         setError(saveError);
@@ -691,7 +704,7 @@ export default function CoaPdfPrepModal({ coa, sampleMetadata = null, onClose, o
               <div>
                 <p className="text-sm font-bold text-black">Assay details already on COA</p>
                 <p className="text-xs text-neutral-500 mt-0.5">
-                  Sterility, endotoxin, heavy metals, fentanyl, molecular weight — filled at Issue. Expand only to edit.
+                  Sterility, endotoxin, heavy metals, pH, benzyl alcohol, molecular weight — toggle Include on COA, then edit values.
                 </p>
               </div>
               <ChevronDown
@@ -701,19 +714,38 @@ export default function CoaPdfPrepModal({ coa, sampleMetadata = null, onClose, o
             </button>
             {showAssayEdits && (
               <div className="px-4 pb-4 space-y-4 border-t border-atlas-border bg-neutral-50/60">
-                <div className="pt-4 space-y-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <h3 className="text-sm font-bold uppercase tracking-wide text-black">Molecular Weight</h3>
-                    <label className="inline-flex items-center gap-2 text-sm text-neutral-700 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={includeMolecularWeight}
-                        onChange={e => setIncludeMolecularWeight(e.target.checked)}
-                        className="rounded border-atlas-border"
-                      />
-                      Include on COA
-                    </label>
+                <div className="pt-4 space-y-2">
+                  <p className="text-sm font-semibold text-black">Include on COA</p>
+                  <p className="text-xs text-neutral-500">
+                    Toggle optional sections before generating the PDF.
+                  </p>
+                  <div className="flex flex-wrap gap-x-4 gap-y-2">
+                    {([
+                      [includeSterility, setIncludeSterility, 'Sterility'],
+                      [includeEndotoxin, setIncludeEndotoxin, 'Endotoxin'],
+                      [includeHeavyMetals, setIncludeHeavyMetals, 'Heavy Metals'],
+                      [includePh, setIncludePh, 'pH'],
+                      [includeBenzylPq, setIncludeBenzylPq, 'Benzyl Alcohol'],
+                      [includeMolecularWeight, setIncludeMolecularWeight, 'Molecular Weight'],
+                    ] as const).map(([checked, setChecked, label]) => (
+                      <label
+                        key={label}
+                        className="inline-flex items-center gap-1.5 text-xs text-neutral-700 cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={e => setChecked(e.target.checked)}
+                          className="rounded border-atlas-border"
+                        />
+                        {label}
+                      </label>
+                    ))}
                   </div>
+                </div>
+
+                <div className="pt-2 space-y-3">
+                  <h3 className="text-sm font-bold uppercase tracking-wide text-black">Molecular Weight</h3>
                   <div>
                     <label className="label" htmlFor="molecular-weight">Value (Da)</label>
                     <input
@@ -797,9 +829,13 @@ export default function CoaPdfPrepModal({ coa, sampleMetadata = null, onClose, o
 
                 {includeBenzylPq && (
                 <div className="space-y-3">
-                  <h3 className="text-sm font-bold uppercase tracking-wide text-black">Bacteriostatic Water</h3>
+                  <h3 className="text-sm font-bold uppercase tracking-wide text-black">
+                    {bacWaterMode ? 'Bacteriostatic Water' : 'Benzyl Alcohol'}
+                  </h3>
                   <p className="text-xs text-neutral-500">
-                    Certificate assays: Benzyl Alcohol Assay (HPLC), pH ({PH_SPEC_LABEL}), Fill Volume / Net Content (Gravimetric).
+                    {bacWaterMode
+                      ? `Certificate assays: Benzyl Alcohol Assay (HPLC), pH (${PH_SPEC_LABEL}), Fill Volume / Net Content (Gravimetric).`
+                      : `Benzyl Alcohol Assay (HPLC) · Spec: ${BENZYL_PQ_SPEC_LABEL}`}
                   </p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
@@ -825,6 +861,7 @@ export default function CoaPdfPrepModal({ coa, sampleMetadata = null, onClose, o
                         ) : null}
                       </p>
                     </div>
+                    {bacWaterMode && (
                     <div>
                       <label className="label" htmlFor="prep-bac-net">Fill Volume / Net Content (Gravimetric)</label>
                       <input
@@ -837,6 +874,7 @@ export default function CoaPdfPrepModal({ coa, sampleMetadata = null, onClose, o
                       />
                       <p className="text-xs text-neutral-500 mt-1">Method: Gravimetric</p>
                     </div>
+                    )}
                   </div>
                 </div>
                 )}

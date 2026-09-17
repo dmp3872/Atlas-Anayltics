@@ -462,6 +462,7 @@ function typeLabel(sample: WizardSample): string {
   if (sample.category === 'single_peptide') return 'Peptide';
   if (sample.category === 'peptide_blend') return 'Blend';
   if (sample.category === 'bac_water') return 'BAC Water';
+  if (sample.category === 'pens') return 'Pens';
   if (sample.category === 'other') {
     const matrix = (sample.sample_matrix || '').trim();
     return matrix || 'Other';
