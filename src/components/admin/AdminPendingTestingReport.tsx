@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Download, Printer, RefreshCw } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import type { COA, Order, OrderSample, UserProfile } from '../../lib/types';
 import { supabase } from '../../lib/supabase';
 import { downloadCsv } from '../../lib/exportCsv';
@@ -40,6 +41,21 @@ function StatusPill({ status, detail }: { status: AssayStatus; detail: string })
   );
 }
 
+function VisibilityPill({ published }: { published: boolean }) {
+  if (published) {
+    return (
+      <span className="inline-block text-[11px] font-bold px-2 py-0.5 rounded border bg-emerald-50 text-emerald-800 border-emerald-200">
+        Published
+      </span>
+    );
+  }
+  return (
+    <span className="inline-block text-[11px] font-bold px-2 py-0.5 rounded border bg-slate-100 text-slate-700 border-slate-300">
+      Unpublished
+    </span>
+  );
+}
+
 export default function AdminPendingTestingReport({
   samples,
   orders,
@@ -60,7 +76,7 @@ export default function AdminPendingTestingReport({
   useEffect(() => {
     let cancelled = false;
     async function loadSummaries() {
-      // Unpublished always; published when panels already show deferred assays.
+      // Load summaries for unpublished COAs and any published with deferred assays.
       const summaryIds = coas
         .filter(c =>
           (coaWorkflowStage(c) !== 'published' && !c.is_public && !c.published_at)
@@ -116,14 +132,13 @@ export default function AdminPendingTestingReport({
     [report.rows, filter],
   );
 
-  const chips: { id: PendingTestingFilter; label: string }[] = [
-    { id: 'all', label: 'All' },
-    { id: 'published_pending', label: 'Published pending' },
-    { id: 'unpublished', label: 'Unpublished' },
-    { id: 'ster_pending', label: 'Sterility pending' },
-    { id: 'endo_pending', label: 'Endotoxin pending' },
-    { id: 'both_pending', label: 'Both pending' },
-    { id: 'both_complete', label: 'Both complete' },
+  const chips: { id: PendingTestingFilter; label: string; count?: number }[] = [
+    { id: 'all', label: 'All', count: report.rows.length },
+    { id: 'published_pending', label: 'Published', count: report.counts.publishedPending },
+    { id: 'unpublished', label: 'Unpublished', count: report.counts.unpublishedCoas },
+    { id: 'ster_pending', label: 'Sterility pending', count: report.counts.ster_pending },
+    { id: 'endo_pending', label: 'Endotoxin pending', count: report.counts.endo_pending },
+    { id: 'both_pending', label: 'Both pending', count: report.counts.both_pending },
   ];
 
   function exportCsv() {
@@ -131,13 +146,13 @@ export default function AdminPendingTestingReport({
     downloadCsv(
       `atlas-pending-testing-${stamp}.csv`,
       [
-        'Sample', 'Lot', 'Company', 'Client', 'Order', 'Sample status',
-        'COA', 'Stage', 'Published', 'Sterility', 'Sterility detail', 'Endotoxin', 'Endotoxin detail',
+        'COA', 'Visibility', 'Stage', 'Sample', 'Lot', 'Company', 'Client', 'Order', 'Sample status',
+        'Sterility', 'Sterility detail', 'Endotoxin', 'Endotoxin detail',
         'Ordered tests', 'Other pending', 'Other complete',
       ],
       visible.map(r => [
+        r.coa, r.published ? 'published' : 'unpublished', r.stage,
         r.sample, r.lot, r.company, r.client, r.order, r.status,
-        r.coa, r.stage, r.published ? 'yes' : 'no',
         r.sterility, r.sterilityDetail, r.endotoxin, r.endotoxinDetail,
         r.tests, r.otherPending.join('; '), r.otherComplete.join('; '),
       ]),
@@ -152,7 +167,8 @@ export default function AdminPendingTestingReport({
         <div>
           <h2 className="text-lg font-bold text-black">Pending testing report</h2>
           <p className="text-sm text-neutral-500 mt-0.5">
-            Every sample with deferred assays — including published COAs that still have pending items.
+            One row per COA number. Published certificates with deferred assays are included —
+            use Published / Unpublished to split the list.
             {loadingSummary ? ' Loading assay summaries…' : ''}
           </p>
           {summaryError && (
@@ -190,10 +206,10 @@ export default function AdminPendingTestingReport({
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
-          { label: 'Samples in report', value: c.samples },
+          { label: 'COAs in report', value: c.samples },
           { label: 'Published pending', value: c.publishedPending },
-          { label: 'Sterility pending', value: c.ster_pending },
-          { label: 'Endotoxin pending', value: c.endo_pending },
+          { label: 'Unpublished', value: c.unpublishedCoas },
+          { label: 'Either assay pending', value: c.either_pending },
         ].map(stat => (
           <div key={stat.label} className="card p-4">
             <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-500">{stat.label}</p>
@@ -203,34 +219,13 @@ export default function AdminPendingTestingReport({
       </div>
 
       <div className="card p-4 text-sm text-neutral-700">
-        Sterility complete <strong>{c.ster_complete}</strong>
-        {' · '}Endotoxin complete <strong>{c.endo_complete}</strong>
+        Sterility pending <strong>{c.ster_pending}</strong>
+        {' · '}Endotoxin pending <strong>{c.endo_pending}</strong>
         {' · '}Both pending <strong>{c.both_pending}</strong>
-        {' · '}Both complete <strong>{c.both_complete}</strong>
-        {' · '}Either pending <strong>{c.either_pending}</strong>
-        {' · '}Unpublished COAs <strong>{c.unpublishedCoas}</strong>
         <span className="block text-xs text-neutral-500 mt-1">
-          Generated {new Date(report.generatedAt).toLocaleString()} · “Pending” includes literal Pending panel/summary values
+          Generated {new Date(report.generatedAt).toLocaleString()} · each COA ID is listed separately
         </span>
       </div>
-
-      {Object.keys(c.byStage).length > 0 && (
-        <div className="card p-4">
-          <h3 className="text-sm font-bold text-black mb-2">COA stages in report</h3>
-          <div className="flex flex-wrap gap-2">
-            {Object.entries(c.byStage)
-              .sort((a, b) => b[1] - a[1])
-              .map(([stage, n]) => (
-                <span
-                  key={stage}
-                  className="text-xs font-medium px-2.5 py-1 rounded-full border border-atlas-border bg-white"
-                >
-                  {stage} · {n}
-                </span>
-              ))}
-          </div>
-        </div>
-      )}
 
       <div className="flex flex-wrap gap-1.5 print:hidden">
         {chips.map(chip => (
@@ -245,6 +240,7 @@ export default function AdminPendingTestingReport({
             }`}
           >
             {chip.label}
+            {typeof chip.count === 'number' ? ` · ${chip.count}` : ''}
           </button>
         ))}
       </div>
@@ -260,9 +256,10 @@ export default function AdminPendingTestingReport({
             <thead className="sticky top-0 bg-neutral-50 z-10">
               <tr className="text-left text-[10px] uppercase tracking-wider text-neutral-500 border-b border-atlas-border">
                 <th className="px-3 py-2">#</th>
+                <th className="px-3 py-2">COA #</th>
+                <th className="px-3 py-2">Visibility</th>
                 <th className="px-3 py-2">Sample / Lot</th>
                 <th className="px-3 py-2">Company</th>
-                <th className="px-3 py-2">COA / Stage</th>
                 <th className="px-3 py-2">Sterility</th>
                 <th className="px-3 py-2">Endotoxin</th>
                 <th className="px-3 py-2">Other panels</th>
@@ -271,14 +268,32 @@ export default function AdminPendingTestingReport({
             <tbody className="divide-y divide-atlas-border">
               {visible.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-3 py-10 text-center text-neutral-500">
+                  <td colSpan={8} className="px-3 py-10 text-center text-neutral-500">
                     No rows match this filter.
                   </td>
                 </tr>
               ) : (
                 visible.map((r, i) => (
-                  <tr key={`${r.sampleId}-${r.coa}-${i}`} className="align-top">
+                  <tr key={`${r.coa}-${r.sampleId}-${i}`} className="align-top">
                     <td className="px-3 py-2.5 text-neutral-400 tabular-nums">{i + 1}</td>
+                    <td className="px-3 py-2.5">
+                      {r.coa !== '—' ? (
+                        <Link
+                          to={`/coa/${r.coa}`}
+                          className="font-mono text-sm font-bold text-sky-800 hover:underline"
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {r.coa}
+                        </Link>
+                      ) : (
+                        <span className="font-mono text-sm text-neutral-400">—</span>
+                      )}
+                      <div className="text-[11px] text-neutral-500 mt-0.5">{r.stage}</div>
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <VisibilityPill published={r.published} />
+                    </td>
                     <td className="px-3 py-2.5">
                       <div className="font-semibold text-black">{r.sample}</div>
                       <div className="text-[11px] text-neutral-500">
@@ -286,17 +301,6 @@ export default function AdminPendingTestingReport({
                       </div>
                     </td>
                     <td className="px-3 py-2.5">{r.company}</td>
-                    <td className="px-3 py-2.5">
-                      <div className="font-mono text-xs">{r.coa}</div>
-                      <div className="text-[11px] text-neutral-500 flex flex-wrap items-center gap-1.5 mt-0.5">
-                        <span>{r.stage}</span>
-                        {r.published && (
-                          <span className="inline-block text-[10px] font-bold px-1.5 py-0.5 rounded border bg-emerald-50 text-emerald-800 border-emerald-200">
-                            Published
-                          </span>
-                        )}
-                      </div>
-                    </td>
                     <td className="px-3 py-2.5">
                       <StatusPill status={r.sterility} detail={r.sterilityDetail} />
                     </td>
