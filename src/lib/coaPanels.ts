@@ -43,6 +43,7 @@ export function matrixTypeFromSampleMetadata(
     'Raw Material',
     'Creams/Gels',
     'Capsules',
+    'Pens',
     'BAC Water',
     'Other',
   ];

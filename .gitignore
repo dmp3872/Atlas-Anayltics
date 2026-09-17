@@ -27,3 +27,4 @@ tmp/
 *.dataurl.txt
 *-raw.txt
 .vercel
+.env*
