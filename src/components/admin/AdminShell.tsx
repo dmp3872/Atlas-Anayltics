@@ -4,6 +4,7 @@ import {
   ArrowUpRight,
   BarChart3,
   Building2,
+  ClipboardCheck,
   ClipboardList,
   FlaskConical,
   LayoutGrid,
@@ -27,6 +28,7 @@ export type AdminSection =
   | "lab"
   | "livechat"
   | "operations"
+  | "pending_testing"
   | "orders"
   | "coas"
   | "applications"
@@ -99,6 +101,12 @@ const NAV_GROUPS: { id: string; label: string; items: NavItem[] }[] = [
         label: "Lab analytics",
         desc: "Intake & turnaround",
         icon: BarChart3,
+      },
+      {
+        id: "pending_testing",
+        label: "Pending testing",
+        desc: "Unpublished work & assay gaps",
+        icon: ClipboardCheck,
       },
       {
         id: "users",
