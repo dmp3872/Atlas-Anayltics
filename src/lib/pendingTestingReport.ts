@@ -2,6 +2,7 @@ import type { COA, Order, OrderSample, UserProfile } from './types';
 import { coaWorkflowStage, COA_WORKFLOW_LABELS } from './coaWorkflow';
 import { parseSampleMetadata } from './coaPanels';
 import { isBenzylPqPanel } from './labCoaForm';
+import { coaHasPendingAssays } from './coaDisplayPanels';
 
 export type AssayStatus = 'complete' | 'pending' | 'n/a';
 
@@ -11,6 +12,7 @@ export type PendingTestingFilter =
   | 'endo_pending'
   | 'both_pending'
   | 'both_complete'
+  | 'published_pending'
   | 'unpublished';
 
 export interface PendingTestingRow {
@@ -40,6 +42,7 @@ export interface PendingTestingReport {
   counts: {
     samples: number;
     unpublishedCoas: number;
+    publishedPending: number;
     ster_pending: number;
     ster_complete: number;
     ster_na: number;
@@ -261,7 +264,8 @@ function otherPanels(coaList: COA[]): { pending: string[]; complete: string[] } 
 
 /**
  * Build the admin pending-testing report from loaded lab data.
- * Includes incomplete samples and any sample linked to an unpublished COA.
+ * Includes incomplete samples, unpublished COAs, and published COAs that still
+ * have pending assays (sterility/endotoxin/other panels).
  */
 export function buildPendingTestingReport(input: {
   samples: OrderSample[];
@@ -280,7 +284,7 @@ export function buildPendingTestingReport(input: {
       const list = coasBySample.get(c.sample_id) || [];
       list.push(c);
       coasBySample.set(c.sample_id, list);
-    } else if (!isPublishedCoa(c)) {
+    } else if (!isPublishedCoa(c) || coaHasPendingAssays(c)) {
       orphanCoas.push(c);
     }
   }
@@ -290,22 +294,33 @@ export function buildPendingTestingReport(input: {
     if (s.status !== 'complete' && s.status !== 'cancelled') ids.add(s.id);
   }
   for (const [sid, list] of coasBySample) {
-    if (list.some(c => !isPublishedCoa(c))) ids.add(sid);
+    if (list.some(c => !isPublishedCoa(c) || coaHasPendingAssays(c))) ids.add(sid);
+    // Also consider published-only samples so ordered-but-pending assays
+    // (from metadata / result_summary) can still enter the report.
+    else if (list.some(c => isPublishedCoa(c))) ids.add(sid);
   }
 
   const rows: PendingTestingRow[] = [];
   const byStage: Record<string, number> = {};
   let unpublishedCoas = 0;
+  let publishedPending = 0;
 
   for (const sid of ids) {
     const s = sampleBy.get(sid);
     const linkedAll = coasBySample.get(sid) || [];
-    const linked = linkedAll.filter(c => !isPublishedCoa(c));
-    if (linkedAll.some(c => isPublishedCoa(c)) && linked.length === 0 && s?.status === 'complete') {
-      continue;
-    }
-    const useCoas = linked.length > 0 ? linked : linkedAll.filter(c => !isPublishedCoa(c));
-    unpublishedCoas += useCoas.length;
+    const incompleteSample = !!s && s.status !== 'complete' && s.status !== 'cancelled';
+    const unpublished = linkedAll.filter(c => !isPublishedCoa(c));
+    // Prefer the live certificate when published still has deferred assays.
+    const useCoas = linkedAll.length > 0
+      ? [...linkedAll].sort((a, b) => {
+          const ap = coaHasPendingAssays(a) ? 0 : 1;
+          const bp = coaHasPendingAssays(b) ? 0 : 1;
+          if (ap !== bp) return ap - bp;
+          const aPub = isPublishedCoa(a) ? 0 : 1;
+          const bPub = isPublishedCoa(b) ? 0 : 1;
+          return aPub - bPub;
+        })
+      : [];
 
     const meta = parseSampleMetadata(s?.metadata);
     const order = orderBy.get(s?.order_id || useCoas[0]?.order_id || '') || null;
@@ -321,24 +336,29 @@ export function buildPendingTestingReport(input: {
       || '—';
     const lot = meta.batch_number || useCoas[0]?.batch_number || '—';
     const testsLabel = orderedLabel(meta);
-    const ster = resolveAssay('sterility', useCoas.length ? useCoas : linkedAll, s, meta, testsLabel);
-    const endo = resolveAssay('endotoxin', useCoas.length ? useCoas : linkedAll, s, meta, testsLabel);
-    const others = otherPanels(useCoas.length ? useCoas : linkedAll);
+    const ster = resolveAssay('sterility', useCoas, s, meta, testsLabel);
+    const endo = resolveAssay('endotoxin', useCoas, s, meta, testsLabel);
+    const others = otherPanels(useCoas);
+    const hasPendingAssay =
+      ster.status === 'pending'
+      || endo.status === 'pending'
+      || others.pending.length > 0
+      || useCoas.some(c => coaHasPendingAssays(c));
+
+    // Published + fully complete samples with no deferred work stay off this report.
+    if (!incompleteSample && unpublished.length === 0 && !hasPendingAssay) {
+      continue;
+    }
+
+    unpublishedCoas += unpublished.length;
+    const primaryPublished = useCoas[0] ? isPublishedCoa(useCoas[0]) : false;
+    if (primaryPublished && hasPendingAssay) publishedPending += 1;
 
     let stage = '—';
     let stageKey = '';
     let slug = '—';
     if (useCoas.length) {
-      const orderStage: Record<string, number> = {
-        testing_in_progress: 0,
-        awaiting_info: 1,
-        verified: 2,
-        pending_review: 3,
-        issued: 4,
-      };
-      const primary = [...useCoas].sort(
-        (a, b) => (orderStage[coaWorkflowStage(a)] ?? 9) - (orderStage[coaWorkflowStage(b)] ?? 9),
-      )[0]!;
+      const primary = useCoas[0]!;
       stageKey = coaWorkflowStage(primary);
       stage = COA_WORKFLOW_LABELS[stageKey as keyof typeof COA_WORKFLOW_LABELS] || stageKey;
       slug = primary.slug || primary.accession_number || '—';
@@ -361,14 +381,14 @@ export function buildPendingTestingReport(input: {
       sterilityDetail: ster.detail,
       endotoxin: endo.status,
       endotoxinDetail: endo.detail,
-      published: false,
+      published: primaryPublished,
       otherPending: others.pending,
       otherComplete: others.complete,
     });
   }
 
   for (const c of orphanCoas) {
-    unpublishedCoas += 1;
+    if (!isPublishedCoa(c)) unpublishedCoas += 1;
     const order = orderBy.get(c.order_id || '') || null;
     const profile = profileBy.get(c.user_id || '') || null;
     const stageKey = coaWorkflowStage(c);
@@ -376,6 +396,15 @@ export function buildPendingTestingReport(input: {
     byStage[stage] = (byStage[stage] || 0) + 1;
     const ster = resolveAssay('sterility', [c], undefined, {}, '—');
     const endo = resolveAssay('endotoxin', [c], undefined, {}, '—');
+    const others = otherPanels([c]);
+    const published = isPublishedCoa(c);
+    const hasPending =
+      ster.status === 'pending'
+      || endo.status === 'pending'
+      || others.pending.length > 0
+      || coaHasPendingAssays(c);
+    if (published && !hasPending) continue;
+    if (published && hasPending) publishedPending += 1;
     rows.push({
       sampleId: c.id,
       sample: c.display_name || c.sample_name || '—',
@@ -392,16 +421,17 @@ export function buildPendingTestingReport(input: {
       sterilityDetail: ster.detail,
       endotoxin: endo.status,
       endotoxinDetail: endo.detail,
-      published: false,
-      otherPending: [],
-      otherComplete: [],
+      published,
+      otherPending: others.pending,
+      otherComplete: others.complete,
     });
   }
 
   rows.sort((a, b) => {
-    const ap = a.sterility === 'pending' || a.endotoxin === 'pending' ? 0 : 1;
-    const bp = b.sterility === 'pending' || b.endotoxin === 'pending' ? 0 : 1;
+    const ap = a.sterility === 'pending' || a.endotoxin === 'pending' || a.otherPending.length > 0 ? 0 : 1;
+    const bp = b.sterility === 'pending' || b.endotoxin === 'pending' || b.otherPending.length > 0 ? 0 : 1;
     if (ap !== bp) return ap - bp;
+    if (a.published !== b.published) return a.published ? -1 : 1;
     if (a.sterility === 'pending' && b.sterility !== 'pending') return -1;
     if (b.sterility === 'pending' && a.sterility !== 'pending') return 1;
     return a.company.localeCompare(b.company) || a.lot.localeCompare(b.lot) || a.sample.localeCompare(b.sample);
@@ -410,6 +440,7 @@ export function buildPendingTestingReport(input: {
   const counts = {
     samples: rows.length,
     unpublishedCoas,
+    publishedPending,
     ster_pending: 0,
     ster_complete: 0,
     ster_na: 0,
@@ -430,7 +461,9 @@ export function buildPendingTestingReport(input: {
     else counts.endo_na += 1;
     if (r.sterility === 'pending' && r.endotoxin === 'pending') counts.both_pending += 1;
     if (r.sterility === 'complete' && r.endotoxin === 'complete') counts.both_complete += 1;
-    if (r.sterility === 'pending' || r.endotoxin === 'pending') counts.either_pending += 1;
+    if (r.sterility === 'pending' || r.endotoxin === 'pending' || r.otherPending.length > 0) {
+      counts.either_pending += 1;
+    }
   }
 
   return {
@@ -444,7 +477,14 @@ export function filterPendingTestingRows(
   rows: PendingTestingRow[],
   filter: PendingTestingFilter,
 ): PendingTestingRow[] {
-  if (filter === 'all' || filter === 'unpublished') return rows;
+  if (filter === 'all') return rows;
+  if (filter === 'unpublished') return rows.filter(r => !r.published);
+  if (filter === 'published_pending') {
+    return rows.filter(r =>
+      r.published
+      && (r.sterility === 'pending' || r.endotoxin === 'pending' || r.otherPending.length > 0),
+    );
+  }
   if (filter === 'ster_pending') return rows.filter(r => r.sterility === 'pending');
   if (filter === 'endo_pending') return rows.filter(r => r.endotoxin === 'pending');
   if (filter === 'both_pending') {

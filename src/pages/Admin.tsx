@@ -60,7 +60,7 @@ const SECTION_META: Record<AdminSection, { title: string; subtitle: string }> =
     pending_testing: {
       title: "Pending testing report",
       subtitle:
-        "Pull unpublished work anytime — sterility, endotoxin, and assay gaps.",
+        "Every sample with deferred assays — including published COAs still waiting on results.",
     },
     orders: {
       title: "Orders",
