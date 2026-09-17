@@ -33,6 +33,7 @@ import {
   validateSampleInformation,
   validateTestingSelection,
 } from '../lib/orderCatalog';
+import { applyClientCatalogPricing } from '../lib/clientPricing';
 import { clearOrderDraft, loadOrderDraft, saveOrderDraft } from '../lib/orderDraft';
 import { generateOrderNumber } from '../lib/utils';
 import { generateShippingLabelId } from '../lib/shippingLabel';
@@ -179,18 +180,27 @@ export default function OrderWizard() {
       .eq('is_active', true)
       .then(({ data, error: err }) => {
         if (cancelled) return;
+        const clientOpts = {
+          email: user?.email ?? null,
+          companyName: profile?.company_name ?? companyName ?? null,
+        };
         if (err) {
           console.warn('test_panels pricing refresh failed:', err.message);
           setCatalogError('Could not refresh live pricing from the laboratory database.');
-          setCatalog(LAB_TEST_SERVICES);
+          setCatalog(applyClientCatalogPricing(LAB_TEST_SERVICES, clientOpts));
         } else {
           setCatalogError(null);
-          setCatalog(mergeCatalogWithDbPanels(LAB_TEST_SERVICES, data ?? []));
+          setCatalog(
+            applyClientCatalogPricing(
+              mergeCatalogWithDbPanels(LAB_TEST_SERVICES, data ?? []),
+              clientOpts,
+            ),
+          );
         }
         setCatalogLoading(false);
       });
     return () => { cancelled = true; };
-  }, []);
+  }, [user?.email, profile?.company_name, companyName]);
 
   useEffect(() => {
     if (profile?.company_name && !companyName) setCompanyName(profile.company_name);
