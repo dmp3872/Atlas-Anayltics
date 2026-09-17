@@ -51,6 +51,7 @@ import {
 import { sampleIsBacWater } from '../../lib/coaPanels';
 import { downloadCoaPdf, openCoaPrintView } from '../../lib/coaPdf';
 import { LABEL_CLAIM_UNITS, labelClaimFromSummary } from '../../lib/orderCatalog';
+import { orderedAssayIds } from '../../lib/orderProjection';
 import {
   chromatogramDataFromParsed,
   type ParsedChromatogram,
@@ -163,6 +164,25 @@ export default function CoaPdfPrepModal({ coa, sampleMetadata = null, onClose, o
   const [includeHeavyMetals, setIncludeHeavyMetals] = useState(() => resolveIncludeHeavyMetals(coa, sampleMetadata));
   const [includePh, setIncludePh] = useState(() => resolveIncludePh(coa, sampleMetadata));
   const [includeBenzylPq, setIncludeBenzylPq] = useState(() => resolveIncludeBenzylPq(coa, sampleMetadata));
+  const orderedLocked = useMemo(() => {
+    if (!sampleMetadata) {
+      return {
+        sterility: false,
+        endotoxin: false,
+        heavyMetals: false,
+        ph: false,
+        benzyl: false,
+      };
+    }
+    const ids = new Set(orderedAssayIds({ metadata: sampleMetadata }));
+    return {
+      sterility: ids.has('sterility_culture') || ids.has('sterility_pcr'),
+      endotoxin: ids.has('endotoxin_usp85'),
+      heavyMetals: ids.has('heavy_metals_icpms'),
+      ph: ids.has('ph'),
+      benzyl: ids.has('benzyl_alcohol_pq'),
+    };
+  }, [sampleMetadata]);
   const bacWaterMode = isBacWaterCoaContext({
     metadata: sampleMetadata,
     matrixType: typeof (coa.result_summary as { matrix_type?: string } | null)?.matrix_type === 'string'
@@ -367,12 +387,12 @@ export default function CoaPdfPrepModal({ coa, sampleMetadata = null, onClose, o
         endotoxin_pass: endotoxinPass,
         heavy_metals_pass: heavyMetalsPass,
         heavy_metals: heavyMetals,
-        include_sterility: includeSterility,
-        include_endotoxin: includeEndotoxin,
-        include_heavy_metals: includeHeavyMetals,
-        include_ph: includePh,
+        include_sterility: includeSterility || orderedLocked.sterility,
+        include_endotoxin: includeEndotoxin || orderedLocked.endotoxin,
+        include_heavy_metals: includeHeavyMetals || orderedLocked.heavyMetals,
+        include_ph: includePh || orderedLocked.ph,
         ph_result: phResult,
-        include_benzyl_pq: includeBenzylPq,
+        include_benzyl_pq: includeBenzylPq || orderedLocked.benzyl,
         benzyl_purity: benzylPurity,
         benzyl_quantity: benzylQuantity,
         measured_net_content: bacWaterMode ? measuredNetContent : undefined,
@@ -717,28 +737,31 @@ export default function CoaPdfPrepModal({ coa, sampleMetadata = null, onClose, o
                 <div className="pt-4 space-y-2">
                   <p className="text-sm font-semibold text-black">Include on COA</p>
                   <p className="text-xs text-neutral-500">
-                    Toggle optional sections before generating the PDF.
+                    Tests on the order stay on the certificate. Optional sections can still be added.
                   </p>
                   <div className="flex flex-wrap gap-x-4 gap-y-2">
                     {([
-                      [includeSterility, setIncludeSterility, 'Sterility'],
-                      [includeEndotoxin, setIncludeEndotoxin, 'Endotoxin'],
-                      [includeHeavyMetals, setIncludeHeavyMetals, 'Heavy Metals'],
-                      [includePh, setIncludePh, 'pH'],
-                      [includeBenzylPq, setIncludeBenzylPq, 'Benzyl Alcohol'],
-                      [includeMolecularWeight, setIncludeMolecularWeight, 'Molecular Weight'],
-                    ] as const).map(([checked, setChecked, label]) => (
+                      [includeSterility || orderedLocked.sterility, setIncludeSterility, 'Sterility', orderedLocked.sterility],
+                      [includeEndotoxin || orderedLocked.endotoxin, setIncludeEndotoxin, 'Endotoxin', orderedLocked.endotoxin],
+                      [includeHeavyMetals || orderedLocked.heavyMetals, setIncludeHeavyMetals, 'Heavy Metals', orderedLocked.heavyMetals],
+                      [includePh || orderedLocked.ph, setIncludePh, 'pH', orderedLocked.ph],
+                      [includeBenzylPq || orderedLocked.benzyl, setIncludeBenzylPq, 'Benzyl Alcohol', orderedLocked.benzyl],
+                      [includeMolecularWeight, setIncludeMolecularWeight, 'Molecular Weight', false],
+                    ] as const).map(([checked, setChecked, label, locked]) => (
                       <label
                         key={label}
-                        className="inline-flex items-center gap-1.5 text-xs text-neutral-700 cursor-pointer"
+                        className={`inline-flex items-center gap-1.5 text-xs text-neutral-700 ${
+                          locked ? 'opacity-90' : 'cursor-pointer'
+                        }`}
                       >
                         <input
                           type="checkbox"
                           checked={checked}
+                          disabled={locked}
                           onChange={e => setChecked(e.target.checked)}
-                          className="rounded border-atlas-border"
+                          className="rounded border-atlas-border disabled:opacity-70"
                         />
-                        {label}
+                        {label}{locked ? ' (ordered)' : ''}
                       </label>
                     ))}
                   </div>
@@ -761,7 +784,7 @@ export default function CoaPdfPrepModal({ coa, sampleMetadata = null, onClose, o
                   </div>
                 </div>
 
-                {includeSterility && (
+                { (includeSterility || orderedLocked.sterility) && (
                 <div className="space-y-3">
                   <h3 className="text-sm font-bold uppercase tracking-wide text-black">Sterility</h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -827,7 +850,7 @@ export default function CoaPdfPrepModal({ coa, sampleMetadata = null, onClose, o
                 </div>
                 )}
 
-                {includeBenzylPq && (
+                {(includeBenzylPq || orderedLocked.benzyl) && (
                 <div className="space-y-3">
                   <h3 className="text-sm font-bold uppercase tracking-wide text-black">
                     {bacWaterMode ? 'Bacteriostatic Water' : 'Benzyl Alcohol'}
@@ -879,7 +902,7 @@ export default function CoaPdfPrepModal({ coa, sampleMetadata = null, onClose, o
                 </div>
                 )}
 
-                {includePh && (
+                {(includePh || orderedLocked.ph) && (
                 <div className="space-y-3">
                   <h3 className="text-sm font-bold uppercase tracking-wide text-black">pH</h3>
                   <p className="text-xs text-neutral-500">Specification on COA: {PH_SPEC_LABEL}</p>
@@ -905,7 +928,7 @@ export default function CoaPdfPrepModal({ coa, sampleMetadata = null, onClose, o
                 </div>
                 )}
 
-                {includeEndotoxin && (
+                {(includeEndotoxin || orderedLocked.endotoxin) && (
                 <div className="space-y-3">
                   <h3 className="text-sm font-bold uppercase tracking-wide text-black">Endotoxins (LAL)</h3>
                   <p className="text-xs text-neutral-500">Specification on COA: {ENDOTOXIN_SPEC_EU_ML}</p>
@@ -944,7 +967,7 @@ export default function CoaPdfPrepModal({ coa, sampleMetadata = null, onClose, o
                 </div>
                 )}
 
-                {includeHeavyMetals && (
+                {(includeHeavyMetals || orderedLocked.heavyMetals) && (
                 <div className="space-y-3">
                   <div className="grid sm:grid-cols-2 gap-3">
                     <div>
