@@ -105,7 +105,7 @@ const NAV_GROUPS: { id: string; label: string; items: NavItem[] }[] = [
       {
         id: "pending_testing",
         label: "Pending testing",
-        desc: "Unpublished work & assay gaps",
+        desc: "Published + unpublished gaps",
         icon: ClipboardCheck,
       },
       {

@@ -11,6 +11,7 @@ import {
   type PendingTestingFilter,
 } from '../../lib/pendingTestingReport';
 import { coaWorkflowStage } from '../../lib/coaWorkflow';
+import { coaHasPendingAssays } from '../../lib/coaDisplayPanels';
 
 interface Props {
   samples: OrderSample[];
@@ -59,10 +60,14 @@ export default function AdminPendingTestingReport({
   useEffect(() => {
     let cancelled = false;
     async function loadSummaries() {
-      const unpublishedIds = coas
-        .filter(c => coaWorkflowStage(c) !== 'published' && !c.is_public && !c.published_at)
+      // Unpublished always; published when panels already show deferred assays.
+      const summaryIds = coas
+        .filter(c =>
+          (coaWorkflowStage(c) !== 'published' && !c.is_public && !c.published_at)
+          || coaHasPendingAssays(c),
+        )
         .map(c => c.id);
-      if (unpublishedIds.length === 0) {
+      if (summaryIds.length === 0) {
         setSummaryCoas(coas);
         return;
       }
@@ -71,8 +76,8 @@ export default function AdminPendingTestingReport({
       try {
         const pageSize = 100;
         const rows: { id: string; result_summary: unknown }[] = [];
-        for (let i = 0; i < unpublishedIds.length; i += pageSize) {
-          const chunk = unpublishedIds.slice(i, i + pageSize);
+        for (let i = 0; i < summaryIds.length; i += pageSize) {
+          const chunk = summaryIds.slice(i, i + pageSize);
           const { data, error } = await supabase
             .from('coas')
             .select('id, result_summary')
@@ -113,6 +118,8 @@ export default function AdminPendingTestingReport({
 
   const chips: { id: PendingTestingFilter; label: string }[] = [
     { id: 'all', label: 'All' },
+    { id: 'published_pending', label: 'Published pending' },
+    { id: 'unpublished', label: 'Unpublished' },
     { id: 'ster_pending', label: 'Sterility pending' },
     { id: 'endo_pending', label: 'Endotoxin pending' },
     { id: 'both_pending', label: 'Both pending' },
@@ -125,12 +132,13 @@ export default function AdminPendingTestingReport({
       `atlas-pending-testing-${stamp}.csv`,
       [
         'Sample', 'Lot', 'Company', 'Client', 'Order', 'Sample status',
-        'COA', 'Stage', 'Sterility', 'Sterility detail', 'Endotoxin', 'Endotoxin detail',
+        'COA', 'Stage', 'Published', 'Sterility', 'Sterility detail', 'Endotoxin', 'Endotoxin detail',
         'Ordered tests', 'Other pending', 'Other complete',
       ],
       visible.map(r => [
         r.sample, r.lot, r.company, r.client, r.order, r.status,
-        r.coa, r.stage, r.sterility, r.sterilityDetail, r.endotoxin, r.endotoxinDetail,
+        r.coa, r.stage, r.published ? 'yes' : 'no',
+        r.sterility, r.sterilityDetail, r.endotoxin, r.endotoxinDetail,
         r.tests, r.otherPending.join('; '), r.otherComplete.join('; '),
       ]),
     );
@@ -144,7 +152,7 @@ export default function AdminPendingTestingReport({
         <div>
           <h2 className="text-lg font-bold text-black">Pending testing report</h2>
           <p className="text-sm text-neutral-500 mt-0.5">
-            Live unpublished / incomplete work with sterility and endotoxin status.
+            Every sample with deferred assays — including published COAs that still have pending items.
             {loadingSummary ? ' Loading assay summaries…' : ''}
           </p>
           {summaryError && (
@@ -183,7 +191,7 @@ export default function AdminPendingTestingReport({
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
           { label: 'Samples in report', value: c.samples },
-          { label: 'Unpublished COAs', value: c.unpublishedCoas },
+          { label: 'Published pending', value: c.publishedPending },
           { label: 'Sterility pending', value: c.ster_pending },
           { label: 'Endotoxin pending', value: c.endo_pending },
         ].map(stat => (
@@ -200,6 +208,7 @@ export default function AdminPendingTestingReport({
         {' · '}Both pending <strong>{c.both_pending}</strong>
         {' · '}Both complete <strong>{c.both_complete}</strong>
         {' · '}Either pending <strong>{c.either_pending}</strong>
+        {' · '}Unpublished COAs <strong>{c.unpublishedCoas}</strong>
         <span className="block text-xs text-neutral-500 mt-1">
           Generated {new Date(report.generatedAt).toLocaleString()} · “Pending” includes literal Pending panel/summary values
         </span>
@@ -207,7 +216,7 @@ export default function AdminPendingTestingReport({
 
       {Object.keys(c.byStage).length > 0 && (
         <div className="card p-4">
-          <h3 className="text-sm font-bold text-black mb-2">Unpublished COA stages</h3>
+          <h3 className="text-sm font-bold text-black mb-2">COA stages in report</h3>
           <div className="flex flex-wrap gap-2">
             {Object.entries(c.byStage)
               .sort((a, b) => b[1] - a[1])
@@ -279,7 +288,14 @@ export default function AdminPendingTestingReport({
                     <td className="px-3 py-2.5">{r.company}</td>
                     <td className="px-3 py-2.5">
                       <div className="font-mono text-xs">{r.coa}</div>
-                      <div className="text-[11px] text-neutral-500">{r.stage}</div>
+                      <div className="text-[11px] text-neutral-500 flex flex-wrap items-center gap-1.5 mt-0.5">
+                        <span>{r.stage}</span>
+                        {r.published && (
+                          <span className="inline-block text-[10px] font-bold px-1.5 py-0.5 rounded border bg-emerald-50 text-emerald-800 border-emerald-200">
+                            Published
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-3 py-2.5">
                       <StatusPill status={r.sterility} detail={r.sterilityDetail} />
