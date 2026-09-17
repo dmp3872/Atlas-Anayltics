@@ -15,6 +15,7 @@ import {
   isPackageMode,
   packageCardMeta,
   sampleVialCount,
+  findTestService,
 } from '../../../lib/orderCatalog';
 import { packageCapabilities } from '../../../lib/orderProjection';
 import { formatCurrency } from '../../../lib/utils';
@@ -346,7 +347,10 @@ export default function StepSelectTesting({
                     .map(k => k.replace(/_/g, ' '))
                     .join(' · ')}
                   {' · '}
-                  {formatCurrency(packageCapabilities(sample.test_mode).price)}
+                  {formatCurrency(
+                    findTestService(sample.test_mode, catalog)?.price
+                      ?? packageCapabilities(sample.test_mode).price,
+                  )}
                 </p>
               </div>
             )}
