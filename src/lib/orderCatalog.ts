@@ -10,6 +10,7 @@ export type SampleMatrix =
   | 'Raw Material'
   | 'Creams/Gels'
   | 'Capsules'
+  | 'Pens'
   | 'BAC Water'
   | 'Other';
 
@@ -21,12 +22,13 @@ export const SAMPLE_MATRICES: SampleMatrix[] = [
   'Raw Material',
   'Creams/Gels',
   'Capsules',
+  'Pens',
   'BAC Water',
   'Other',
 ];
 
 /** Subtypes shown when “Other Research Material” is selected. */
-export const OTHER_RESEARCH_MATERIALS = ['Raw Material', 'Creams/Gels', 'Capsules'] as const;
+export const OTHER_RESEARCH_MATERIALS = ['Raw Material', 'Creams/Gels', 'Capsules', 'Pens'] as const;
 export type OtherResearchMaterial = (typeof OTHER_RESEARCH_MATERIALS)[number];
 
 export function isOtherResearchMaterial(value: string): value is OtherResearchMaterial {
@@ -37,6 +39,7 @@ export type SampleCategory =
   | 'single_peptide'
   | 'peptide_blend'
   | 'bac_water'
+  | 'pens'
   | 'other';
 
 export const SAMPLE_CATEGORIES: {
@@ -47,6 +50,7 @@ export const SAMPLE_CATEGORIES: {
   { id: 'single_peptide', label: 'Single Peptide', description: 'One peptide analyte per sample' },
   { id: 'peptide_blend', label: 'Peptide Blend', description: 'Up to four compounds with label claims' },
   { id: 'bac_water', label: 'Bacteriostatic Water', description: 'BAC water and aqueous diluents' },
+  { id: 'pens', label: 'Pens', description: 'Injectable or research pens for identity, purity, and safety assays' },
   { id: 'other', label: 'Other Research Material', description: 'Non-peptide research materials' },
 ];
 
@@ -333,6 +337,16 @@ export function applyCategoryDefaults(category: SampleCategory): Partial<WizardS
       peptide_identification: '',
     };
   }
+  if (category === 'pens') {
+    return {
+      category,
+      sample_type: 'single',
+      is_peptide: false,
+      sample_matrix: 'Pens',
+      blend_components: [],
+      peptide_identification: '',
+    };
+  }
   if (category === 'other') {
     return {
       category,
@@ -486,6 +500,7 @@ export function normalizeWizardSample(sample: Partial<WizardSample> & Pick<Wizar
   if (!merged.category) {
     if (merged.sample_type === 'blend') merged.category = 'peptide_blend';
     else if (merged.sample_matrix === 'BAC Water') merged.category = 'bac_water';
+    else if (merged.sample_matrix === 'Pens') merged.category = 'pens';
     else if (merged.is_peptide) merged.category = 'single_peptide';
     else merged.category = 'other';
   }

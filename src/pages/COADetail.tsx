@@ -386,7 +386,9 @@ export default function COADetail() {
     || (typeof chrom.sample_matrix === 'string' && chrom.sample_matrix.trim())
     || '—';
   const matrixLabel =
-    (typeof summary.category === 'string' && summary.category === 'other' && matrix !== '—')
+    (typeof summary.category === 'string'
+      && (summary.category === 'other' || summary.category === 'pens')
+      && matrix !== '—')
       ? 'Material Type'
       : 'Matrix Type';
   const received =
