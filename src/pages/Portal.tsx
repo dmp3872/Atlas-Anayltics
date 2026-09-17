@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Truck, Copy, Check, X, Search, Download, FileText, ExternalLink,
@@ -23,7 +23,7 @@ import {
 } from '../lib/portalPrefs';
 import { loadOrderDraft, draftSummary } from '../lib/orderDraft';
 import { canDiscardOrder, discardOrder } from '../lib/orderDiscard';
-import { expectedPanelNames, matchCoaForSample, coasForSample } from '../lib/coaPanels';
+import { expectedPanelNames, matchCoaForSample, coasForSample, groupClientCoas } from '../lib/coaPanels';
 import SampleCoaPicker from '../components/portal/SampleCoaPicker';
 import { testsForSample } from '../lib/labQueue';
 import { SHIPPING_ADDRESS } from '../lib/submissionUtils';
@@ -627,6 +627,17 @@ export default function Portal() {
     return matchSearch && matchStatus && matchPeptide;
   });
 
+  /** One row per sample; branded copies nest under Open → Additional. */
+  const coaGroups = useMemo(() => {
+    const matchIds = new Set(filteredCoas.map(c => c.id));
+    // Keep full sibling sets from all client COAs when any member matches filters.
+    const related = coas.filter(c => {
+      if (!c.sample_id) return matchIds.has(c.id);
+      return coas.some(other => other.sample_id === c.sample_id && matchIds.has(other.id));
+    });
+    return groupClientCoas(related).filter(g => g.all.some(c => matchIds.has(c.id)));
+  }, [coas, filteredCoas]);
+
   const sampleProducts = Array.from(new Set(samples.map(s => s.sample_name).filter(Boolean))).sort();
 
   const filteredSamples = samples.filter(s => {
@@ -810,11 +821,11 @@ export default function Portal() {
                 <div>
                   <h1 className="portal-page-title">Your COAs</h1>
                   <p className="portal-page-subtitle">
-                    Certificates of analysis from your Atlas Analytics testing. Green = pass, red = fail.
+                    Certificates of analysis from your Atlas Analytics testing. Extra brand copies appear under Open → Additional.
                   </p>
                 </div>
                 <div className="card overflow-hidden">
-                  {filteredCoas.length === 0 ? (
+                  {coaGroups.length === 0 ? (
                     <div className="p-12 text-center">
                       <FileText size={32} className="mx-auto mb-3 text-neutral-300" />
                       <p className="font-medium">No certificates yet</p>
@@ -833,49 +844,71 @@ export default function Portal() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-atlas-border">
-                          {filteredCoas.map(coa => {
-                            const order = orders.find(o => o.id === coa.order_id);
+                          {coaGroups.map(({ key, primary, all }) => {
+                            const order = orders.find(o => o.id === primary.order_id);
+                            const sample = primary.sample_id
+                              ? samples.find(s => s.id === primary.sample_id)
+                              : undefined;
+                            const brands = all
+                              .map(c => (c.company_name || '').trim())
+                              .filter(Boolean)
+                              .filter((v, i, arr) => arr.indexOf(v) === i);
                             return (
-                              <tr key={coa.id} className="bg-white hover:bg-neutral-50/80 align-top">
+                              <tr key={key} className="bg-white hover:bg-neutral-50/80 align-top">
                                 <td className="px-4 py-3 min-w-[10rem]">
                                   <p className="font-semibold text-black text-sm leading-snug">
-                                    {coa.display_name || coa.sample_name}
+                                    {primary.display_name || primary.sample_name}
                                   </p>
-                                  {coa.company_name ? (
+                                  {brands.length > 0 ? (
                                     <p className="text-[11px] text-neutral-500 mt-0.5 truncate">
-                                      {coa.company_name}
+                                      {brands.length === 1
+                                        ? brands[0]
+                                        : `${brands.length} brands · ${brands.slice(0, 2).join(', ')}${brands.length > 2 ? '…' : ''}`}
+                                    </p>
+                                  ) : primary.company_name ? (
+                                    <p className="text-[11px] text-neutral-500 mt-0.5 truncate">
+                                      {primary.company_name}
                                     </p>
                                   ) : null}
                                   <p className="text-[11px] text-neutral-500 mt-0.5 font-mono">
-                                    {coa.accession_number || coa.slug.slice(0, 14)}
+                                    {primary.accession_number || primary.slug.slice(0, 14)}
                                     {order?.order_number ? ` · ${order.order_number}` : ''}
                                   </p>
+                                  {all.length > 1 && (
+                                    <p className="text-[11px] text-brand-700 mt-1 font-medium">
+                                      {all.length} certificates — choose under Open
+                                    </p>
+                                  )}
                                   <div className="mt-1.5 flex flex-wrap gap-1">
-                                    <ResultBadge result={coa.overall_result} />
-                                    <CoaPublicationBadge coa={coa} />
+                                    <ResultBadge result={primary.overall_result} />
+                                    <CoaPublicationBadge coa={primary} />
                                   </div>
                                 </td>
                                 <td className="px-4 py-3">
-                                  <CoaTestResultsList coa={coa} />
+                                  <CoaTestResultsList coa={primary} />
                                 </td>
                                 <td className="px-4 py-3 text-xs text-neutral-600 whitespace-nowrap">
-                                  {coa.batch_number || '—'}
+                                  {primary.batch_number || '—'}
                                 </td>
                                 <td className="px-4 py-3 text-xs text-neutral-600 whitespace-nowrap">
-                                  {formatDate(coa.issued_at)}
+                                  {formatDate(primary.issued_at)}
                                 </td>
                                 <td className="px-4 py-3 text-right whitespace-nowrap">
-                                  <div className="inline-flex flex-col items-end gap-1">
-                                    <Link
-                                      to={`/coa/${coa.slug}`}
-                                      className="btn-outline text-[11px] py-1 px-2 gap-1 inline-flex"
-                                    >
-                                      <ExternalLink size={11} /> Open
-                                    </Link>
-                                    {coaAllowsBrandedCopy(coa) && (
+                                  <div className="inline-flex flex-col items-end gap-1.5">
+                                    <SampleCoaPicker
+                                      sample={sample}
+                                      coas={coas}
+                                      group={all}
+                                      compact
+                                      onOpenCoa={c => {
+                                        if (sample) openSampleCoa(sample, c);
+                                        else navigate(`/coa/${c.slug}`);
+                                      }}
+                                    />
+                                    {coaAllowsBrandedCopy(primary) && (
                                       <button
                                         type="button"
-                                        onClick={() => setBrandCoa(coa)}
+                                        onClick={() => setBrandCoa(primary)}
                                         className="btn-ghost text-[11px] py-1 px-2 gap-1 inline-flex text-brand-700"
                                       >
                                         <Building2 size={11} /> Additional COA $50

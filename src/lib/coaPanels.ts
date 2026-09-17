@@ -209,6 +209,31 @@ export function coaBrandLabel(coa: Pick<COA, 'company_name' | 'slug' | 'display_
   return coa.slug || coa.display_name || coa.sample_name || 'Certificate';
 }
 
+/** Group certificates by sample so branded copies share one Your COAs row. */
+export function groupClientCoas(coas: COA[]): { key: string; primary: COA; all: COA[] }[] {
+  const map = new Map<string, COA[]>();
+  for (const c of coas) {
+    const key = c.sample_id || `coa:${c.id}`;
+    const list = map.get(key) || [];
+    list.push(c);
+    map.set(key, list);
+  }
+  return Array.from(map.entries())
+    .map(([key, all]) => {
+      const sorted = [...all].sort(
+        (a, b) =>
+          (Date.parse(a.issued_at || a.created_at) || 0)
+          - (Date.parse(b.issued_at || b.created_at) || 0),
+      );
+      return { key, primary: sorted[0]!, all: sorted };
+    })
+    .sort(
+      (a, b) =>
+        (Date.parse(b.primary.issued_at || b.primary.created_at) || 0)
+        - (Date.parse(a.primary.issued_at || a.primary.created_at) || 0),
+    );
+}
+
 // Fraction of testing complete, inferred from sample status. Used to render a
 // partial COA (which sections are done vs still pending).
 export function sampleProgress(status: SampleStatus): number {
