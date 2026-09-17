@@ -252,17 +252,24 @@ export function orderedAssayIds(sample: WizardSample | { metadata?: unknown; tes
       ? (sample.metadata as Record<string, unknown>)
       : (sample as unknown as Record<string, unknown>);
 
+  const removed = new Set(
+    Array.isArray(meta.removed_assays)
+      ? (meta.removed_assays as unknown[]).filter((v): v is string => typeof v === 'string')
+      : [],
+  );
+  const keep = (ids: string[]) => ids.filter(id => !removed.has(id));
+
   const mode = (meta.test_mode as TestMode | undefined) ?? ('test_mode' in sample ? (sample as WizardSample).test_mode : undefined);
   if (mode === 'atlas_pro' || mode === 'full_qc') {
     const bundled = bundledTestsForMode(mode);
     const fentanyl =
       meta.include_fentanyl === true ||
       (Array.isArray(meta.individual_tests) && meta.individual_tests.includes('fentanyl_detection'));
-    return fentanyl ? [...bundled, 'fentanyl_detection'] : [...bundled];
+    return keep(fentanyl ? [...bundled, 'fentanyl_detection'] : [...bundled]);
   }
 
   if ('primary_test_id' in sample && typeof (sample as WizardSample).primary_test_id === 'string') {
-    return selectedServiceIds(sample as WizardSample);
+    return keep(selectedServiceIds(sample as WizardSample));
   }
 
   const ids = Array.isArray(meta.individual_tests)
@@ -275,9 +282,9 @@ export function orderedAssayIds(sample: WizardSample | { metadata?: unknown; tes
     && primary !== 'full_qc'
     && !ids.includes(primary)
   ) {
-    return [primary, ...ids];
+    return keep([primary, ...ids]);
   }
-  return ids;
+  return keep(ids);
 }
 
 export function sampleIncludesAssay(
@@ -286,19 +293,12 @@ export function sampleIncludesAssay(
 ): boolean {
   const ids = orderedAssayIds(sample);
   if (ids.includes(assayId)) return true;
-  // HPLC package implies identity/purity/quantity
+  // HPLC package implies identity/purity/quantity (orderedAssayIds already honors removed_assays).
   if (
     (assayId === 'purity_hplc' || assayId === 'identity_purity_quantity') &&
     (ids.includes('purity_hplc') || ids.includes('identity_purity_quantity') || ids.includes('atlas_pro') || ids.includes('full_qc'))
   ) {
     return true;
-  }
-  const mode =
-    'test_mode' in sample
-      ? (sample as WizardSample).test_mode
-      : ((sample as { metadata?: { test_mode?: string } }).metadata?.test_mode as TestMode | undefined);
-  if (mode === 'atlas_pro' || mode === 'full_qc') {
-    return bundledTestsForMode(mode).includes(assayId as never) || assayId === 'purity_hplc';
   }
   return false;
 }
