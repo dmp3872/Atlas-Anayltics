@@ -348,9 +348,6 @@ function OrderGroupShell({
                   {coaCount} COA{coaCount === 1 ? '' : 's'}
                 </span>
               ) : null}
-              <span className="text-[10px] text-neutral-400 ml-auto">
-                {expanded ? 'Hide' : 'Show cards'}
-              </span>
             </div>
           </div>
         </div>
@@ -1086,7 +1083,12 @@ export default function CoaWorkflowBoard({
                       {pendingFollowUpCount}
                     </span>
                   )}
-                  <ChevronRight size={14} className="text-neutral-400 mt-auto" />
+                  <span className="mt-auto inline-flex flex-col items-center gap-1">
+                    <span className="text-[10px] font-bold uppercase tracking-wide text-sky-900 bg-sky-100 border border-sky-400 px-1.5 py-1 rounded-md shadow-sm">
+                      Show
+                    </span>
+                    <ChevronRight size={16} className="text-sky-700" />
+                  </span>
                 </div>
               </div>
             );
