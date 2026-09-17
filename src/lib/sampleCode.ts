@@ -2,7 +2,7 @@ import { supabase } from './supabase';
 
 /**
  * Unambiguous alphabet — no I/O/0/1 (easy to confuse when read aloud or handwritten).
- * 32 chars → 32^6 ≈ 1.07e9 codes per month.
+ * 32 chars → 32^6 ≈ 1.07e9 codes per day.
  */
 export const SAMPLE_CODE_ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
 
@@ -15,19 +15,21 @@ function parseDate(createdAt: Date | string | number = new Date()): Date {
 }
 
 /**
- * Lab-local YYMM (America/New_York). August = 08, never 07.
- * e.g. Aug 2026 → 2608
+ * Lab-local YYMMDD (America/New_York).
+ * e.g. Sep 17, 2026 → 260917
  */
-function yearMonthPrefix(createdAt: Date | string | number = new Date()): string {
+function yearMonthDayPrefix(createdAt: Date | string | number = new Date()): string {
   const d = parseDate(createdAt);
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/New_York',
     year: '2-digit',
     month: '2-digit',
+    day: '2-digit',
   }).formatToParts(d);
   const yy = parts.find(p => p.type === 'year')?.value ?? String(d.getFullYear()).slice(-2);
   const mm = parts.find(p => p.type === 'month')?.value ?? String(d.getMonth() + 1).padStart(2, '0');
-  return `${yy}${mm}`;
+  const dd = parts.find(p => p.type === 'day')?.value ?? String(d.getDate()).padStart(2, '0');
+  return `${yy}${mm}${dd}`;
 }
 
 function randomToken(length = RANDOM_LEN): string {
@@ -42,31 +44,36 @@ function randomToken(length = RANDOM_LEN): string {
 }
 
 /**
- * Current format: YYMM-XXXXXX (e.g. 2608-K7M4Q9 = Aug 2026).
- * Year and month come from intake / sample created date.
+ * Current format: YYMMDD-XXXXXX (e.g. 260917-K7M4Q9 = Sep 17, 2026).
+ * Year, month, and day come from intake / sample created date.
  */
 export function generateSampleCode(createdAt: Date | string | number = new Date()): string {
-  return `${yearMonthPrefix(createdAt)}-${randomToken(RANDOM_LEN)}`;
+  return `${yearMonthDayPrefix(createdAt)}-${randomToken(RANDOM_LEN)}`;
 }
 
 /** Human-readable example for placeholders / help text. */
 export function sampleCodeExample(createdAt: Date | string | number = new Date()): string {
-  return `${yearMonthPrefix(createdAt)}-K7M4Q9`;
+  return `${yearMonthDayPrefix(createdAt)}-K7M4Q9`;
 }
 
 /**
  * Accepts:
- * - current YYMM-XXXXXX (2608-K7M4Q9)
+ * - current YYMMDD-XXXXXX (260917-K7M4Q9)
+ * - prior YYMM-XXXXXX (2608-K7M4Q9)
  * - brief YY-MM-XXXXXX (26-08-K7M4Q9) from the intermediate format
  * - legacy YY-XXXXXX (26-K7M4Q9)
  */
 export function isValidSampleCode(code: string): boolean {
   const normalized = (code || '').trim().toUpperCase();
   const alpha = SAMPLE_CODE_ALPHABET;
-  const current = new RegExp(`^\\d{4}-[${alpha}]{${RANDOM_LEN}}$`);
+  const withDay = new RegExp(`^\\d{6}-[${alpha}]{${RANDOM_LEN}}$`);
+  const monthOnly = new RegExp(`^\\d{4}-[${alpha}]{${RANDOM_LEN}}$`);
   const dashedYm = new RegExp(`^\\d{2}-\\d{2}-[${alpha}]{${RANDOM_LEN}}$`);
   const legacy = new RegExp(`^\\d{2}-[${alpha}]{${RANDOM_LEN}}$`);
-  return current.test(normalized) || dashedYm.test(normalized) || legacy.test(normalized);
+  return withDay.test(normalized)
+    || monthOnly.test(normalized)
+    || dashedYm.test(normalized)
+    || legacy.test(normalized);
 }
 
 async function codeIsTaken(code: string): Promise<boolean> {
@@ -96,5 +103,5 @@ export async function allocateUniqueSampleCode(
   throw new Error('Could not allocate a unique sample code. Try again.');
 }
 
-/** Alias — LIMS IDs use the same YYMM-XXXXXX system as COA sample codes. */
+/** Alias — LIMS IDs use the same YYMMDD-XXXXXX system as COA sample codes. */
 export const allocateUniqueAccessionNumber = allocateUniqueSampleCode;

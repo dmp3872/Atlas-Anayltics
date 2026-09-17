@@ -1163,7 +1163,7 @@ export default function Lab() {
       );
       const avgPurityNum = parsePurityPercent(assayAverages.avg_purity);
       const storedPurity = avgPurityNum ?? purityNum;
-      // Chemist-assigned LIMS ID wins; fall back to sample LIMS ID or allocate YYMM-XXXXXX.
+      // Chemist-assigned LIMS ID wins; fall back to sample LIMS ID or allocate YYMMDD-XXXXXX.
       const sampleCreatedAt =
         (intakeSample && 'created_at' in intakeSample && typeof intakeSample.created_at === 'string'
           ? intakeSample.created_at
@@ -1182,7 +1182,7 @@ export default function Lab() {
       if (typedAccession && !isValidSampleCode(typedAccession)) {
         setMsg({
           type: 'error',
-          text: 'LIMS ID must look like YYMM-XXXXXX (e.g. 2608-K7M4Q9). Use Generate or leave blank to auto-assign.',
+          text: 'LIMS ID must look like YYMMDD-XXXXXX (e.g. 260917-K7M4Q9). Use Generate or leave blank to auto-assign.',
         });
         setSaving(false);
         return;
@@ -1867,7 +1867,7 @@ export default function Lab() {
                       className="input-field font-mono flex-1"
                       value={form.accessionNumber}
                       onChange={e => update({ accessionNumber: e.target.value.toUpperCase() })}
-                      placeholder="YYMM-XXXXXX"
+                      placeholder="YYMMDD-XXXXXX"
                       autoComplete="off"
                     />
                     <button
