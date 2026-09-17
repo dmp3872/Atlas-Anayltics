@@ -71,6 +71,7 @@ import { fetchOrderActionItems, openActionCount } from '../lib/orderActions';
 import { LABEL_CLAIM_UNITS, SAMPLE_MATRICES, wizardSampleFromOrderSample, type WizardSample } from '../lib/orderCatalog';
 import { assayResultsFromPanels, assayChipStatusesFromPanels } from '../lib/coaDisplayPanels';
 import { parseOrderNotes } from '../lib/orderMeta';
+import { orderedAssayIds } from '../lib/orderProjection';
 const MAX_COA_IMAGE_BYTES = 1024 * 1024;
 
 type Message = { type: 'success' | 'error'; text: string; slug?: string } | null;
@@ -643,6 +644,62 @@ export default function Lab() {
   const linkedMeta = linkedSample ? parseSampleMetadata(linkedSample.metadata) : null;
   const linkedOrder = form.orderId ? orders.find(o => o.id === form.orderId) : null;
   const linkedClient = form.clientId ? clients.find(c => c.id === form.clientId) : undefined;
+  /** Assays on the customer's order — always included when issuing the COA. */
+  const orderedAssayIdSet = useMemo(() => {
+    if (!linkedSample) return new Set<string>();
+    return new Set(
+      orderedAssayIds({
+        metadata: linkedSample.metadata,
+        test_mode: typeof linkedMeta?.test_mode === 'string' ? linkedMeta.test_mode : undefined,
+      }),
+    );
+  }, [linkedSample, linkedMeta?.test_mode]);
+  const orderedLocked = useMemo(() => ({
+    includeSterility:
+      orderedAssayIdSet.has('sterility_culture') || orderedAssayIdSet.has('sterility_pcr'),
+    includeEndotoxin: orderedAssayIdSet.has('endotoxin_usp85'),
+    includeHeavyMetals: orderedAssayIdSet.has('heavy_metals_icpms'),
+    includeFentanyl: orderedAssayIdSet.has('fentanyl_detection'),
+    includePh: orderedAssayIdSet.has('ph'),
+    includeBenzylPq: orderedAssayIdSet.has('benzyl_alcohol_pq'),
+    includeMolecularWeight: false,
+  }), [orderedAssayIdSet]);
+
+  // Keep ordered assays checked so result-entry fields stay available while issuing.
+  useEffect(() => {
+    if (
+      !orderedLocked.includeSterility
+      && !orderedLocked.includeEndotoxin
+      && !orderedLocked.includeHeavyMetals
+      && !orderedLocked.includeFentanyl
+      && !orderedLocked.includePh
+      && !orderedLocked.includeBenzylPq
+    ) {
+      return;
+    }
+    setLabResults(prev => {
+      const next = {
+        ...prev,
+        includeSterility: prev.includeSterility || orderedLocked.includeSterility,
+        includeEndotoxin: prev.includeEndotoxin || orderedLocked.includeEndotoxin,
+        includeHeavyMetals: prev.includeHeavyMetals || orderedLocked.includeHeavyMetals,
+        includeFentanyl: prev.includeFentanyl || orderedLocked.includeFentanyl,
+        includePh: prev.includePh || orderedLocked.includePh,
+        includeBenzylPq: prev.includeBenzylPq || orderedLocked.includeBenzylPq,
+      };
+      if (
+        next.includeSterility === prev.includeSterility
+        && next.includeEndotoxin === prev.includeEndotoxin
+        && next.includeHeavyMetals === prev.includeHeavyMetals
+        && next.includeFentanyl === prev.includeFentanyl
+        && next.includePh === prev.includePh
+        && next.includeBenzylPq === prev.includeBenzylPq
+      ) {
+        return prev;
+      }
+      return next;
+    });
+  }, [orderedLocked]);
 
   const issuePreviewSample = useMemo(() => {
     return wizardSampleFromOrderSample(
@@ -1067,25 +1124,28 @@ export default function Lab() {
       const intakeForProjection = form.receivedDate.trim()
         || isoToLocalDateInput(sampleIntakeAt(linkedSample))
         || localDateInputValue();
-      // Chemist Include-on-COA toggles win. BAC matrix still defaults benzyl/pH on when
-      // the chemist has not turned them off (seeded at matrix select / sample load).
+      // Ordered assays always land on the COA. Chemists may add optional sections
+      // (pH, benzyl, MW) but cannot omit assays present on the order.
       const resultsForPanels: LabCoaResults = {
         ...labResults,
-        includeSterility: labResults.includeSterility,
-        includeEndotoxin: labResults.includeEndotoxin,
-        includeHeavyMetals: labResults.includeHeavyMetals,
-        includeFentanyl: labResults.includeFentanyl,
-        includeBenzylPq: labResults.includeBenzylPq,
-        includePh: labResults.includePh,
+        includeSterility: labResults.includeSterility || !!orderedIncludes?.includeSterility,
+        includeEndotoxin: labResults.includeEndotoxin || !!orderedIncludes?.includeEndotoxin,
+        includeHeavyMetals: labResults.includeHeavyMetals || !!orderedIncludes?.includeHeavyMetals,
+        includeFentanyl: labResults.includeFentanyl || !!orderedIncludes?.includeFentanyl,
+        includeBenzylPq: labResults.includeBenzylPq || !!orderedIncludes?.includeBenzylPq,
+        includePh: labResults.includePh || !!orderedIncludes?.includePh,
         sterilityMethod:
-          labResults.includeSterility
+          (labResults.includeSterility || orderedIncludes?.includeSterility)
             ? (labResults.sterilityMethod === 'pcr' && orderedIncludes?.sterilityMethod === 'culture_14_day'
               ? 'culture_14_day'
               : labResults.sterilityMethod)
             : labResults.sterilityMethod,
         sterilityProjectedCompletion:
-          labResults.includeSterility
-          && labResults.sterilityMethod === 'culture_14_day'
+          (labResults.includeSterility || orderedIncludes?.includeSterility)
+          && (
+            labResults.sterilityMethod === 'culture_14_day'
+            || orderedIncludes?.sterilityMethod === 'culture_14_day'
+          )
           && labResults.sterilityPass === null
             ? (labResults.sterilityProjectedCompletion.trim()
               || defaultCultureProjectedCompletion(intakeForProjection))
@@ -1268,6 +1328,7 @@ export default function Lab() {
             include_heavy_metals: !!resultsForPanels.includeHeavyMetals,
             include_sterility: !!resultsForPanels.includeSterility,
             include_fentanyl: !!resultsForPanels.includeFentanyl,
+            ordered_assay_ids: Array.from(orderedAssayIdSet),
             include_ph: !!resultsForPanels.includePh,
             ph_result: resultsForPanels.includePh ? formatPhResult(resultsForPanels.phResult) : '',
             include_benzyl_pq: !!resultsForPanels.includeBenzylPq,
@@ -2027,7 +2088,7 @@ export default function Lab() {
                     <div>
                       <p className="text-sm font-semibold text-black">Include on COA</p>
                       <p className="text-xs text-neutral-500 mt-0.5">
-                        Toggle optional sections. Ordered assays start checked — uncheck to omit from the certificate.
+                        Tests on the order are always included. Optional sections can be added by the chemist.
                       </p>
                     </div>
                     <div className="flex flex-wrap gap-x-4 gap-y-2">
@@ -2039,20 +2100,27 @@ export default function Lab() {
                         ['includeBenzylPq', 'Benzyl Alcohol'],
                         ['includeFentanyl', 'Fentanyl'],
                         ['includeMolecularWeight', 'Molecular Weight'],
-                      ] as const).map(([key, label]) => (
-                        <label
-                          key={key}
-                          className="inline-flex items-center gap-1.5 text-xs text-neutral-700 cursor-pointer"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={!!labResults[key]}
-                            onChange={e => updateResults({ [key]: e.target.checked })}
-                            className="rounded border-atlas-border"
-                          />
-                          {label}
-                        </label>
-                      ))}
+                      ] as const).map(([key, label]) => {
+                        const locked = orderedLocked[key];
+                        const checked = !!labResults[key] || locked;
+                        return (
+                          <label
+                            key={key}
+                            className={`inline-flex items-center gap-1.5 text-xs text-neutral-700 ${
+                              locked ? 'opacity-90' : 'cursor-pointer'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              disabled={locked}
+                              onChange={e => updateResults({ [key]: e.target.checked })}
+                              className="rounded border-atlas-border disabled:opacity-70"
+                            />
+                            {label}{locked ? ' (ordered)' : ''}
+                          </label>
+                        );
+                      })}
                     </div>
                   </div>
                   {bacWaterMode ? (
