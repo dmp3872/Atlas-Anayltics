@@ -83,10 +83,13 @@ function sampleFromCoa(coa: COA): WizardSample {
     || categoryStored === 'single_peptide'
     || categoryStored === 'peptide_blend'
     || categoryStored === 'bac_water'
+    || categoryStored === 'pens'
       ? categoryStored
-      : isOtherResearchMaterial(matrixStored)
-        ? 'other'
-        : undefined;
+      : matrixStored === 'Pens'
+        ? 'pens'
+        : isOtherResearchMaterial(matrixStored)
+          ? 'other'
+          : undefined;
 
   return createEmptySample({
     sample_name: coa.sample_name || coa.display_name,

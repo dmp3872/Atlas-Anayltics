@@ -71,7 +71,7 @@ export default function StepSelectTesting({
         <legend className="text-[11px] font-bold uppercase tracking-[0.14em] text-brand-800 mb-2.5">
           Choose analytical test
         </legend>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
           {SAMPLE_CATEGORIES.map(opt => {
             const selected = category === opt.id;
             return (
