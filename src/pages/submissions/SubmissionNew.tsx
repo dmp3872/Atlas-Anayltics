@@ -20,6 +20,7 @@ import {
   saveLocalSubmissionDraft,
 } from '../../lib/submissionDraft';
 import { ATLAS_SAFETY_PRO_INCLUDES } from '../../lib/submissionUtils';
+import { atlasProPriceForClient } from '../../lib/clientPricing';
 import { formatCurrency } from '../../lib/utils';
 
 function uid() {
@@ -254,8 +255,17 @@ export default function SubmissionNew() {
   }
 
   const { packages, individual } = splitTestPanels(panels);
-  const safetyPro = packages.find((p) => p.name.includes('Safety Pro'));
-
+  const clientAtlasProPrice = atlasProPriceForClient({
+    email: user?.email,
+    companyName: profile?.company_name || companyName,
+  });
+  const safetyProRaw = packages.find((p) => p.name.includes('Safety Pro'));
+  const safetyPro = safetyProRaw
+    ? { ...safetyProRaw, price_per_sample: clientAtlasProPrice }
+    : undefined;
+  const pricedPackages = packages.map(p =>
+    /safety pro|atlas pro/i.test(p.name) ? { ...p, price_per_sample: clientAtlasProPrice } : p,
+  );
   if (draftLoading) {
     return (
       <DashboardLayout>
@@ -396,9 +406,9 @@ export default function SubmissionNew() {
                       required
                     >
                       <option value="">Select panel…</option>
-                      {packages.length > 0 && (
+                      {pricedPackages.length > 0 && (
                         <optgroup label="Packages">
-                          {packages.map((p) => (
+                          {pricedPackages.map((p) => (
                             <option key={p.id} value={p.id}>
                               {p.name} — {formatCurrency(p.price_per_sample)} ({p.turnaround_days}d)
                             </option>

@@ -14,6 +14,8 @@ import {
   CONFORMITY_VIAL_PRICE,
 } from '../lib/utils';
 import { ATLAS_SAFETY_PRO_INCLUDES, ATLAS_SAFETY_PRO_PRICE } from '../lib/submissionUtils';
+import { useAuth } from '../context/AuthContext';
+import { atlasProPriceForClient } from '../lib/clientPricing';
 
 interface BlendSample {
   id: number;
@@ -21,6 +23,7 @@ interface BlendSample {
 }
 
 export default function Pricing() {
+  const { user, profile } = useAuth();
   const [addOnPanels, setAddOnPanels] = useState<TestPanel[]>([]);
   const [packagePanels, setPackagePanels] = useState<TestPanel[]>([]);
   const [selectedAddOns, setSelectedAddOns] = useState<string[]>([]);
@@ -31,16 +34,27 @@ export default function Pricing() {
   const [firstOrder, setFirstOrder] = useState(false);
   const [loading, setLoading] = useState(true);
 
+  const clientAtlasProPrice = atlasProPriceForClient({
+    email: user?.email,
+    companyName: profile?.company_name,
+  });
+
   useEffect(() => {
     fetchTestPanels()
       .then((panels) => {
         const { packages, individual } = splitTestPanels(panels);
-        setPackagePanels(packages);
+        setPackagePanels(
+          packages.map(p =>
+            /safety pro|atlas pro/i.test(p.name)
+              ? { ...p, price_per_sample: clientAtlasProPrice }
+              : p,
+          ),
+        );
         setAddOnPanels(individual);
       })
       .catch(console.error)
       .finally(() => setLoading(false));
-  }, []);
+  }, [clientAtlasProPrice]);
 
   function toggleAddOn(id: string) {
     setSelectedAddOns(prev =>
@@ -125,9 +139,14 @@ export default function Pricing() {
                   </div>
                   <div className="lg:text-right flex-shrink-0">
                     <p className="text-3xl font-bold text-brand-700">
-                      {formatCurrency(pkg.price_per_sample ?? ATLAS_SAFETY_PRO_PRICE)}
+                      {formatCurrency(pkg.price_per_sample ?? clientAtlasProPrice)}
                     </p>
                     <p className="text-sm text-neutral-500 mt-1">per sample · 3–5 business days</p>
+                    {clientAtlasProPrice < ATLAS_SAFETY_PRO_PRICE && (
+                      <p className="text-xs font-semibold text-emerald-700 mt-1">
+                        Your account rate
+                      </p>
+                    )}
                     <Link
                       to="/dashboard/submissions/new"
                       className="inline-flex items-center gap-2 mt-4 btn-primary text-sm"
