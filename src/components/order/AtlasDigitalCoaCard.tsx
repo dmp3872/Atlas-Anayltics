@@ -600,10 +600,10 @@ export default function AtlasDigitalCoaCard({
   const showSterility = showSterilityCulture || showSterilityPcr;
   const showHeavyMetals = methodKeys.has('heavy_metals_icpms');
   const fentanyl = sample ? sampleIncludesFentanyl(sample) : false;
-  const yymm = `${String(new Date().getFullYear()).slice(-2)}${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+  const yymmdd = `${String(new Date().getFullYear()).slice(-2)}${String(new Date().getMonth() + 1).padStart(2, '0')}${String(new Date().getDate()).padStart(2, '0')}`;
   const signature = previewSignature([name, lot, client, sample?.primary_test_id ?? '', stage].join('|'));
   const accessionDisplay = accession?.trim() || null;
-  const accessionGhost = `${yymm}-\u25CF\u25CF\u25CF\u25CF\u25CF\u25CF`;
+  const accessionGhost = `${yymmdd}-\u25CF\u25CF\u25CF\u25CF\u25CF\u25CF`;
   const chipSt = chipStatus(stage, trackingStage, overallResult);
   const showConformityChart = conformityOn && chartVials > 0;
   const identityChipStatus = resolveChip(
