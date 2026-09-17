@@ -499,6 +499,8 @@ export default function CoaWorkflowBoard({
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   /** Lane open/closed: undefined = default, true = chemist opened, false = chemist closed. */
   const [columnOpen, setColumnOpen] = useState<Partial<Record<CoaWorkflowStage, boolean>>>({});
+  /** Published lane: show all certificates, only deferred-assay pending, or fully complete. */
+  const [publishedAssayFilter, setPublishedAssayFilter] = useState<'all' | 'pending' | 'complete'>('all');
 
   function updateBoardScrollHints() {
     const el = boardScrollRef.current;
@@ -633,11 +635,32 @@ export default function CoaWorkflowBoard({
     return [...pendingSamples].sort((a, b) => pendingRecencyMs(b) - pendingRecencyMs(a));
   }, [pendingSamples]);
 
+  const publishedPendingCount = useMemo(
+    () => grouped.published.filter(c => canUpdatePendingPublishedCoa(c)).length,
+    [grouped],
+  );
+
+  const publishedCompleteCount = useMemo(
+    () => grouped.published.length - publishedPendingCount,
+    [grouped.published.length, publishedPendingCount],
+  );
+
+  const publishedCoasForBoard = useMemo(() => {
+    if (publishedAssayFilter === 'pending') {
+      return grouped.published.filter(c => canUpdatePendingPublishedCoa(c));
+    }
+    if (publishedAssayFilter === 'complete') {
+      return grouped.published.filter(c => !canUpdatePendingPublishedCoa(c));
+    }
+    return grouped.published;
+  }, [grouped.published, publishedAssayFilter]);
+
   const bundlesByStage = useMemo(() => {
     const out = {} as Record<CoaWorkflowStage, OrderBundle[]>;
     for (const stage of COA_WORKFLOW_BOARD_COLUMNS) {
       const pending = stage === 'testing_in_progress' ? sortedPending : [];
-      const bundles = buildOrderBundles(grouped[stage], pending, orders);
+      const stageCoas = stage === 'published' ? publishedCoasForBoard : grouped[stage];
+      const bundles = buildOrderBundles(stageCoas, pending, orders);
       for (const bundle of bundles) {
         bundle.coas.sort((a, b) => coaRecencyMs(b) - coaRecencyMs(a));
         bundle.pending.sort((a, b) => pendingRecencyMs(b) - pendingRecencyMs(a));
@@ -652,7 +675,7 @@ export default function CoaWorkflowBoard({
       out[stage] = bundles;
     }
     return out;
-  }, [grouped, sortedPending, orders]);
+  }, [grouped, sortedPending, orders, publishedCoasForBoard]);
 
   const columnCounts = useMemo(() => {
     const counts = {} as Record<CoaWorkflowStage, number>;
@@ -662,11 +685,6 @@ export default function CoaWorkflowBoard({
     }
     return counts;
   }, [bundlesByStage]);
-
-  const publishedPendingCount = useMemo(
-    () => grouped.published.filter(c => canUpdatePendingPublishedCoa(c)).length,
-    [grouped],
-  );
 
   function isColumnCollapsed(stage: CoaWorkflowStage): boolean {
     if (columnOpen[stage] === true) return false;
@@ -776,6 +794,7 @@ export default function CoaWorkflowBoard({
         action: 'Update pending',
         stage: 'published',
         run: () => {
+          setPublishedAssayFilter('pending');
           revealStage('published');
           setPrepCoa(coa);
         },
@@ -1124,6 +1143,40 @@ export default function CoaWorkflowBoard({
                 </div>
               </div>
 
+              {stage === 'published' && (
+                <div className={`px-2 py-1.5 border-b flex flex-wrap gap-1 shrink-0 ${styles.header}`}>
+                  {([
+                    { id: 'all' as const, label: 'All', count: grouped.published.length },
+                    { id: 'pending' as const, label: 'Pending', count: publishedPendingCount },
+                    { id: 'complete' as const, label: 'Complete', count: publishedCompleteCount },
+                  ]).map(chip => (
+                    <button
+                      key={chip.id}
+                      type="button"
+                      onClick={() => {
+                        setPublishedAssayFilter(chip.id);
+                        if (chip.id === 'pending') revealStage('published');
+                      }}
+                      className={`px-2 py-0.5 text-[10px] font-semibold rounded-full border ${
+                        publishedAssayFilter === chip.id
+                          ? 'bg-black text-white border-black'
+                          : 'border-atlas-border/80 bg-white/70 text-neutral-600 hover:border-neutral-400'
+                      }`}
+                      title={
+                        chip.id === 'pending'
+                          ? 'Published certificates with deferred assays still pending'
+                          : chip.id === 'complete'
+                            ? 'Published certificates with all assays resolved'
+                            : 'All published certificates'
+                      }
+                    >
+                      {chip.label}
+                      <span className="ml-1 opacity-80">{chip.count}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
               <div
                 ref={el => {
                   columnScrollRefs.current[stage] = el;
@@ -1135,7 +1188,13 @@ export default function CoaWorkflowBoard({
                   <div className={`rounded-lg border-2 border-dashed p-6 text-center text-xs text-neutral-400 ${
                     isOver ? 'border-current bg-white/60' : 'border-neutral-200'
                   }`}>
-                    {isOver ? 'Drop here' : (isTestingCol ? 'No samples in testing' : 'No cards')}
+                    {isOver
+                      ? 'Drop here'
+                      : (isTestingCol
+                        ? 'No samples in testing'
+                        : (stage === 'published' && publishedAssayFilter !== 'all'
+                          ? `No ${publishedAssayFilter} published COAs`
+                          : 'No cards'))}
                   </div>
                 ) : (
                   bundles.map(bundle => {
