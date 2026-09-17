@@ -29,6 +29,7 @@ import AdminClientsPanel from "../components/admin/AdminClientsPanel";
 import OpsDashboard from "../components/admin/OpsDashboard";
 import LabManagerDashboard from "../components/admin/LabManagerDashboard";
 import AdminLiveChatInbox from "../components/admin/AdminLiveChatInbox";
+import AdminPendingTestingReport from "../components/admin/AdminPendingTestingReport";
 import { COA_LIST_COLUMNS } from "../lib/coaSelect";
 
 const SECTION_META: Record<AdminSection, { title: string; subtitle: string }> =
@@ -55,6 +56,11 @@ const SECTION_META: Record<AdminSection, { title: string; subtitle: string }> =
     operations: {
       title: "Lab Analytics",
       subtitle: "Intake trends, test volume, and turnaround.",
+    },
+    pending_testing: {
+      title: "Pending testing report",
+      subtitle:
+        "Pull unpublished work anytime — sterility, endotoxin, and assay gaps.",
     },
     orders: {
       title: "Orders",
@@ -533,6 +539,17 @@ export default function Admin() {
                 samples={samples}
                 orders={normalizedOrders}
                 coas={coas}
+              />
+            )}
+
+            {section === "pending_testing" && (
+              <AdminPendingTestingReport
+                samples={samples}
+                orders={normalizedOrders}
+                coas={coas}
+                users={users}
+                onRefresh={loadAll}
+                refreshing={loading}
               />
             )}
 
