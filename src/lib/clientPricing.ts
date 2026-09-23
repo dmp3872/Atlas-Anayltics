@@ -3,13 +3,15 @@ import { ATLAS_SAFETY_PRO_PRICE } from './submissionUtils';
 
 /** Negotiated Atlas Safety Pro (Atlas Pro) package prices by login email. */
 const ATLAS_PRO_PRICE_BY_EMAIL: Record<string, number> = {
-  'client@atlaslabs.test': 600,
-  'zackaryjonsmith@gmail.com': 600,
+  'client@atlaslabs.test': 500, // Valor Peptides
+  'zackaryjonsmith@gmail.com': 500, // UMS Rx
 };
 
 /** Fallback match when email is unavailable but company is known. */
 const ATLAS_PRO_PRICE_BY_COMPANY: Record<string, number> = {
-  'ums rx llc': 600,
+  'ums rx': 500,
+  'ums rx llc': 500,
+  'valor peptides': 500,
 };
 
 export function atlasProPriceForClient(opts?: {
