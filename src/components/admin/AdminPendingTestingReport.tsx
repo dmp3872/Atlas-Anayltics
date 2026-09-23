@@ -8,11 +8,10 @@ import {
   buildPendingTestingReport,
   filterPendingTestingRows,
   mergeCoaResultSummaries,
+  pendingTestingCompanies,
   type AssayStatus,
   type PendingTestingFilter,
 } from '../../lib/pendingTestingReport';
-import { coaWorkflowStage } from '../../lib/coaWorkflow';
-import { coaHasPendingAssays } from '../../lib/coaDisplayPanels';
 
 interface Props {
   samples: OrderSample[];
@@ -41,11 +40,18 @@ function StatusPill({ status, detail }: { status: AssayStatus; detail: string })
   );
 }
 
-function VisibilityPill({ published }: { published: boolean }) {
-  if (published) {
+function VisibilityPill({ published, completed }: { published: boolean; completed: boolean }) {
+  if (completed) {
     return (
       <span className="inline-block text-[11px] font-bold px-2 py-0.5 rounded border bg-emerald-50 text-emerald-800 border-emerald-200">
-        Published
+        {published ? 'Completed' : 'Complete (unpublished)'}
+      </span>
+    );
+  }
+  if (published) {
+    return (
+      <span className="inline-block text-[11px] font-bold px-2 py-0.5 rounded border bg-sky-50 text-sky-800 border-sky-200">
+        Published · pending
       </span>
     );
   }
@@ -65,6 +71,7 @@ export default function AdminPendingTestingReport({
   refreshing,
 }: Props) {
   const [filter, setFilter] = useState<PendingTestingFilter>('all');
+  const [company, setCompany] = useState('');
   const [summaryCoas, setSummaryCoas] = useState<COA[]>(coas);
   const [loadingSummary, setLoadingSummary] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
@@ -76,13 +83,8 @@ export default function AdminPendingTestingReport({
   useEffect(() => {
     let cancelled = false;
     async function loadSummaries() {
-      // Load summaries for unpublished COAs and any published with deferred assays.
-      const summaryIds = coas
-        .filter(c =>
-          (coaWorkflowStage(c) !== 'published' && !c.is_public && !c.published_at)
-          || coaHasPendingAssays(c),
-        )
-        .map(c => c.id);
+      // Load assay summaries for every COA so completed certificates show real status.
+      const summaryIds = coas.map(c => c.id);
       if (summaryIds.length === 0) {
         setSummaryCoas(coas);
         return;
@@ -127,14 +129,20 @@ export default function AdminPendingTestingReport({
     [samples, summaryCoas, orders, users],
   );
 
+  const companies = useMemo(
+    () => pendingTestingCompanies(report.rows),
+    [report.rows],
+  );
+
   const visible = useMemo(
-    () => filterPendingTestingRows(report.rows, filter),
-    [report.rows, filter],
+    () => filterPendingTestingRows(report.rows, filter, company),
+    [report.rows, filter, company],
   );
 
   const chips: { id: PendingTestingFilter; label: string; count?: number }[] = [
     { id: 'all', label: 'All', count: report.rows.length },
-    { id: 'published_pending', label: 'Published', count: report.counts.publishedPending },
+    { id: 'completed', label: 'Completed', count: report.counts.completed },
+    { id: 'published_pending', label: 'Published pending', count: report.counts.publishedPending },
     { id: 'unpublished', label: 'Unpublished', count: report.counts.unpublishedCoas },
     { id: 'ster_pending', label: 'Sterility pending', count: report.counts.ster_pending },
     { id: 'endo_pending', label: 'Endotoxin pending', count: report.counts.endo_pending },
@@ -151,7 +159,7 @@ export default function AdminPendingTestingReport({
         'Ordered tests', 'Other pending', 'Other complete',
       ],
       visible.map(r => [
-        r.coa, r.published ? 'published' : 'unpublished', r.stage,
+        r.coa, r.published ? (r.hasPending ? 'published_pending' : 'completed') : 'unpublished', r.stage,
         r.sample, r.lot, r.company, r.client, r.order, r.status,
         r.sterility, r.sterilityDetail, r.endotoxin, r.endotoxinDetail,
         r.tests, r.otherPending.join('; '), r.otherComplete.join('; '),
@@ -167,8 +175,8 @@ export default function AdminPendingTestingReport({
         <div>
           <h2 className="text-lg font-bold text-black">Pending testing report</h2>
           <p className="text-sm text-neutral-500 mt-0.5">
-            One row per COA number. Published certificates with deferred assays are included —
-            use Published / Unpublished to split the list.
+            One row per COA number — including completed certificates. Filter by status chips
+            or company.
             {loadingSummary ? ' Loading assay summaries…' : ''}
           </p>
           {summaryError && (
@@ -204,9 +212,10 @@ export default function AdminPendingTestingReport({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         {[
           { label: 'COAs in report', value: c.samples },
+          { label: 'Completed', value: c.completed },
           { label: 'Published pending', value: c.publishedPending },
           { label: 'Unpublished', value: c.unpublishedCoas },
           { label: 'Either assay pending', value: c.either_pending },
@@ -225,6 +234,32 @@ export default function AdminPendingTestingReport({
         <span className="block text-xs text-neutral-500 mt-1">
           Generated {new Date(report.generatedAt).toLocaleString()} · each COA ID is listed separately
         </span>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 print:hidden">
+        <label className="text-xs font-medium text-neutral-600" htmlFor="pending-company-filter">
+          Company
+        </label>
+        <select
+          id="pending-company-filter"
+          value={company}
+          onChange={e => setCompany(e.target.value)}
+          className="input-field text-sm py-1.5 min-w-[200px] max-w-full"
+        >
+          <option value="">All companies · {companies.length}</option>
+          {companies.map(name => (
+            <option key={name} value={name}>{name}</option>
+          ))}
+        </select>
+        {company && (
+          <button
+            type="button"
+            className="text-xs text-neutral-500 hover:text-black underline"
+            onClick={() => setCompany('')}
+          >
+            Clear
+          </button>
+        )}
       </div>
 
       <div className="flex flex-wrap gap-1.5 print:hidden">
@@ -249,6 +284,7 @@ export default function AdminPendingTestingReport({
         <div className="px-4 py-2.5 border-b border-atlas-border flex items-center justify-between gap-2">
           <p className="text-sm font-bold text-black">
             Showing {visible.length} of {report.rows.length}
+            {company ? ` · ${company}` : ''}
           </p>
         </div>
         <div className="overflow-x-auto max-h-[70vh] overflow-y-auto">
@@ -292,7 +328,7 @@ export default function AdminPendingTestingReport({
                       <div className="text-[11px] text-neutral-500 mt-0.5">{r.stage}</div>
                     </td>
                     <td className="px-3 py-2.5">
-                      <VisibilityPill published={r.published} />
+                      <VisibilityPill published={r.published} completed={!r.hasPending && r.coa !== '—'} />
                     </td>
                     <td className="px-3 py-2.5">
                       <div className="font-semibold text-black">{r.sample}</div>

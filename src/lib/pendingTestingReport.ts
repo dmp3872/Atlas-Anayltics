@@ -13,7 +13,8 @@ export type PendingTestingFilter =
   | 'both_pending'
   | 'both_complete'
   | 'published_pending'
-  | 'unpublished';
+  | 'unpublished'
+  | 'completed';
 
 export interface PendingTestingRow {
   sampleId: string;
@@ -44,6 +45,7 @@ export interface PendingTestingReport {
     samples: number;
     unpublishedCoas: number;
     publishedPending: number;
+    completed: number;
     ster_pending: number;
     ster_complete: number;
     ster_na: number;
@@ -265,9 +267,8 @@ function otherPanels(coaList: COA[]): { pending: string[]; complete: string[] } 
 
 /**
  * Build the admin pending-testing report from loaded lab data.
- * One row per certificate (COA number) that is unpublished or still has
- * pending assays — including published COAs with deferred culture/LAL/etc.
- * Incomplete samples with no COA yet are also included.
+ * One row per certificate (COA number) — including finished/published COAs —
+ * plus incomplete samples that do not have a COA yet.
  */
 export function buildPendingTestingReport(input: {
   samples: OrderSample[];
@@ -296,9 +297,6 @@ export function buildPendingTestingReport(input: {
       || endo.status === 'pending'
       || others.pending.length > 0
       || coaHasPendingAssays(c);
-
-    // Fully finished published certificates stay off this report.
-    if (published && !hasPending) return;
 
     const order = orderBy.get(s?.order_id || c.order_id || '') || null;
     const profile = profileBy.get(s?.user_id || c.user_id || '') || null;
@@ -383,6 +381,7 @@ export function buildPendingTestingReport(input: {
     samples: rows.length,
     unpublishedCoas: rows.filter(r => !r.published).length,
     publishedPending: rows.filter(r => r.published && r.hasPending).length,
+    completed: rows.filter(r => r.coa !== '—' && !r.hasPending).length,
     ster_pending: 0,
     ster_complete: 0,
     ster_na: 0,
@@ -416,21 +415,37 @@ export function buildPendingTestingReport(input: {
 export function filterPendingTestingRows(
   rows: PendingTestingRow[],
   filter: PendingTestingFilter,
+  company?: string | null,
 ): PendingTestingRow[] {
-  if (filter === 'all') return rows;
-  if (filter === 'unpublished') return rows.filter(r => !r.published);
-  if (filter === 'published_pending') {
-    return rows.filter(r => r.published && r.hasPending);
+  let next = rows;
+  if (filter === 'unpublished') next = next.filter(r => !r.published);
+  else if (filter === 'published_pending') {
+    next = next.filter(r => r.published && r.hasPending);
+  } else if (filter === 'completed') {
+    next = next.filter(r => r.coa !== '—' && !r.hasPending);
+  } else if (filter === 'ster_pending') next = next.filter(r => r.sterility === 'pending');
+  else if (filter === 'endo_pending') next = next.filter(r => r.endotoxin === 'pending');
+  else if (filter === 'both_pending') {
+    next = next.filter(r => r.sterility === 'pending' && r.endotoxin === 'pending');
+  } else if (filter === 'both_complete') {
+    next = next.filter(r => r.sterility === 'complete' && r.endotoxin === 'complete');
   }
-  if (filter === 'ster_pending') return rows.filter(r => r.sterility === 'pending');
-  if (filter === 'endo_pending') return rows.filter(r => r.endotoxin === 'pending');
-  if (filter === 'both_pending') {
-    return rows.filter(r => r.sterility === 'pending' && r.endotoxin === 'pending');
+
+  const companyKey = (company || '').trim().toLowerCase();
+  if (companyKey) {
+    next = next.filter(r => r.company.trim().toLowerCase() === companyKey);
   }
-  if (filter === 'both_complete') {
-    return rows.filter(r => r.sterility === 'complete' && r.endotoxin === 'complete');
+  return next;
+}
+
+/** Unique company names from report rows, sorted A–Z (skip blank placeholders). */
+export function pendingTestingCompanies(rows: PendingTestingRow[]): string[] {
+  const set = new Set<string>();
+  for (const r of rows) {
+    const name = r.company.trim();
+    if (name && name !== '—') set.add(name);
   }
-  return rows;
+  return [...set].sort((a, b) => a.localeCompare(b));
 }
 
 /** Merge lean result_summary onto COA list rows (avoids loading image blobs into Admin). */
