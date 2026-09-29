@@ -2443,8 +2443,8 @@ export default function Lab() {
                             className="input-field"
                           >
                             <option value="pending">Pending</option>
-                            <option value="pass">PASS</option>
-                            <option value="fail">FAIL</option>
+                            <option value="pass">Conforms</option>
+                            <option value="fail">Does not conform</option>
                           </select>
                         </div>
                       </>

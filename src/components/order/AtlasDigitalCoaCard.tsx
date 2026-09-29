@@ -758,7 +758,19 @@ export default function AtlasDigitalCoaCard({
         {(showEndotoxin || showSterility || showHeavyMetals || fentanyl) && (
           <div className="flex flex-wrap gap-1.5">
             {showHeavyMetals && <PendingChip label="Heavy metals" status={heavyMetalsChipStatus} />}
-            {showEndotoxin && <PendingChip label="Endotoxin" status={endotoxinChipStatus} />}
+            {showEndotoxin && (
+              <PendingChip
+                label="Endotoxin"
+                status={endotoxinChipStatus}
+                value={
+                  endotoxinChipStatus === 'pass'
+                    ? 'Conforms'
+                    : endotoxinChipStatus === 'fail'
+                      ? 'Does not conform'
+                      : undefined
+                }
+              />
+            )}
             {showSterility && (
               <PendingChip
                 label="Sterility"

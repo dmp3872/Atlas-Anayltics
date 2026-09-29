@@ -2,7 +2,7 @@ import { COA, PanelResult } from './types';
 import { formatDate } from './utils';
 import { readCoaPdfStats } from './coaImages';
 import { ENDOTOXIN_SPEC_EU_ML, STERILITY_METHOD_LABELS, formatCoaDecimal, parseAssayMethod, withAssayMethodSpec, withSterilityMethodSpec, ASSAY_METHOD_LABELS, assayMethodFromPanels, hydrateMultiVialPanelResults, formatPurityResultWithUncertainty, formatSterilityPendingResult, applyQuantityUnit } from './labCoaForm';
-import { collapseConformityPanels } from './coaDisplayPanels';
+import { collapseConformityPanels, endotoxinConformityLabel } from './coaDisplayPanels';
 import { labelClaimFromSummary, netContentSpecificationDisplay } from './orderCatalog';
 
 export type CoaPdfFieldValues = Record<string, string>;
@@ -113,7 +113,7 @@ function resolveEndotoxin(coa: COA, panels: PanelResult[]) {
   return {
     specification: ENDOTOXIN_SPEC_EU_ML,
     result,
-    conformity: stats.endotoxin_pass ? 'PASS' : 'FAIL',
+    conformity: endotoxinConformityLabel(stats.endotoxin_pass),
     panel,
   };
 }

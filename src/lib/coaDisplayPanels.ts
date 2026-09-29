@@ -258,6 +258,17 @@ export function panelStatusLabel(pass: boolean | null): 'Pass' | 'Fail' | 'Pendi
   return 'Pending';
 }
 
+export function isEndotoxinPanelName(name: string): boolean {
+  return /endotoxin|\blal\b/i.test(name || '');
+}
+
+/** Endotoxin verdict on certificates: Conforms / Does not conform (not Pass / Fail). */
+export function endotoxinConformityLabel(pass: boolean | null): 'Conforms' | 'Does not conform' | 'Pending' {
+  if (pass === true) return 'Conforms';
+  if (pass === false) return 'Does not conform';
+  return 'Pending';
+}
+
 export function panelStatusToneClass(pass: boolean | null): string {
   if (pass === true) return 'text-atlas-success';
   if (pass === false) return 'text-red-600';
