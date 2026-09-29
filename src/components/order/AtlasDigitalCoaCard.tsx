@@ -764,9 +764,9 @@ export default function AtlasDigitalCoaCard({
                 status={endotoxinChipStatus}
                 value={
                   endotoxinChipStatus === 'pass'
-                    ? 'Conforms'
+                    ? 'CONFORMS'
                     : endotoxinChipStatus === 'fail'
-                      ? 'Does not conform'
+                      ? 'DOES NOT CONFORM'
                       : undefined
                 }
               />

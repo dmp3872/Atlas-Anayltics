@@ -676,7 +676,7 @@ export default function COADetail() {
                         {isNetContent && pass !== null ? (
                           <span className="font-bold uppercase text-xs text-atlas-success">Reported Value</span>
                         ) : (
-                          <span className={`font-bold text-xs ${isEndotoxin ? 'normal-case' : 'uppercase'} ${panelStatusToneClass(pass)}`}>
+                          <span className={`font-bold uppercase text-xs ${panelStatusToneClass(pass)}`}>
                             {status}
                           </span>
                         )}
