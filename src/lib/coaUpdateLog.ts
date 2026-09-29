@@ -119,8 +119,8 @@ function panelKey(name: string): string {
 
 function statusWord(pass: boolean | null | undefined, panelName = ''): string {
   if (/endotoxin|\blal\b/i.test(panelName)) {
-    if (pass === true) return 'Conforms';
-    if (pass === false) return 'Does not conform';
+    if (pass === true) return 'CONFORMS';
+    if (pass === false) return 'DOES NOT CONFORM';
     return 'Pending';
   }
   if (pass === true) return 'PASS';
