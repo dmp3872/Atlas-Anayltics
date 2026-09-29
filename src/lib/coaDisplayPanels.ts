@@ -262,10 +262,10 @@ export function isEndotoxinPanelName(name: string): boolean {
   return /endotoxin|\blal\b/i.test(name || '');
 }
 
-/** Endotoxin verdict on certificates: Conforms / Does not conform (not Pass / Fail). */
-export function endotoxinConformityLabel(pass: boolean | null): 'Conforms' | 'Does not conform' | 'Pending' {
-  if (pass === true) return 'Conforms';
-  if (pass === false) return 'Does not conform';
+/** Endotoxin verdict on certificates: CONFORMS / DOES NOT CONFORM (not Pass / Fail). */
+export function endotoxinConformityLabel(pass: boolean | null): 'CONFORMS' | 'DOES NOT CONFORM' | 'Pending' {
+  if (pass === true) return 'CONFORMS';
+  if (pass === false) return 'DOES NOT CONFORM';
   return 'Pending';
 }
 
