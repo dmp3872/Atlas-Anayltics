@@ -76,6 +76,9 @@ function panelPassStatus(panel: PanelResult, opts?: { metal?: boolean }): {
 } {
   const resolved = resolvePanelPass(panel);
   if (resolved === null) return { pass: null, label: 'Pending' };
+  if (/endotoxin|\blal\b/i.test(panel.panel_name)) {
+    return { pass: resolved, label: resolved ? 'Conforms' : 'Does not conform' };
+  }
   const isNetContent = /net content|peptide content/i.test(panel.panel_name)
     && !/^blend content\b/i.test(panel.panel_name);
   if (isNetContent) return { pass: true, label: 'Reported Value' };
