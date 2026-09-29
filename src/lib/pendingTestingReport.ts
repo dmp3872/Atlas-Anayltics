@@ -107,7 +107,7 @@ function assayFromPanels(
       const endotoxin = pattern === ENDO_RE || ENDO_RE.test(name);
       return {
         status: 'complete',
-        detail: endotoxin ? (pass ? 'Conforms' : 'Does not conform') : (pass ? 'Pass' : 'Fail'),
+        detail: endotoxin ? (pass ? 'CONFORMS' : 'DOES NOT CONFORM') : (pass ? 'Pass' : 'Fail'),
       };
     }
     if (isRealResult(pass)) return { status: 'complete', detail: String(pass) };
