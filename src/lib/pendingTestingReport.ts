@@ -104,7 +104,11 @@ function assayFromPanels(
       }
     }
     if (typeof pass === 'boolean') {
-      return { status: 'complete', detail: pass ? 'Pass' : 'Fail' };
+      const endotoxin = pattern === ENDO_RE || ENDO_RE.test(name);
+      return {
+        status: 'complete',
+        detail: endotoxin ? (pass ? 'Conforms' : 'Does not conform') : (pass ? 'Pass' : 'Fail'),
+      };
     }
     if (isRealResult(pass)) return { status: 'complete', detail: String(pass) };
     if (status != null && ['pass', 'fail', 'complete', 'done'].includes(String(status).trim().toLowerCase())) {

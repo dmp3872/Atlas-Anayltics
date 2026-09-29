@@ -10,7 +10,7 @@ import { formatDate } from '../lib/utils';
 import { verifyCoaIntegrity } from '../lib/coaVerify';
 import { hydrateCoaImages, prepareVialImage, readCoaPdfStats, resolveCoaHeaderLogo, resolveCoaWatermark } from '../lib/coaImages';
 import { matrixTypeFromSampleMetadata } from '../lib/coaPanels';
-import { partitionCoaPanels, panelStatusLabel, panelStatusToneClass, resolvePanelPass, formatCoaResultDisplay } from '../lib/coaDisplayPanels';
+import { partitionCoaPanels, panelStatusLabel, panelStatusToneClass, resolvePanelPass, formatCoaResultDisplay, isEndotoxinPanelName, endotoxinConformityLabel } from '../lib/coaDisplayPanels';
 import { fetchCoaByCode, fetchImagesByCode } from '../lib/publicCoa';
 import { formatCoaDecimal, parseAssayMethod, ASSAY_METHOD_LABELS, assayMethodFromPanels, hydrateMultiVialPanelResults, resolveCasNumber, applyQuantityUnit } from '../lib/labCoaForm';
 import { labelClaimFromSummary, netContentSpecificationDisplay } from '../lib/orderCatalog';
@@ -649,7 +649,8 @@ export default function COADetail() {
                   const isNetContent = (/net content|peptide content|fill\s*volume/i.test(r.panel_name)
                     && !/^blend content\b/i.test(r.panel_name));
                   const pass = resolvePanelPass(r);
-                  const status = panelStatusLabel(pass);
+                  const isEndotoxin = isEndotoxinPanelName(r.panel_name);
+                  const status = isEndotoxin ? endotoxinConformityLabel(pass) : panelStatusLabel(pass);
                   const specification = isNetContent
                     ? (netContentSpecificationDisplay(r.specification, labelClaim === '—' ? '' : labelClaim) || '—')
                     : (r.specification || '—');
@@ -675,7 +676,7 @@ export default function COADetail() {
                         {isNetContent && pass !== null ? (
                           <span className="font-bold uppercase text-xs text-atlas-success">Reported Value</span>
                         ) : (
-                          <span className={`font-bold uppercase text-xs ${panelStatusToneClass(pass)}`}>
+                          <span className={`font-bold text-xs ${isEndotoxin ? 'normal-case' : 'uppercase'} ${panelStatusToneClass(pass)}`}>
                             {status}
                           </span>
                         )}

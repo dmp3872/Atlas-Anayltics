@@ -117,7 +117,12 @@ function panelKey(name: string): string {
   return name.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
-function statusWord(pass: boolean | null | undefined): string {
+function statusWord(pass: boolean | null | undefined, panelName = ''): string {
+  if (/endotoxin|\blal\b/i.test(panelName)) {
+    if (pass === true) return 'Conforms';
+    if (pass === false) return 'Does not conform';
+    return 'Pending';
+  }
   if (pass === true) return 'PASS';
   if (pass === false) return 'FAIL';
   return 'Pending';
@@ -149,7 +154,7 @@ export function summarizeCoaContentChanges(
     const nextResult = (next.result || '').trim();
 
     if (!prev) {
-      bits.push(`${label} added (${statusWord(nextPass)})`);
+      bits.push(`${label} added (${statusWord(nextPass, next.panel_name)})`);
       continue;
     }
 
@@ -161,7 +166,7 @@ export function summarizeCoaContentChanges(
       const detail = nextPass !== null && nextResult && !/^pending\b/i.test(nextResult)
         ? ` (${compactResult(nextResult)})`
         : '';
-      bits.push(`${label}: ${statusWord(prevPass)} → ${statusWord(nextPass)}${detail}`);
+      bits.push(`${label}: ${statusWord(prevPass, next.panel_name)} → ${statusWord(nextPass, next.panel_name)}${detail}`);
       continue;
     }
 
