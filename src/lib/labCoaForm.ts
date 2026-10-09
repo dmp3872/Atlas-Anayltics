@@ -125,12 +125,19 @@ export function phPassFromResult(raw: string): boolean | null {
   return n >= PH_SPEC_MIN && n <= PH_SPEC_MAX;
 }
 
-/** BAC water — benzyl alcohol assay by HPLC. Spec: 0.9% (v/v) ± 20%. */
+/** BAC water — benzyl alcohol assay by HPLC. Spec: 0.90% (v/v) ± 20% (0.72–1.08%). */
 export const BENZYL_ASSAY_NOMINAL_PCT = 0.9;
 export const BENZYL_ASSAY_TOLERANCE = 0.2;
 export const BENZYL_SPEC_MIN = BENZYL_ASSAY_NOMINAL_PCT * (1 - BENZYL_ASSAY_TOLERANCE); // 0.72
 export const BENZYL_SPEC_MAX = BENZYL_ASSAY_NOMINAL_PCT * (1 + BENZYL_ASSAY_TOLERANCE); // 1.08
-export const BENZYL_PQ_SPEC_LABEL = '0.9% (v/v) ± 20%';
+export const BENZYL_PQ_SPEC_LABEL = '0.90% (v/v) ± 20%';
+
+/** Show the two-decimal nominal so ±20% is read as 0.72–1.08%, not a one-decimal window. */
+export function benzylSpecificationLabel(stored?: string | null): string {
+  const spec = (stored || '').trim();
+  if (!spec) return BENZYL_PQ_SPEC_LABEL;
+  return spec.replace(/0\.9%(?!\d)/g, '0.90%');
+}
 
 export function benzylPqPanelName(): string {
   return 'Benzyl Alcohol Assay (HPLC)';
@@ -170,7 +177,7 @@ export function formatBenzylPqResult(purity: string, _quantity = ''): string {
   return `${formatted}% (v/v)`;
 }
 
-/** Pending until a result is entered; PASS when within 0.9% (v/v) ± 20%. */
+/** Pending until a result is entered; PASS when within 0.90% (v/v) ± 20%. */
 export function benzylPqPassFromResult(purity: string, _quantity = ''): boolean | null {
   const n = parseFloat(formatBenzylPurity(purity));
   if (!Number.isFinite(n)) return null;
