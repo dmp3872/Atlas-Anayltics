@@ -37,6 +37,8 @@ interface Props {
   onSetSamplePriority?: (sampleId: string, priority: LabPriority | null) => void;
   /** Open chemist-safe order brief drawer. */
   onOpenOrderBrief?: (orderId: string) => void;
+  /** Order to leave open after returning from Issue COA. */
+  focusOrderId?: string | null;
 }
 
 type OrderGroup = {
@@ -56,7 +58,7 @@ function formatAge(hours: number): string {
 export default function TestingQueuePanel({
   items, loading, onIssueCoa, onUpdateStatus,
   chemists, currentUserId, onClaim, onAssign, onRelease, onAssignTest, onSetSamplePriority,
-  onOpenOrderBrief,
+  onOpenOrderBrief, focusOrderId,
 }: Props) {
   /** Explicit expand/collapse overrides. Missing key = auto (open if 1 sample). */
   const [expandedByOrder, setExpandedByOrder] = useState<Record<string, boolean>>({});
@@ -125,12 +127,15 @@ export default function TestingQueuePanel({
 
   function isExpanded(orderId: string, sampleCount: number) {
     if (orderId in expandedByOrder) return expandedByOrder[orderId];
+    if (focusOrderId && orderId === focusOrderId) return true;
     return sampleCount <= 1;
   }
 
   function toggleOrder(orderId: string, sampleCount: number) {
     setExpandedByOrder(prev => {
-      const currentlyOpen = orderId in prev ? prev[orderId] : sampleCount <= 1;
+      const currentlyOpen = orderId in prev
+        ? prev[orderId]
+        : (focusOrderId === orderId || sampleCount <= 1);
       return { ...prev, [orderId]: !currentlyOpen };
     });
   }
