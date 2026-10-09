@@ -512,6 +512,8 @@ export type CoaPdfPrepPayload = {
   include_benzyl_pq?: boolean;
   benzyl_purity?: string;
   benzyl_quantity?: string;
+  /** When false, the certificate omits the chromatogram image and trace. */
+  include_chromatogram?: boolean;
   /** BAC water — overwrite measured Net Content panel result. */
   measured_net_content?: string;
 };
@@ -749,8 +751,13 @@ export async function saveCoaPdfPrep(
   // Compression can return '' on failure — fall back to the pre-compress src so attachments survive.
   const vialImage = vialCompressed || preparedVial || hydrated.vial_image || '';
   const companyLogo = companyLogoCompressed || prepLogo || hydrated.company_logo || '';
-  const watermark = watermarkCompressed || prepWatermark || hydrated.chromatogram_image || '';
-  const hplcImage = hplcCompressed || prepHplc || hydrated.hplc_image || '';
+  const includeChromatogram = prep.include_chromatogram !== false;
+  const watermark = includeChromatogram
+    ? (watermarkCompressed || prepWatermark || hydrated.chromatogram_image || '')
+    : '';
+  const hplcImage = includeChromatogram
+    ? (hplcCompressed || prepHplc || hydrated.hplc_image || '')
+    : '';
 
   // Kanban / list rows omit result_summary — load it so Prepare doesn't wipe prior keys / update_log.
   let priorSummary: Record<string, unknown> =
@@ -791,6 +798,7 @@ export async function saveCoaPdfPrep(
     ...(typeof prep.include_endotoxin === 'boolean' ? { include_endotoxin: prep.include_endotoxin } : {}),
     ...(typeof prep.include_heavy_metals === 'boolean' ? { include_heavy_metals: prep.include_heavy_metals } : {}),
     ...(typeof prep.include_ph === 'boolean' ? { include_ph: prep.include_ph } : {}),
+    ...(typeof prep.include_chromatogram === 'boolean' ? { include_chromatogram: prep.include_chromatogram } : {}),
     ...(typeof prep.ph_result === 'string' ? { ph_result: formatPhResult(prep.ph_result) } : {}),
     ...(typeof prep.include_benzyl_pq === 'boolean' ? { include_benzyl_pq: prep.include_benzyl_pq } : {}),
     ...(typeof prep.benzyl_purity === 'string' ? { benzyl_purity: formatBenzylPurity(prep.benzyl_purity) } : {}),
@@ -863,9 +871,15 @@ export async function saveCoaPdfPrep(
     molecular_weight,
     peptide_sequence: includeCas ? (resolvedCas || hydrated.peptide_sequence || '') : '',
     overall_result,
-    ...(prep.chromatogram_data
-      ? { chromatogram_data: prep.chromatogram_data }
-      : {}),
+    ...(!includeChromatogram
+      ? {
+          chromatogram_data: {
+            vial_size: (hydrated.chromatogram_data as { vial_size?: string } | null)?.vial_size,
+          },
+        }
+      : prep.chromatogram_data
+        ? { chromatogram_data: prep.chromatogram_data }
+        : {}),
   };
 
   const direct = {
@@ -878,9 +892,15 @@ export async function saveCoaPdfPrep(
     molecular_weight,
     peptide_sequence: includeCas ? (resolvedCas || '') : '',
     overall_result,
-    ...(prep.chromatogram_data
-      ? { chromatogram_data: prep.chromatogram_data }
-      : {}),
+    ...(!includeChromatogram
+      ? {
+          chromatogram_data: {
+            vial_size: (hydrated.chromatogram_data as { vial_size?: string } | null)?.vial_size,
+          },
+        }
+      : prep.chromatogram_data
+        ? { chromatogram_data: prep.chromatogram_data }
+        : {}),
   };
 
   const { error } = await supabase.from('coas').update(direct).eq('id', coa.id);
