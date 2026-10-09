@@ -95,6 +95,7 @@ const BLANK = {
   clientId: '', sampleId: '', orderId: '',
   sampleName: '', displayName: '', companyName: '',
   batchNumber: '', casNumber: '', vialSize: '3ml' as VialSizeOption,
+  vialsTested: '',
   overallResult: 'pending' as COA['overall_result'],
   accessionNumber: '',
   receivedBy: '',
@@ -534,6 +535,11 @@ export default function Lab() {
         : VIAL_SIZE_OPTIONS.includes(meta.vial_size as VialSizeOption)
           ? meta.vial_size
           : '3ml') as VialSizeOption,
+      vialsTested: (
+        (typeof summary.vials_tested === 'string' && summary.vials_tested.trim())
+        || (typeof summary.mean_of_vials_tested === 'string' && summary.mean_of_vials_tested.trim())
+        || (typeof summary.vial_count === 'number' ? String(summary.vial_count) : '')
+      ),
       overallResult: coa.overall_result === 'fail' || coa.overall_result === 'pending'
         ? coa.overall_result
         : 'pass',
@@ -1221,6 +1227,7 @@ export default function Lab() {
         labResults,
         form.labelClaimUnit.trim() || linkedMeta?.label_claim_unit || 'mg',
       );
+      const vialsTested = form.vialsTested.trim() || assayAverages.mean_of_vials_tested;
       const avgPurityNum = parsePurityPercent(assayAverages.avg_purity);
       const storedPurity = avgPurityNum ?? purityNum;
       // Chemist-assigned LIMS ID wins; fall back to sample LIMS ID or allocate YYMMDD-XXXXXX.
@@ -1312,8 +1319,8 @@ export default function Lab() {
             // Pre-calculate Prepare COA averages from assay + conformity vials.
             avg_net_peptide_content: assayAverages.avg_net_peptide_content,
             avg_purity: assayAverages.avg_purity,
-            mean_of_vials_tested: assayAverages.mean_of_vials_tested,
-            vials_tested: assayAverages.mean_of_vials_tested,
+            mean_of_vials_tested: vialsTested,
+            vials_tested: vialsTested,
             content_values: assayAverages.content_values,
             purity_values: assayAverages.purity_values,
             apply_company_logo: applyHeaderLogo,
@@ -1872,13 +1879,26 @@ export default function Lab() {
                   <input value={form.displayName} onChange={e => update({ displayName: e.target.value })} className="input-field" placeholder="e.g. BPC-157 5mg" />
                 </div>
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 <div><label className="label">Batch / Lot</label><input value={form.batchNumber} onChange={e => update({ batchNumber: e.target.value })} className="input-field" /></div>
                 <div>
                   <label className="label">Vial Size</label>
                   <select value={form.vialSize} onChange={e => update({ vialSize: e.target.value as VialSizeOption })} className="input-field">
                     {VIAL_SIZE_OPTIONS.map(v => <option key={v} value={v}>{v}</option>)}
                   </select>
+                </div>
+                <div>
+                  <label className="label">Vials tested</label>
+                  <input
+                    value={form.vialsTested}
+                    onChange={e => update({ vialsTested: e.target.value.replace(/[^\d]/g, '') })}
+                    className="input-field"
+                    inputMode="numeric"
+                    placeholder="e.g. 3"
+                  />
+                  <p className="text-[11px] text-neutral-500 mt-1">
+                    Prints in Vials Tested. Leave blank to use the number of measured vials.
+                  </p>
                 </div>
                 <div>
                   <label className="label">Overall</label>
