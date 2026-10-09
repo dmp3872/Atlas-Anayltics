@@ -1,7 +1,7 @@
 import { COA, PanelResult } from './types';
 import { formatDate } from './utils';
 import { readCoaPdfStats } from './coaImages';
-import { ENDOTOXIN_SPEC_EU_ML, STERILITY_METHOD_LABELS, formatCoaDecimal, parseAssayMethod, withAssayMethodSpec, withSterilityMethodSpec, ASSAY_METHOD_LABELS, assayMethodFromPanels, hydrateMultiVialPanelResults, formatPurityResultWithUncertainty, formatSterilityPendingResult, applyQuantityUnit } from './labCoaForm';
+import { ENDOTOXIN_SPEC_EU_ML, STERILITY_METHOD_LABELS, formatCoaDecimal, parseAssayMethod, withAssayMethodSpec, withSterilityMethodSpec, ASSAY_METHOD_LABELS, assayMethodFromPanels, hydrateMultiVialPanelResults, formatPurityResultWithUncertainty, formatSterilityPendingResult, applyQuantityUnit, benzylSpecificationLabel } from './labCoaForm';
 import { collapseConformityPanels, endotoxinConformityLabel } from './coaDisplayPanels';
 import { labelClaimFromSummary, netContentSpecificationDisplay } from './orderCatalog';
 
@@ -268,7 +268,7 @@ export function buildCoaPdfFieldValues(coa: COA): CoaPdfFieldValues {
         ? (/^\s*ph\b/i.test(panel.panel_name)
           ? `pH ${panel.result || 'Pending'} (${panel.specification || '4.5–7.0'})`
           : (/benzyl/i.test(panel.panel_name)
-            ? `Benzyl Alcohol Assay (HPLC) ${panel.result || 'Pending'} (${panel.specification || '0.9% (v/v) ± 20%'})`
+            ? `Benzyl Alcohol Assay (HPLC) ${panel.result || 'Pending'} (${benzylSpecificationLabel(panel.specification)})`
             : (/fill\s*volume/i.test(panel.panel_name)
               ? `Fill Volume / Net Content ${applyQuantityUnit(panel.result || 'Pending', claimUnit)}`
               : (panel.panel_name.toLowerCase().startsWith('blend content')
