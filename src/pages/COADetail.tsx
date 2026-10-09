@@ -447,27 +447,21 @@ export default function COADetail() {
     )
     : '';
 
-  const infoRows = [
-    [
-      { label: 'LIMS ID', value: coa.accession_number || coa.slug },
-      { label: 'Sample Name', value: coa.display_name || coa.sample_name || '—' },
-    ],
-    [
-      { label: matrixLabel, value: matrix },
-      { label: 'Lot Code', value: coa.batch_number || '—' },
-    ],
-    [
-      { label: 'Label Claim', value: labelClaim },
-      ...(includeCas ? [{ label: 'CAS Number', value: casNumber || '—' }] : []),
-    ],
-    [
-      { label: 'Vials Tested', value: vialsTested },
-      { label: 'Received Date', value: received },
-    ],
-    [
-      { label: 'Published Date', value: published },
-    ],
+  const infoFields = [
+    { label: 'LIMS ID', value: coa.accession_number || coa.slug },
+    { label: 'Sample Name', value: coa.display_name || coa.sample_name || '—' },
+    { label: matrixLabel, value: matrix },
+    { label: 'Lot Code', value: coa.batch_number || '—' },
+    { label: 'Label Claim', value: labelClaim },
+    ...(includeCas ? [{ label: 'CAS Number', value: casNumber || '—' }] : []),
+    { label: 'Vials Tested', value: vialsTested },
+    { label: 'Received Date', value: received },
+    { label: 'Published Date', value: published },
   ];
+  const infoRows: typeof infoFields[] = [];
+  for (let i = 0; i < infoFields.length; i += 2) {
+    infoRows.push(infoFields.slice(i, i + 2));
+  }
   const vialSizeBadge = (() => {
     if (!vialSize || vialSize === '—') return '';
     const m = vialSize.match(/(\d+(?:\.\d+)?)\s*m?l/i);
