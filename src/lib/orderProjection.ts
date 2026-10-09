@@ -56,6 +56,7 @@ export type MethodKey =
   | 'sterility_pcr'
   | 'sterility_culture'
   | 'fentanyl_detection'
+  | 'ph'
   | 'residual_solvents'
   | 'residual_moisture';
 
@@ -115,6 +116,12 @@ export const METHOD_LIBRARY: Record<MethodKey, MethodBlurb> = {
     instrument: 'LC-MS',
     blurb: 'Targeted screen for fentanyl and related analogs to rule out illicit opioid contamination.',
   },
+  ph: {
+    key: 'ph',
+    label: 'pH',
+    instrument: 'pH meter',
+    blurb: 'Measures sample pH. A sample ordered for pH alone is issued on the pH-only certificate.',
+  },
   conformity: {
     key: 'conformity',
     label: 'Conformity',
@@ -145,6 +152,7 @@ const METHOD_ORDER: MethodKey[] = [
   'sterility_pcr',
   'sterility_culture',
   'fentanyl_detection',
+  'ph',
   'residual_solvents',
   'residual_moisture',
 ];
@@ -301,6 +309,14 @@ export function sampleIncludesAssay(
     return true;
   }
   return false;
+}
+
+/** True when the client ordered pH and no other assay. */
+export function sampleIsPhOnlyOrder(
+  sample: WizardSample | { metadata?: unknown; test_mode?: string },
+): boolean {
+  const ids = orderedAssayIds(sample);
+  return ids.length > 0 && ids.every(id => id === 'ph');
 }
 
 export function buildVialAllocation(
