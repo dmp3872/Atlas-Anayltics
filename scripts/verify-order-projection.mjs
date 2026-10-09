@@ -29,6 +29,8 @@ assert.doesNotMatch(
   /heavy_metals_icpms|endotoxin_usp85/,
 );
 assert.match(catalogSrc, /'Sterility \(PCR\)'/);
+assert.match(catalogSrc, /id: 'ph'[\s\S]*?name: 'pH Testing'[\s\S]*?price: 200/);
+assert.match(projectionSrc, /export function sampleIsPhOnlyOrder/);
 assert.doesNotMatch(
   catalogSrc.slice(catalogSrc.indexOf('export const FULL_QC_PANEL'), catalogSrc.indexOf('export function packageCardMeta')),
   /Heavy metals screen|Endotoxin \(LAL\)/,

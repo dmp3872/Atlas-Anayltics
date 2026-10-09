@@ -2165,7 +2165,7 @@ export default function Lab() {
                       </label>
                     </div>
                   </div>
-                  {bacWaterMode ? (
+                  {bacWaterMode && !labResults.phOnly ? (
                   <div className="grid sm:grid-cols-2 gap-4">
                     <div className="sm:col-span-2">
                       <p className="text-sm font-semibold text-black">Bacteriostatic Water COA</p>
@@ -2495,7 +2495,7 @@ export default function Lab() {
                         </div>
                       </>
                     )}
-                    {labResults.includePh && !bacWaterMode && (
+                    {labResults.includePh && (!bacWaterMode || labResults.phOnly) && (
                       <div>
                         <label className="label">pH (calculated)</label>
                         <input

@@ -1,7 +1,7 @@
 import { COA, OrderSample, PanelResult } from './types';
 import { OrderSampleMetadata, parseSampleMetadata, orderSampleIncludesFentanyl, sampleIsBacWater } from './coaPanels';
 import { ATLAS_PRO_INCLUDED_CONFORMITY_VIALS, formatLabelClaim } from './orderCatalog';
-import { sampleIncludesAssay } from './orderProjection';
+import { sampleIncludesAssay, sampleIsPhOnlyOrder } from './orderProjection';
 
 export const VIAL_SIZE_OPTIONS = ['3ml', '5ml', '10ml'] as const;
 export type VialSizeOption = (typeof VIAL_SIZE_OPTIONS)[number];
@@ -834,8 +834,9 @@ export function buildLabResultsFromSample(metadata: OrderSample['metadata'], sam
   const includeSterilityCulture = sampleIncludesAssay(orderRef, 'sterility_culture');
   const includeSterility =
     includeSterilityCulture || sampleIncludesAssay(orderRef, 'sterility_pcr');
-  const includePh = sampleIsBacWater(metadata);
-  const includeBenzylPq = includePh;
+  const phOnly = sampleIsPhOnlyOrder(orderRef);
+  const includePh = sampleIsBacWater(metadata) || sampleIncludesAssay(orderRef, 'ph');
+  const includeBenzylPq = sampleIsBacWater(metadata) && !phOnly;
   return {
     ...EMPTY_LAB_RESULTS,
     identification,
@@ -847,6 +848,8 @@ export function buildLabResultsFromSample(metadata: OrderSample['metadata'], sam
     includeSterility,
     includeBenzylPq,
     includePh,
+    phOnly,
+    includeChromatogram: !phOnly,
     sterilityMethod: includeSterilityCulture ? 'culture_14_day' : 'pcr',
     conformityPeptides: isBlend
       ? seedBlendConformityPeptides(blendPeptides, extraConformityVialCount(metadata))
@@ -1217,8 +1220,10 @@ export function buildLabResultsFromCoa(
       (phPanel?.result && !/^pending\b/i.test(phPanel.result) ? phPanel.result : '')
       || (typeof summary.ph_result === 'string' ? summary.ph_result : ''),
     ),
-    phOnly: summary.ph_only === true,
-    includeChromatogram: summary.include_chromatogram !== false,
+    phOnly: typeof summary.ph_only === 'boolean' ? summary.ph_only : base.phOnly,
+    includeChromatogram: typeof summary.include_chromatogram === 'boolean'
+      ? summary.include_chromatogram
+      : !base.phOnly,
     conformityPeptides,
     blendPeptides: blendPeptides.length > 0 ? blendPeptides : base.blendPeptides,
   };
@@ -1253,7 +1258,8 @@ export function labResultsToPanelResults(
   const methodLabel = ASSAY_METHOD_LABELS[method];
 
   // Bacteriostatic water: dedicated certificate panels (not peptide ID / purity).
-  if (opts?.bacWater === true) {
+  // A pH-only order uses the pH certificate even when the sample is BAC water.
+  if (opts?.bacWater === true && !results.phOnly) {
     const bacRows: PanelResult[] = [];
 
     if (results.includeBenzylPq) {
@@ -1351,7 +1357,7 @@ export function labResultsToPanelResults(
     return bacRows;
   }
 
-  const phOnly = !!results.phOnly && !opts?.bacWater;
+  const phOnly = !!results.phOnly;
   const rows: PanelResult[] = [];
 
   if (!phOnly) {
