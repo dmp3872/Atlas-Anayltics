@@ -1,6 +1,7 @@
 import { PDFDocument, PDFFont, PDFImage, PDFPage, StandardFonts, rgb, RGB } from 'pdf-lib';
 import { COA, PanelResult } from './types';
 import { buildCoaPdfFieldValues } from './coaPdfFields';
+import { coaShowsChromatogram } from './labCoaForm';
 import {
   COA_CHROMATOGRAM_ZOOM,
   fentanylDetectionLabel,
@@ -1030,7 +1031,9 @@ export async function buildCoaPdfBytes(coa: COA): Promise<Uint8Array> {
 
   drawFentanylAndShiftedHeavyMetals(page, record, { regular: font, bold });
 
+  const showChromatogram = coaShowsChromatogram(record.result_summary);
   // HPLC box: unique chromatograph photo (if uploaded), then client watermark logo on top.
+  // When the chromatogram is off, cover the template graphic and leave the box blank.
   page.drawRectangle({
     x: CHROMATOGRAM_RECT.x,
     y: CHROMATOGRAM_RECT.y,
@@ -1039,6 +1042,7 @@ export async function buildCoaPdfBytes(coa: COA): Promise<Uint8Array> {
     color: rgb(1, 1, 1),
     borderWidth: 0,
   });
+  if (showChromatogram) {
   const hplcSrc = (record.hplc_image || '').trim();
   if (hplcSrc) {
     const hplcImage = await embedImageSource(pdf, hplcSrc);
@@ -1060,6 +1064,7 @@ export async function buildCoaPdfBytes(coa: COA): Promise<Uint8Array> {
       width: CHROMATOGRAM_RECT.width * 0.44,
       height: CHROMATOGRAM_RECT.height * 0.70,
     }, LOGO_WATERMARK_OPACITY);
+  }
   }
 
   // Condensed vial product shot (trim empty studio background, tight double frame).
