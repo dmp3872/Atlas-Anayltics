@@ -68,7 +68,7 @@ import OrderActionChecklist from '../components/order/OrderActionChecklist';
 import OrderNotesThread from '../components/order/OrderNotesThread';
 import OrderEtaEditor from '../components/order/OrderEtaEditor';
 import { fetchOrderActionItems, openActionCount } from '../lib/orderActions';
-import { LABEL_CLAIM_UNITS, SAMPLE_MATRICES, wizardSampleFromOrderSample, type WizardSample } from '../lib/orderCatalog';
+import { LABEL_CLAIM_UNITS, SAMPLE_MATRICES, orderedVialCount, wizardSampleFromOrderSample, type WizardSample } from '../lib/orderCatalog';
 import { assayResultsFromPanels, assayChipStatusesFromPanels } from '../lib/coaDisplayPanels';
 import { parseOrderNotes } from '../lib/orderMeta';
 import { orderedAssayIds } from '../lib/orderProjection';
@@ -468,6 +468,7 @@ export default function Lab() {
       matrixType: matrixTypeFromSampleMetadata(s.metadata) || meta.sample_matrix || '',
       labeledContent: meta.labeled_content || '',
       labelClaimUnit: meta.label_claim_unit || 'mg',
+      vialsTested: String(orderedVialCount(s) || ''),
     });
     setPreferredBrandName(brandHint);
     setLabResults(buildLabResultsFromSample(s.metadata, s.sample_name));
@@ -540,6 +541,7 @@ export default function Lab() {
         (typeof summary.vials_tested === 'string' && summary.vials_tested.trim())
         || (typeof summary.mean_of_vials_tested === 'string' && summary.mean_of_vials_tested.trim())
         || (typeof summary.vial_count === 'number' ? String(summary.vial_count) : '')
+        || (sample ? String(orderedVialCount(sample) || '') : '')
       ),
       overallResult: coa.overall_result === 'fail' || coa.overall_result === 'pending'
         ? coa.overall_result
@@ -1228,7 +1230,10 @@ export default function Lab() {
         labResults,
         form.labelClaimUnit.trim() || linkedMeta?.label_claim_unit || 'mg',
       );
-      const vialsTested = form.vialsTested.trim() || assayAverages.mean_of_vials_tested;
+      const orderedVials = linkedSample ? orderedVialCount(linkedSample) : 0;
+      const vialsTested = form.vialsTested.trim()
+        || (orderedVials > 0 ? String(orderedVials) : '')
+        || assayAverages.mean_of_vials_tested;
       const avgPurityNum = parsePurityPercent(assayAverages.avg_purity);
       const storedPurity = avgPurityNum ?? purityNum;
       // Chemist-assigned LIMS ID wins; fall back to sample LIMS ID or allocate YYMMDD-XXXXXX.
@@ -1904,7 +1909,7 @@ export default function Lab() {
                     placeholder="e.g. 3"
                   />
                   <p className="text-[11px] text-neutral-500 mt-1">
-                    Prints in Vials Tested. Leave blank to use the number of measured vials.
+                    Filled from the vials required by the ordered tests. Change it if fewer were tested.
                   </p>
                 </div>
                 <div>
