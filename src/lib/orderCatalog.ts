@@ -610,6 +610,31 @@ export function sampleVialCount(sample: WizardSample, catalog: LabTestService[] 
   return Math.max(1, vials) + Math.max(0, sample.conformity_extra);
 }
 
+/** Vials the ordered package or assays require, including extra conformity vials. */
+export function orderedVialCount(input: {
+  sample_name?: string | null;
+  display_name?: string | null;
+  sample_type?: string | null;
+  metadata?: unknown;
+  vial_count?: number | null;
+}): number {
+  const meta = (input.metadata && typeof input.metadata === 'object' && !Array.isArray(input.metadata))
+    ? (input.metadata as Record<string, unknown>)
+    : {};
+  const hasOrderedTests = typeof meta.test_mode === 'string'
+    || (typeof meta.primary_test_id === 'string' && meta.primary_test_id.trim() !== '')
+    || (Array.isArray(meta.individual_tests) && meta.individual_tests.length > 0);
+  if (hasOrderedTests) {
+    const fromTests = sampleVialCount(wizardSampleFromOrderSample(input));
+    if (fromTests > 0) return fromTests;
+  }
+  const stored = Number(meta.vials_required);
+  if (Number.isFinite(stored) && stored > 0) return Math.round(stored);
+  const rowCount = Number(input.vial_count);
+  if (Number.isFinite(rowCount) && rowCount > 0) return Math.round(rowCount);
+  return 0;
+}
+
 export function billableBrandCount(sample: WizardSample, primaryBrand = ''): number {
   const names = sample.brand_names.filter(Boolean);
   const primary = primaryBrand.trim().toLowerCase();
