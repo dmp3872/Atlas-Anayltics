@@ -1,4 +1,5 @@
 import { PanelResult } from './types';
+import { benzylSpecificationLabel, isBenzylPqPanel } from './labCoaForm';
 
 const QTY_UNIT_RE = /mg|mcg|µg|ug|g|mL|ml|IU|iu|units/i;
 
@@ -344,7 +345,7 @@ export function partitionCoaPanels(panels: PanelResult[]): {
   const metals: PanelResult[] = [];
   for (const p of collapsed) {
     if (isHeavyMetalPanel(p.panel_name)) metals.push(p);
-    else main.push(formatEndotoxinPanel(p));
+    else main.push(formatBenzylSpecification(formatEndotoxinPanel(p)));
   }
 
   // Only synthesize the full USP metal set when the COA already includes metal panels.
@@ -370,6 +371,14 @@ export function partitionCoaPanels(panels: PanelResult[]): {
   });
 
   return { main, metals: orderedMetals };
+}
+
+/** Rewrite a stored 0.9% benzyl spec to 0.90% so the ±20% window stays two decimals. */
+function formatBenzylSpecification(panel: PanelResult): PanelResult {
+  if (!isBenzylPqPanel(panel.panel_name)) return panel;
+  const specification = benzylSpecificationLabel(panel.specification);
+  if (specification === panel.specification) return panel;
+  return { ...panel, specification };
 }
 
 /** Ensure endotoxin shows LAL method on the COA (panel name + result), like sterility. */
