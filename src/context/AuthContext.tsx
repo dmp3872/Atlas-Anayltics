@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { Session, User } from '@supabase/supabase-js';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { UserProfile } from '../lib/types';
@@ -74,6 +74,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [profileError, setProfileError] = useState<string | null>(null);
+  const userIdRef = useRef<string | null>(null);
+  userIdRef.current = user?.id ?? null;
 
   async function loadProfile(userId: string) {
     setProfileError(null);
@@ -234,15 +236,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // INITIAL_SESSION duplicates getSession — skip to avoid a second loading lock.
       if (event === 'INITIAL_SESSION') return;
 
+      const nextUserId = session?.user?.id ?? null;
+      // A new browser tab refreshes the token and broadcasts SIGNED_IN. That must
+      // not flip the app back to the full-screen spinner — RoleRoute unmounts the
+      // lab console and drops an in-progress COA plus scroll position.
+      const background = !!nextUserId
+        && nextUserId === userIdRef.current
+        && (event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED' || event === 'SIGNED_IN');
+
       setSession(session);
       setUser(session?.user ?? null);
+      userIdRef.current = nextUserId;
       if (session?.user) {
         // Keep loading true until role/profile is known so Auth doesn't send admins to /dashboard.
-        setLoading(true);
+        if (!background) setLoading(true);
         void loadProfile(session.user.id)
           .catch(err => console.warn('Profile load failed:', err))
           .finally(() => {
-            if (!cancelled) setLoading(false);
+            if (!cancelled && !background) setLoading(false);
           });
       } else {
         setProfile(null);
