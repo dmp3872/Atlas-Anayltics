@@ -12,7 +12,7 @@ import { hydrateCoaImages, prepareVialImage, readCoaPdfStats, resolveCoaHeaderLo
 import { matrixTypeFromSampleMetadata } from '../lib/coaPanels';
 import { partitionCoaPanels, panelStatusLabel, panelStatusToneClass, resolvePanelPass, formatCoaResultDisplay, isEndotoxinPanelName, endotoxinConformityLabel } from '../lib/coaDisplayPanels';
 import { fetchCoaByCode, fetchImagesByCode } from '../lib/publicCoa';
-import { formatCoaDecimal, parseAssayMethod, ASSAY_METHOD_LABELS, assayMethodFromPanels, hydrateMultiVialPanelResults, resolveCasNumber, applyQuantityUnit } from '../lib/labCoaForm';
+import { formatCoaDecimal, parseAssayMethod, ASSAY_METHOD_LABELS, assayMethodFromPanels, hydrateMultiVialPanelResults, resolveCasNumber, applyQuantityUnit, coaShowsChromatogram, coaIsPhOnly } from '../lib/labCoaForm';
 import { labelClaimFromSummary, netContentSpecificationDisplay } from '../lib/orderCatalog';
 import { compressImageDataUrl } from '../lib/imageCompress';
 import { coaDigitalPdfFilename, downloadCoaPdfFromElement } from '../lib/coaPdf';
@@ -437,11 +437,15 @@ export default function COADetail() {
     || (typeof summary.company_address === 'string' && summary.company_address.trim())
     || '';
   const resolvedClientLogo = clientLogo || coa.company_logo || '';
-  const chromatogramNote = chromatogramNoteForSample(
-    coa.sample_name,
-    coa.display_name,
-    coa.peptide_sequence,
-  );
+  const showChromatogram = coaShowsChromatogram(coa.result_summary);
+  const phOnly = coaIsPhOnly(coa.result_summary);
+  const chromatogramNote = showChromatogram
+    ? chromatogramNoteForSample(
+      coa.sample_name,
+      coa.display_name,
+      coa.peptide_sequence,
+    )
+    : '';
 
   const infoRows = [
     [
@@ -554,9 +558,10 @@ export default function COADetail() {
             ))}
           </div>
 
+          {(coa.vial_image || showChromatogram) && (
           <div
             className={`mb-3 grid gap-2 items-stretch coa-print-media flex-1 min-h-[12.5rem] ${
-              coa.vial_image ? 'grid-cols-1 sm:grid-cols-[104px_1fr]' : 'grid-cols-1'
+              coa.vial_image && showChromatogram ? 'grid-cols-1 sm:grid-cols-[104px_1fr]' : 'grid-cols-1'
             }`}
           >
             {coa.vial_image ? (
@@ -577,6 +582,7 @@ export default function COADetail() {
                 ) : null}
               </div>
             ) : null}
+            {showChromatogram ? (
             <div className="min-w-0 w-full coa-print-chromatogram flex flex-col h-full min-h-[11rem] sm:min-h-[12rem]">
               <InteractiveChromatogram
                 data={coa.chromatogram_data}
@@ -584,7 +590,9 @@ export default function COADetail() {
                 logoWatermark={logoWatermark || undefined}
               />
             </div>
+            ) : null}
           </div>
+          )}
 
           {chromatogramNote ? (
             <p className="coa-hcg-chrom-note mb-3 text-[9px] sm:text-[10px] leading-snug text-neutral-600 border border-atlas-border bg-neutral-50 px-2.5 py-2">
@@ -592,6 +600,7 @@ export default function COADetail() {
             </p>
           ) : null}
 
+          {!phOnly && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
             <div className="coa-stat-card">
               <div className="flex items-start gap-3">
@@ -627,6 +636,7 @@ export default function COADetail() {
               </div>
             </div>
           </div>
+          )}
 
           <div className="mb-3 overflow-hidden border border-atlas-border coa-table-wrap">
             <table className="w-full text-sm coa-print-table table-fixed">
