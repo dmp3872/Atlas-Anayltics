@@ -1257,7 +1257,8 @@ export default function Lab() {
         || ''
       ).trim();
 
-      const chromatogram_data = chromatogramParsed
+      const showChromatogram = labResults.includeChromatogram;
+      const chromatogram_data = showChromatogram && chromatogramParsed
         ? chromatogramDataFromParsed(chromatogramParsed, {
             vial_size: form.vialSize,
             ...(resolvedSampleMatrix ? { sample_matrix: resolvedSampleMatrix } : {}),
@@ -1286,8 +1287,8 @@ export default function Lab() {
         panel_results: cleanPanels,
         chromatogram_data,
         vial_image: vialForSave || '',
-        chromatogram_image: watermarkImage,
-        hplc_image: hplcImage || '',
+        chromatogram_image: showChromatogram ? watermarkImage : '',
+        hplc_image: showChromatogram ? (hplcImage || '') : '',
         result_summary: (() => {
           const existing = editingCoaId ? coas.find(c => c.id === editingCoaId) : undefined;
           const baseSummary = {
@@ -1329,8 +1330,12 @@ export default function Lab() {
             include_sterility: !!resultsForPanels.includeSterility,
             include_fentanyl: !!resultsForPanels.includeFentanyl,
             ordered_assay_ids: Array.from(orderedAssayIdSet),
-            include_ph: !!resultsForPanels.includePh,
-            ph_result: resultsForPanels.includePh ? formatPhResult(resultsForPanels.phResult) : '',
+            include_ph: !!resultsForPanels.includePh || !!resultsForPanels.phOnly,
+            ph_result: (resultsForPanels.includePh || resultsForPanels.phOnly)
+              ? formatPhResult(resultsForPanels.phResult)
+              : '',
+            ph_only: !!resultsForPanels.phOnly,
+            include_chromatogram: !!resultsForPanels.includeChromatogram,
             include_benzyl_pq: !!resultsForPanels.includeBenzylPq,
             benzyl_purity: resultsForPanels.includeBenzylPq
               ? formatBenzylPurity(resultsForPanels.benzylPurity)
@@ -2101,7 +2106,7 @@ export default function Lab() {
                         ['includeFentanyl', 'Fentanyl'],
                         ['includeMolecularWeight', 'Molecular Weight'],
                       ] as const).map(([key, label]) => {
-                        const locked = orderedLocked[key];
+                        const locked = orderedLocked[key] || (key === 'includePh' && labResults.phOnly);
                         const checked = !!labResults[key] || locked;
                         return (
                           <label
@@ -2121,6 +2126,23 @@ export default function Lab() {
                           </label>
                         );
                       })}
+                      <label className="inline-flex items-center gap-1.5 text-xs text-neutral-700 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={labResults.phOnly}
+                          onChange={e => {
+                            const on = e.target.checked;
+                            updateResults({
+                              phOnly: on,
+                              ...(on
+                                ? { includePh: true, includeChromatogram: false }
+                                : { includeChromatogram: true }),
+                            });
+                          }}
+                          className="rounded border-atlas-border"
+                        />
+                        pH only
+                      </label>
                     </div>
                   </div>
                   {bacWaterMode ? (
@@ -2194,7 +2216,7 @@ export default function Lab() {
                       <p className="text-xs text-neutral-500 mt-1">Method: Gravimetric</p>
                     </div>
                   </div>
-                  ) : (
+                  ) : !labResults.phOnly ? (
                   <>
                   <div className="grid sm:grid-cols-2 gap-4">
                     <div className="sm:col-span-2">
@@ -2272,8 +2294,12 @@ export default function Lab() {
                     </div>
                   </div>
                   </>
+                  ) : (
+                    <p className="text-xs text-neutral-500">
+                      pH-only certificate. Identification, net content, and purity stay off the results table.
+                    </p>
                   )}
-                  {!bacWaterMode && labResults.blendPeptides.length > 0 && (
+                  {!bacWaterMode && !labResults.phOnly && labResults.blendPeptides.length > 0 && (
                     <div className="rounded-lg border border-brand-200 bg-white p-3 space-y-2">
                       <div className="flex items-center justify-between gap-2">
                         <div>
@@ -2555,6 +2581,7 @@ export default function Lab() {
                     </div>
                   </div>
                   )}
+                  {!labResults.phOnly && (
                   <div>
                     <div className="flex items-center justify-between mb-2">
                       <label className="label mb-0">Conformity (additional measured vials)</label>
@@ -2710,6 +2737,7 @@ export default function Lab() {
                       </div>
                     )}
                   </div>
+                  )}
                 </div>
               </div>
               <div className="grid sm:grid-cols-2 gap-4">
@@ -2727,6 +2755,22 @@ export default function Lab() {
                     hint="JPG or PNG of the physical vial, up to 2 MB"
                   />
                 </div>
+                <div className="sm:col-span-2">
+                  <label className="inline-flex items-center gap-2 text-sm font-semibold text-black cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={labResults.includeChromatogram}
+                      onChange={e => updateResults({ includeChromatogram: e.target.checked })}
+                      className="rounded border-atlas-border"
+                    />
+                    Include chromatogram on COA
+                  </label>
+                  <p className="text-xs text-neutral-500 mt-1">
+                    Turn this off for a pH-only certificate, or any COA that should not show a chromatogram.
+                  </p>
+                </div>
+                {labResults.includeChromatogram && (
+                <>
                 <div>
                   <label className="label mb-2 block">Chromatograph photo</label>
                   <p className="text-xs text-neutral-500 mb-2">
@@ -2778,6 +2822,8 @@ export default function Lab() {
                     </div>
                   )}
                 </div>
+                </>
+                )}
               </div>
               <button type="submit" disabled={saving} className="btn-primary w-full gap-2">
                 <CheckCircle size={16} /> {

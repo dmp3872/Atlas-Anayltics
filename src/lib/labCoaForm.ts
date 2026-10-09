@@ -547,6 +547,10 @@ export interface LabCoaResults {
   /** Optional pH on the certificate (auto-on for BAC water). */
   includePh: boolean;
   phResult: string;
+  /** Results table is pH (and any other included assays) without ID / content / purity. */
+  phOnly: boolean;
+  /** When false, the certificate omits the chromatogram. */
+  includeChromatogram: boolean;
 }
 
 export const EMPTY_LAB_RESULTS: LabCoaResults = {
@@ -575,6 +579,8 @@ export const EMPTY_LAB_RESULTS: LabCoaResults = {
   benzylQuantity: '',
   includePh: false,
   phResult: '',
+  phOnly: false,
+  includeChromatogram: true,
 };
 
 /** Well-known peptide → CAS for chemist COA autocomplete. */
@@ -1211,6 +1217,8 @@ export function buildLabResultsFromCoa(
       (phPanel?.result && !/^pending\b/i.test(phPanel.result) ? phPanel.result : '')
       || (typeof summary.ph_result === 'string' ? summary.ph_result : ''),
     ),
+    phOnly: summary.ph_only === true,
+    includeChromatogram: summary.include_chromatogram !== false,
     conformityPeptides,
     blendPeptides: blendPeptides.length > 0 ? blendPeptides : base.blendPeptides,
   };
@@ -1218,6 +1226,16 @@ export function buildLabResultsFromCoa(
 
 export function sterilitySpecLabel(_method?: SterilityMethod): string {
   return 'Not Detected';
+}
+
+export function coaShowsChromatogram(summary: unknown): boolean {
+  if (!summary || typeof summary !== 'object') return true;
+  return (summary as Record<string, unknown>).include_chromatogram !== false;
+}
+
+export function coaIsPhOnly(summary: unknown): boolean {
+  if (!summary || typeof summary !== 'object') return false;
+  return (summary as Record<string, unknown>).ph_only === true;
 }
 
 export function labResultsToPanelResults(
@@ -1333,51 +1351,56 @@ export function labResultsToPanelResults(
     return bacRows;
   }
 
-  const rows: PanelResult[] = [
-    {
-      panel_name: `Identification (${methodLabel})`,
-      specification: isBlend ? 'Blend peptide ID' : 'Peptide ID',
-      result: results.identification,
-      pass: !!results.identification.trim(),
-    },
-    {
-      panel_name: `Net Content (${methodLabel})`,
-      specification: isBlend
-        ? 'Total peptide content'
-        : (claimLabel ? `Label claim: ${claimLabel}` : 'Label claim'),
-      result: formatMgAmount(results.netContent, claimUnit) || results.netContent,
-      pass: !!results.netContent.trim(),
-    },
-    {
-      panel_name: `Net Purity (${methodLabel})`,
-      specification: '≥98%',
-      result: results.netPurity.trim() ? formatPurityPercent(results.netPurity) : '',
-      pass: true,
-    },
-  ];
+  const phOnly = !!results.phOnly && !opts?.bacWater;
+  const rows: PanelResult[] = [];
 
-  for (const row of results.blendPeptides) {
-    const name = row.name.trim();
-    if (!name) continue;
-    const claimAmt = row.claimMg.trim();
-    const contentParts = [formatMgAmount(row.netContent, claimUnit)].filter(Boolean);
-    for (const c of results.conformityPeptides) {
-      if (isBlendTotalConformityRow(c.name)) continue;
-      if (c.name.trim().toLowerCase() !== name.toLowerCase()) continue;
-      const formatted = formatMgAmount(c.netContent, claimUnit);
-      if (formatted) contentParts.push(formatted);
+  if (!phOnly) {
+    rows.push(
+      {
+        panel_name: `Identification (${methodLabel})`,
+        specification: isBlend ? 'Blend peptide ID' : 'Peptide ID',
+        result: results.identification,
+        pass: !!results.identification.trim(),
+      },
+      {
+        panel_name: `Net Content (${methodLabel})`,
+        specification: isBlend
+          ? 'Total peptide content'
+          : (claimLabel ? `Label claim: ${claimLabel}` : 'Label claim'),
+        result: formatMgAmount(results.netContent, claimUnit) || results.netContent,
+        pass: !!results.netContent.trim(),
+      },
+      {
+        panel_name: `Net Purity (${methodLabel})`,
+        specification: '≥98%',
+        result: results.netPurity.trim() ? formatPurityPercent(results.netPurity) : '',
+        pass: true,
+      },
+    );
+
+    for (const row of results.blendPeptides) {
+      const name = row.name.trim();
+      if (!name) continue;
+      const claimAmt = row.claimMg.trim();
+      const contentParts = [formatMgAmount(row.netContent, claimUnit)].filter(Boolean);
+      for (const c of results.conformityPeptides) {
+        if (isBlendTotalConformityRow(c.name)) continue;
+        if (c.name.trim().toLowerCase() !== name.toLowerCase()) continue;
+        const formatted = formatMgAmount(c.netContent, claimUnit);
+        if (formatted) contentParts.push(formatted);
+      }
+      rows.push({
+        panel_name: blendContentPanelName(name),
+        specification: claimAmt
+          ? `Label claim: ${formatLabelClaim(claimAmt, claimUnit)}`
+          : 'Label claim',
+        result: contentParts.join(', '),
+        pass: contentParts.length > 0,
+      });
     }
-    rows.push({
-      panel_name: blendContentPanelName(name),
-      specification: claimAmt
-        ? `Label claim: ${formatLabelClaim(claimAmt, claimUnit)}`
-        : 'Label claim',
-      result: contentParts.join(', '),
-      pass: contentParts.length > 0,
-    });
   }
 
-  if (results.includeMolecularWeight && results.molecularWeight.trim()) {
+  if (!phOnly && results.includeMolecularWeight && results.molecularWeight.trim()) {
     rows.push({
       panel_name: 'Molecular Weight (Da)',
       specification: '+/- 2 Da',
@@ -1473,7 +1496,7 @@ export function labResultsToPanelResults(
   // Fold multi-vial conformity into Net Content / Net Purity totals only — never blend component rows.
   const { contentParts, purityParts } = collectContentPurityParts(results, claimUnit);
 
-  if (contentParts.length > 0) {
+  if (!phOnly && contentParts.length > 0) {
     const net = rows.find(r => {
       const n = r.panel_name.toLowerCase();
       return (n.includes('net content') || n.includes('peptide content'))
@@ -1481,7 +1504,7 @@ export function labResultsToPanelResults(
     });
     if (net) net.result = contentParts.join(', ');
   }
-  if (purityParts.length > 0) {
+  if (!phOnly && purityParts.length > 0) {
     const pur = rows.find(r => {
       const n = r.panel_name.toLowerCase();
       return n.includes('net purity') || /^purity\b/.test(n);

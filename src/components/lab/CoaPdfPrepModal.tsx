@@ -39,6 +39,7 @@ import {
   resolveIncludePh,
   resolveIncludeBenzylPq,
   isBacWaterCoaContext,
+  coaShowsChromatogram,
   PH_SPEC_LABEL,
   BENZYL_PQ_SPEC_LABEL,
   formatPhResult,
@@ -164,6 +165,7 @@ export default function CoaPdfPrepModal({ coa, sampleMetadata = null, onClose, o
   const [includeHeavyMetals, setIncludeHeavyMetals] = useState(() => resolveIncludeHeavyMetals(coa, sampleMetadata));
   const [includePh, setIncludePh] = useState(() => resolveIncludePh(coa, sampleMetadata));
   const [includeBenzylPq, setIncludeBenzylPq] = useState(() => resolveIncludeBenzylPq(coa, sampleMetadata));
+  const [includeChromatogram, setIncludeChromatogram] = useState(() => coaShowsChromatogram(coa.result_summary));
   const orderedLocked = useMemo(() => {
     if (!sampleMetadata) {
       return {
@@ -395,6 +397,7 @@ export default function CoaPdfPrepModal({ coa, sampleMetadata = null, onClose, o
         include_benzyl_pq: includeBenzylPq || orderedLocked.benzyl,
         benzyl_purity: benzylPurity,
         benzyl_quantity: benzylQuantity,
+        include_chromatogram: includeChromatogram,
         measured_net_content: bacWaterMode ? measuredNetContent : undefined,
       });
       if (saveError) {
@@ -521,6 +524,17 @@ export default function CoaPdfPrepModal({ coa, sampleMetadata = null, onClose, o
               />
             </div>
             <div>
+              <label className="inline-flex items-center gap-2 text-sm font-semibold text-black cursor-pointer mb-2">
+                <input
+                  type="checkbox"
+                  checked={includeChromatogram}
+                  onChange={e => setIncludeChromatogram(e.target.checked)}
+                  className="rounded border-atlas-border"
+                />
+                Include chromatogram on COA
+              </label>
+              {includeChromatogram ? (
+              <>
               <div className="flex items-center justify-between gap-2 mb-2">
                 <label className="label mb-0">Chromatograph photo</label>
                 {hplcImage ? (
@@ -544,9 +558,14 @@ export default function CoaPdfPrepModal({ coa, sampleMetadata = null, onClose, o
                 prompt="a chromatograph"
                 hint="JPG or PNG, up to 1 MB"
               />
+              </>
+              ) : (
+                <p className="text-xs text-neutral-500">Chromatogram is omitted from this certificate.</p>
+              )}
             </div>
           </div>
 
+          {includeChromatogram && (
           <div>
             <label className="label mb-2 block">Raw chromatogram data</label>
             <p className="text-xs text-neutral-500 mb-2">
@@ -558,6 +577,7 @@ export default function CoaPdfPrepModal({ coa, sampleMetadata = null, onClose, o
               onError={setError}
             />
           </div>
+          )}
 
           <div className="rounded-lg border border-atlas-border p-4 space-y-3 bg-neutral-50/60">
             <div className="flex items-start justify-between gap-3">
