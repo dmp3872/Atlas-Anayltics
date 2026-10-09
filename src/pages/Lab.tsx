@@ -164,6 +164,7 @@ export default function Lab() {
   const [msg, setMsg] = useState<Message>(null);
   const [queueView, setQueueView] = useState<'pending' | 'all'>('pending');
   const [queueFilters, setQueueFilters] = useState<QueueFilterValues>({ ...QUEUE_FILTERS_BLANK });
+  const [queueReturnOrderId, setQueueReturnOrderId] = useState<string | null>(null);
 
   const [movingCoaId, setMovingCoaId] = useState<string | null>(null);
   const [workflowCompanyFilter, setWorkflowCompanyFilter] = useState('');
@@ -1510,8 +1511,13 @@ export default function Lab() {
           : 'COA issued (private). Verify it, then publish for the client.',
         slug: issuedSlug,
       });
-      setWorkflowCompanyFilter('');
-      setTab('workflow');
+      if (params.get('from') === 'queue') {
+        if (form.orderId) setQueueReturnOrderId(form.orderId);
+        setTab('queue');
+      } else {
+        setWorkflowCompanyFilter('');
+        setTab('workflow');
+      }
       loadAll();
     } catch (err) {
       const text = err instanceof Error ? err.message : 'Could not issue COA. Try smaller images and retry.';
@@ -1686,6 +1692,7 @@ export default function Lab() {
             <TestingQueuePanel
               items={filteredQueueItems}
               loading={loading}
+              focusOrderId={queueReturnOrderId}
               onIssueCoa={prefillFromSample}
               onUpdateStatus={updateSampleStatus}
               chemists={chemistOptions}
