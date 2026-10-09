@@ -180,6 +180,17 @@ export const LAB_TEST_SERVICES: LabTestService[] = [
     kind: 'assay',
   },
   {
+    id: 'ph',
+    name: 'pH Testing',
+    description: 'pH measurement. When this is the only test on the sample, the certificate uses the pH-only format.',
+    price: 200,
+    turnaroundDays: 3,
+    vialsRequired: 1,
+    available: true,
+    canBePrimary: true,
+    kind: 'assay',
+  },
+  {
     id: 'residual_solvents',
     name: 'Residual Solvents',
     description: 'Organic residual solvent profile',
@@ -935,6 +946,8 @@ export function mergeCatalogWithDbPanels(
 ): LabTestService[] {
   if (!dbPanels.length) return base;
   return base.map(service => {
+    // pH stays $200 from the catalog. A short name match must not pull another panel's price.
+    if (service.id === 'ph') return service;
     const hit = dbPanels.find(p => {
       const n = (p.name || '').toLowerCase();
       return (
