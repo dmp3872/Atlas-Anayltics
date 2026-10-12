@@ -40,6 +40,7 @@ import {
   resolveIncludeBenzylPq,
   isBacWaterCoaContext,
   coaShowsChromatogram,
+  coaIsPhOnly,
   PH_SPEC_LABEL,
   BENZYL_PQ_SPEC_LABEL,
   formatPhResult,
@@ -397,7 +398,7 @@ export default function CoaPdfPrepModal({ coa, sampleMetadata = null, onClose, o
         include_benzyl_pq: includeBenzylPq || orderedLocked.benzyl,
         benzyl_purity: benzylPurity,
         benzyl_quantity: benzylQuantity,
-        include_chromatogram: includeChromatogram,
+        include_chromatogram: includeChromatogram && !coaIsPhOnly(coa.result_summary),
         measured_net_content: bacWaterMode ? measuredNetContent : undefined,
       });
       if (saveError) {
@@ -524,16 +525,19 @@ export default function CoaPdfPrepModal({ coa, sampleMetadata = null, onClose, o
               />
             </div>
             <div>
-              <label className="inline-flex items-center gap-2 text-sm font-semibold text-black cursor-pointer mb-2">
+              <label className={`inline-flex items-center gap-2 text-sm font-semibold text-black mb-2 ${coaIsPhOnly(coa.result_summary) ? 'opacity-70' : 'cursor-pointer'}`}>
                 <input
                   type="checkbox"
-                  checked={includeChromatogram}
+                  checked={includeChromatogram && !coaIsPhOnly(coa.result_summary)}
+                  disabled={coaIsPhOnly(coa.result_summary)}
                   onChange={e => setIncludeChromatogram(e.target.checked)}
-                  className="rounded border-atlas-border"
+                  className="rounded border-atlas-border disabled:opacity-70"
                 />
                 Include chromatogram on COA
               </label>
-              {includeChromatogram ? (
+              {coaIsPhOnly(coa.result_summary) ? (
+                <p className="text-xs text-neutral-500 mb-2">pH-only certificates do not include a chromatogram.</p>
+              ) : includeChromatogram ? (
               <>
               <div className="flex items-center justify-between gap-2 mb-2">
                 <label className="label mb-0">Chromatograph photo</label>
@@ -565,7 +569,7 @@ export default function CoaPdfPrepModal({ coa, sampleMetadata = null, onClose, o
             </div>
           </div>
 
-          {includeChromatogram && (
+          {includeChromatogram && !coaIsPhOnly(coa.result_summary) && (
           <div>
             <label className="label mb-2 block">Raw chromatogram data</label>
             <p className="text-xs text-neutral-500 mb-2">
