@@ -751,13 +751,6 @@ export async function saveCoaPdfPrep(
   // Compression can return '' on failure — fall back to the pre-compress src so attachments survive.
   const vialImage = vialCompressed || preparedVial || hydrated.vial_image || '';
   const companyLogo = companyLogoCompressed || prepLogo || hydrated.company_logo || '';
-  const includeChromatogram = prep.include_chromatogram !== false;
-  const watermark = includeChromatogram
-    ? (watermarkCompressed || prepWatermark || hydrated.chromatogram_image || '')
-    : '';
-  const hplcImage = includeChromatogram
-    ? (hplcCompressed || prepHplc || hydrated.hplc_image || '')
-    : '';
 
   // Kanban / list rows omit result_summary — load it so Prepare doesn't wipe prior keys / update_log.
   let priorSummary: Record<string, unknown> =
@@ -774,6 +767,14 @@ export async function saveCoaPdfPrep(
       priorSummary = summaryRow.result_summary as Record<string, unknown>;
     }
   }
+
+  const includeChromatogram = prep.include_chromatogram !== false && priorSummary.ph_only !== true;
+  const watermark = includeChromatogram
+    ? (watermarkCompressed || prepWatermark || hydrated.chromatogram_image || '')
+    : '';
+  const hplcImage = includeChromatogram
+    ? (hplcCompressed || prepHplc || hydrated.hplc_image || '')
+    : '';
 
   const baseSummary = {
     ...stripCoaSummaryBlobs(priorSummary),
@@ -798,7 +799,11 @@ export async function saveCoaPdfPrep(
     ...(typeof prep.include_endotoxin === 'boolean' ? { include_endotoxin: prep.include_endotoxin } : {}),
     ...(typeof prep.include_heavy_metals === 'boolean' ? { include_heavy_metals: prep.include_heavy_metals } : {}),
     ...(typeof prep.include_ph === 'boolean' ? { include_ph: prep.include_ph } : {}),
-    ...(typeof prep.include_chromatogram === 'boolean' ? { include_chromatogram: prep.include_chromatogram } : {}),
+    include_chromatogram: priorSummary.ph_only === true
+      ? false
+      : (typeof prep.include_chromatogram === 'boolean'
+        ? prep.include_chromatogram
+        : priorSummary.include_chromatogram !== false),
     ...(typeof prep.ph_result === 'string' ? { ph_result: formatPhResult(prep.ph_result) } : {}),
     ...(typeof prep.include_benzyl_pq === 'boolean' ? { include_benzyl_pq: prep.include_benzyl_pq } : {}),
     ...(typeof prep.benzyl_purity === 'string' ? { benzyl_purity: formatBenzylPurity(prep.benzyl_purity) } : {}),
