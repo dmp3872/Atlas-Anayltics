@@ -1270,7 +1270,7 @@ export default function Lab() {
         || ''
       ).trim();
 
-      const showChromatogram = labResults.includeChromatogram;
+      const showChromatogram = labResults.includeChromatogram && !labResults.phOnly;
       const chromatogram_data = showChromatogram && chromatogramParsed
         ? chromatogramDataFromParsed(chromatogramParsed, {
             vial_size: form.vialSize,
@@ -1348,7 +1348,7 @@ export default function Lab() {
               ? formatPhResult(resultsForPanels.phResult)
               : '',
             ph_only: !!resultsForPanels.phOnly,
-            include_chromatogram: !!resultsForPanels.includeChromatogram,
+            include_chromatogram: showChromatogram,
             include_benzyl_pq: !!resultsForPanels.includeBenzylPq,
             benzyl_purity: resultsForPanels.includeBenzylPq
               ? formatBenzylPurity(resultsForPanels.benzylPurity)
@@ -2788,20 +2788,23 @@ export default function Lab() {
                   />
                 </div>
                 <div className="sm:col-span-2">
-                  <label className="inline-flex items-center gap-2 text-sm font-semibold text-black cursor-pointer">
+                  <label className={`inline-flex items-center gap-2 text-sm font-semibold text-black ${labResults.phOnly ? 'opacity-70' : 'cursor-pointer'}`}>
                     <input
                       type="checkbox"
-                      checked={labResults.includeChromatogram}
+                      checked={labResults.includeChromatogram && !labResults.phOnly}
+                      disabled={labResults.phOnly}
                       onChange={e => updateResults({ includeChromatogram: e.target.checked })}
-                      className="rounded border-atlas-border"
+                      className="rounded border-atlas-border disabled:opacity-70"
                     />
                     Include chromatogram on COA
                   </label>
                   <p className="text-xs text-neutral-500 mt-1">
-                    Turn this off for a pH-only certificate, or any COA that should not show a chromatogram.
+                    {labResults.phOnly
+                      ? 'pH-only certificates do not include a chromatogram.'
+                      : 'Turn this off for any COA that should not show a chromatogram.'}
                   </p>
                 </div>
-                {labResults.includeChromatogram && (
+                {labResults.includeChromatogram && !labResults.phOnly && (
                 <>
                 <div>
                   <label className="label mb-2 block">Chromatograph photo</label>
