@@ -1221,9 +1221,11 @@ export function buildLabResultsFromCoa(
       || (typeof summary.ph_result === 'string' ? summary.ph_result : ''),
     ),
     phOnly: typeof summary.ph_only === 'boolean' ? summary.ph_only : base.phOnly,
-    includeChromatogram: typeof summary.include_chromatogram === 'boolean'
-      ? summary.include_chromatogram
-      : !base.phOnly,
+    includeChromatogram: (typeof summary.ph_only === 'boolean' ? summary.ph_only : base.phOnly)
+      ? false
+      : (typeof summary.include_chromatogram === 'boolean'
+        ? summary.include_chromatogram
+        : !base.phOnly),
     conformityPeptides,
     blendPeptides: blendPeptides.length > 0 ? blendPeptides : base.blendPeptides,
   };
@@ -1235,7 +1237,9 @@ export function sterilitySpecLabel(_method?: SterilityMethod): string {
 
 export function coaShowsChromatogram(summary: unknown): boolean {
   if (!summary || typeof summary !== 'object') return true;
-  return (summary as Record<string, unknown>).include_chromatogram !== false;
+  const record = summary as Record<string, unknown>;
+  if (record.ph_only === true) return false;
+  return record.include_chromatogram !== false;
 }
 
 export function coaIsPhOnly(summary: unknown): boolean {
