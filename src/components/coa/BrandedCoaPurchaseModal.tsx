@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { AlertCircle, Building2, CheckCircle, CreditCard, Loader, Plus, Wallet, X } from 'lucide-react';
 import { Company, COA } from '../../lib/types';
@@ -81,6 +82,20 @@ export default function BrandedCoaPurchaseModal({
     return () => { cancelled = true; };
   }, [open, userId, currentBrand]);
 
+  useEffect(() => {
+    if (!open) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open, onClose]);
+
   if (!open) return null;
 
   async function resolveCompanyId(): Promise<string> {
@@ -107,6 +122,17 @@ export default function BrandedCoaPurchaseModal({
   }
 
   async function checkout(paymentMethod: 'card' | 'crypto' | 'prepaid') {
+    if (busy || loading) return;
+    if (!canCheckout) {
+      setError(
+        mode === 'new'
+          ? (currentBrand && form.name.trim().toLowerCase() === currentBrand
+            ? 'Enter a different brand name than the current certificate.'
+            : 'Enter a brand name above to continue.')
+          : 'Select a brand profile to continue.',
+      );
+      return;
+    }
     setBusy(true);
     setError('');
     try {
@@ -126,21 +152,19 @@ export default function BrandedCoaPurchaseModal({
 
   const sampleLabel = coa.display_name || coa.sample_name || 'this sample';
 
-  return (
-    <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <button
-        type="button"
+  return createPortal(
+    <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center p-0 sm:p-4">
+      <div
         className="absolute inset-0 bg-black/40"
-        aria-label="Close"
+        aria-hidden="true"
         onClick={onClose}
       />
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="additional-coa-title"
-        className="relative z-[81] w-full sm:max-w-lg max-h-[92vh] overflow-y-auto bg-white rounded-t-2xl sm:rounded-2xl border border-atlas-border shadow-xl"
+        className="relative z-[1] w-full sm:max-w-lg max-h-[92vh] overflow-y-auto bg-white rounded-t-2xl sm:rounded-2xl border border-atlas-border shadow-xl pointer-events-auto"
         onClick={e => e.stopPropagation()}
-        onKeyDown={e => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-atlas-border">
           <div>
@@ -289,7 +313,7 @@ export default function BrandedCoaPurchaseModal({
                 {canPrepaid && (
                   <button
                     type="button"
-                    disabled={busy || !canCheckout}
+                    disabled={busy || loading}
                     onClick={() => void checkout('prepaid')}
                     className="w-full rounded-xl border-2 border-emerald-300 bg-emerald-50 px-4 py-3 text-left disabled:opacity-50"
                   >
@@ -304,7 +328,7 @@ export default function BrandedCoaPurchaseModal({
 
                 <button
                   type="button"
-                  disabled={busy || !canCheckout}
+                  disabled={busy || loading}
                   onClick={() => void checkout('card')}
                   className="btn-primary w-full gap-2 justify-center disabled:opacity-50"
                 >
@@ -331,6 +355,7 @@ export default function BrandedCoaPurchaseModal({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

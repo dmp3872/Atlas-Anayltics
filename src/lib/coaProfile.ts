@@ -152,23 +152,30 @@ export async function purchaseBrandedCoaCopy(opts: {
     const contentType = res.headers.get('content-type') || '';
     const isJson = contentType.includes('application/json');
     // Local Vite serves the SPA HTML for unknown /api paths — treat as "no API".
-    if (isJson && res.status !== 404) {
-      const payload = await res.json().catch(() => ({})) as Record<string, unknown>;
-      if (!res.ok) {
-        throw new Error(
-          typeof payload.error === 'string' && payload.error.trim()
-            ? payload.error
-            : 'Could not create the branded COA.',
-        );
+    if (!isJson) {
+      if (res.status === 404 || res.status === 200) {
+        // Fall through to the database RPC.
+      } else {
+        throw new Error('Could not create the branded COA. Please try again.');
       }
-      const slug = typeof payload.slug === 'string' ? payload.slug : '';
-      if (!slug) throw new Error('Could not create the branded COA.');
-      return {
-        id: String(payload.id ?? ''),
-        slug,
-        company_name: typeof payload.company_name === 'string' ? payload.company_name : '',
-        fee: typeof payload.fee === 'number' ? payload.fee : 50,
-      };
+    } else if (res.status !== 404) {
+      const payload = await res.json().catch(() => ({})) as Record<string, unknown>;
+      const apiError = typeof payload.error === 'string' ? payload.error.trim() : '';
+      // Missing serverless keys — use the database function instead of blocking checkout.
+      if (!res.ok && /not configured|missing Supabase keys/i.test(apiError)) {
+        // Fall through to RPC.
+      } else if (!res.ok) {
+        throw new Error(apiError || 'Could not create the branded COA.');
+      } else {
+        const slug = typeof payload.slug === 'string' ? payload.slug : '';
+        if (!slug) throw new Error('Could not create the branded COA.');
+        return {
+          id: String(payload.id ?? ''),
+          slug,
+          company_name: typeof payload.company_name === 'string' ? payload.company_name : '',
+          fee: typeof payload.fee === 'number' ? payload.fee : 50,
+        };
+      }
     }
   } catch (err) {
     // Network / missing local API — try RPC next. Real API errors already threw above.
