@@ -1,4 +1,4 @@
-import { cloneCoaForBrandServer, createBrandCheckoutClients } from './lib/cloneCoaForBrandServer';
+import { cloneCoaForBrandServer, createBrandCheckoutClients } from './lib/cloneCoaForBrandServer.js';
 
 type Req = {
   method?: string;
