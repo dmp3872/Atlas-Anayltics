@@ -44,6 +44,7 @@ import { sampleIntakeAt, sampleReceivedBy, setSampleStatus } from '../lib/servic
 import { allocateUniqueSampleCode, isValidSampleCode } from '../lib/sampleCode';
 import { formatDate } from '../lib/utils';
 import ReceivingDesk from '../components/lab/ReceivingDesk';
+import LabRdNotesPanel from '../components/lab/LabRdNotesPanel';
 import MyBenchPanel from '../components/lab/MyBenchPanel';
 import StaffHeader from '../components/layout/StaffHeader';
 import LogoDropzone from '../components/account/LogoDropzone';
@@ -75,9 +76,9 @@ import { orderedAssayIds } from '../lib/orderProjection';
 const MAX_COA_IMAGE_BYTES = 1024 * 1024;
 
 type Message = { type: 'success' | 'error'; text: string; slug?: string } | null;
-type LabTab = 'bench' | 'receive' | 'queue' | 'chat' | 'issue' | 'workflow';
+type LabTab = 'bench' | 'receive' | 'queue' | 'chat' | 'issue' | 'workflow' | 'rd';
 
-const LAB_TABS: LabTab[] = ['bench', 'receive', 'queue', 'chat', 'issue', 'workflow'];
+const LAB_TABS: LabTab[] = ['bench', 'receive', 'queue', 'chat', 'issue', 'workflow', 'rd'];
 const LAB_TAB_LABELS: Record<LabTab, string> = {
   bench: 'My Bench',
   receive: 'Receive',
@@ -85,6 +86,7 @@ const LAB_TAB_LABELS: Record<LabTab, string> = {
   chat: 'Client Chat',
   issue: 'Issue COA',
   workflow: 'COA Workflow',
+  rd: 'Lab R&D',
 };
 
 function parseLabTab(value: string | null): LabTab | null {
@@ -1547,6 +1549,7 @@ export default function Lab() {
     { id: 'chat', label: LAB_TAB_LABELS.chat },
     { id: 'issue', label: LAB_TAB_LABELS.issue },
     { id: 'workflow', label: LAB_TAB_LABELS.workflow, count: workflowActiveCount || undefined },
+    { id: 'rd', label: LAB_TAB_LABELS.rd },
   ];
 
   return (
@@ -1568,7 +1571,7 @@ export default function Lab() {
             <FlaskConical size={24} className="text-brand-500" /> Lab Console
           </h1>
           <p className="text-sm text-neutral-500 mt-1">
-            My Bench → Receive → Testing queue → Issue COA → Workflow (verify &amp; publish).
+            My Bench → Receive → Testing queue → Issue COA → Workflow → Lab R&amp;D notes.
           </p>
         </div>
 
@@ -3024,6 +3027,10 @@ export default function Lab() {
               isAdmin={isAdmin}
             />
           </div>
+        )}
+
+        {tab === 'rd' && user && (
+          <LabRdNotesPanel userId={user.id} />
         )}
       </main>
 

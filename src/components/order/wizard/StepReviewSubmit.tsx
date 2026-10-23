@@ -8,6 +8,7 @@ import {
   formatLabelClaim,
   formatSampleTests,
   formatOrderTurnaround,
+  formatStoragePreferences,
   orderTotals,
   sampleLineTotal,
   sampleVialCount,
@@ -195,6 +196,10 @@ export default function StepReviewSubmit({
                   <div>
                     <dt className="text-neutral-500 text-xs">Sample price</dt>
                     <dd className="font-medium text-black">{formatCurrency(sampleLineTotal(sample, companyName, catalog))}</dd>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <dt className="text-neutral-500 text-xs">Storage preferences</dt>
+                    <dd className="font-medium text-black">{formatStoragePreferences(sample)}</dd>
                   </div>
                   <div className="sm:col-span-2">
                     <dt className="text-neutral-500 text-xs">COA profile</dt>

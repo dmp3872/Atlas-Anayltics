@@ -300,6 +300,49 @@ export const MIN_BLEND_COMPONENTS = 2;
 
 export const LABEL_CLAIM_UNITS = ['mg', 'mcg', 'g', 'mL', 'units', '%', 'IU', 'other'] as const;
 
+export type StorageTemperature = 'frozen' | 'refrigerated' | 'room_temp';
+
+export const STORAGE_TEMPERATURE_OPTIONS: { id: StorageTemperature; label: string }[] = [
+  { id: 'frozen', label: 'Frozen: -20°C' },
+  { id: 'refrigerated', label: 'Refrigerated: 2–8°C' },
+  { id: 'room_temp', label: 'Room temp: 15–25°C' },
+];
+
+export const DEFAULT_STORAGE_SENSITIVITIES = {
+  storage_uv_sensitive: true,
+  storage_moisture_sensitive: true,
+  storage_oxygen_sensitive: true,
+} as const;
+
+export function formatStoragePreferences(sample: Pick<
+  WizardSample,
+  'storage_temperature' | 'storage_uv_sensitive' | 'storage_moisture_sensitive' | 'storage_oxygen_sensitive'
+>): string {
+  const temp =
+    STORAGE_TEMPERATURE_OPTIONS.find(o => o.id === sample.storage_temperature)?.label
+    ?? STORAGE_TEMPERATURE_OPTIONS.find(o => o.id === 'refrigerated')!.label;
+  const flags: string[] = [];
+  if (sample.storage_uv_sensitive) flags.push('UV sensitive');
+  if (sample.storage_moisture_sensitive) flags.push('Moisture sensitive');
+  if (sample.storage_oxygen_sensitive) flags.push('Oxygen sensitive');
+  return flags.length ? `${temp}; ${flags.join(', ')}` : temp;
+}
+
+export function normalizeStoragePreferences(
+  partial: Partial<Pick<WizardSample, 'storage_temperature' | 'storage_uv_sensitive' | 'storage_moisture_sensitive' | 'storage_oxygen_sensitive'>>,
+): Pick<WizardSample, 'storage_temperature' | 'storage_uv_sensitive' | 'storage_moisture_sensitive' | 'storage_oxygen_sensitive'> {
+  const validTemps: StorageTemperature[] = ['frozen', 'refrigerated', 'room_temp'];
+  const storage_temperature = validTemps.includes(partial.storage_temperature as StorageTemperature)
+    ? (partial.storage_temperature as StorageTemperature)
+    : 'refrigerated';
+  return {
+    storage_temperature,
+    storage_uv_sensitive: partial.storage_uv_sensitive ?? DEFAULT_STORAGE_SENSITIVITIES.storage_uv_sensitive,
+    storage_moisture_sensitive: partial.storage_moisture_sensitive ?? DEFAULT_STORAGE_SENSITIVITIES.storage_moisture_sensitive,
+    storage_oxygen_sensitive: partial.storage_oxygen_sensitive ?? DEFAULT_STORAGE_SENSITIVITIES.storage_oxygen_sensitive,
+  };
+}
+
 export interface BlendComponent {
   name: string;
   amount_mg: string;
@@ -404,6 +447,10 @@ export interface WizardSample {
   include_fentanyl: boolean;
   client_reference: string;
   special_instructions: string;
+  storage_temperature: StorageTemperature;
+  storage_uv_sensitive: boolean;
+  storage_moisture_sensitive: boolean;
+  storage_oxygen_sensitive: boolean;
 }
 
 export function resolveTestMode(primaryId: string): TestMode {
@@ -462,6 +509,8 @@ export function createEmptySample(partial?: Partial<WizardSample>): WizardSample
     include_fentanyl: false,
     client_reference: '',
     special_instructions: '',
+    ...DEFAULT_STORAGE_SENSITIVITIES,
+    storage_temperature: 'refrigerated',
     ...categoryDefaults,
     ...partial,
     // One wizard row is one physical sample. Add another sample instead of
@@ -529,6 +578,7 @@ export function normalizeWizardSample(sample: Partial<WizardSample> & Pick<Wizar
   if (!merged.label_claim_unit) merged.label_claim_unit = 'mg';
   if (typeof merged.client_reference !== 'string') merged.client_reference = '';
   if (typeof merged.special_instructions !== 'string') merged.special_instructions = '';
+  Object.assign(merged, normalizeStoragePreferences(merged));
   merged.quantity = 1;
   if (!Array.isArray(merged.blend_components)) merged.blend_components = [];
   if (merged.sample_type === 'blend' && merged.blend_components.length === 0) {
@@ -592,6 +642,12 @@ export function wizardSampleFromOrderSample(input: {
     sample_type: (input.sample_type as WizardSample['sample_type'] | undefined) || undefined,
     category: (typeof meta.category === 'string' ? meta.category : undefined) as WizardSample['category'] | undefined,
     sample_matrix: (typeof meta.sample_matrix === 'string' ? meta.sample_matrix : undefined) as WizardSample['sample_matrix'] | undefined,
+    ...normalizeStoragePreferences({
+      storage_temperature: meta.storage_temperature as StorageTemperature | undefined,
+      storage_uv_sensitive: meta.storage_uv_sensitive as boolean | undefined,
+      storage_moisture_sensitive: meta.storage_moisture_sensitive as boolean | undefined,
+      storage_oxygen_sensitive: meta.storage_oxygen_sensitive as boolean | undefined,
+    }),
     ...overrides,
   });
 }
@@ -874,6 +930,11 @@ export function sampleMetadataPayload(
     include_fentanyl: sampleIncludesFentanyl(sample),
     client_reference: sample.client_reference,
     special_instructions: sample.special_instructions,
+    storage_temperature: sample.storage_temperature,
+    storage_uv_sensitive: sample.storage_uv_sensitive,
+    storage_moisture_sensitive: sample.storage_moisture_sensitive,
+    storage_oxygen_sensitive: sample.storage_oxygen_sensitive,
+    storage_preferences_label: formatStoragePreferences(sample),
     tests_label: formatSampleTests(sample, catalog),
     line_total: sampleLineTotal(sample, primaryBrand, catalog),
     vials_required: sampleVialCount(sample, catalog),

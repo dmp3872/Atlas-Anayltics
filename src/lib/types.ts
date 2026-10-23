@@ -286,6 +286,18 @@ export interface Company {
   updated_at: string;
 }
 
+/** Chemist R&D markdown notebook sheet (lab_rd_sheets). */
+export interface LabRdSheet {
+  id: string;
+  title: string;
+  content_md: string;
+  created_by: string;
+  updated_by: string | null;
+  position: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface CartSample {
   id: string;
   sample_name: string;

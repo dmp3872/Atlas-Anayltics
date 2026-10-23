@@ -7,6 +7,7 @@ import {
   OTHER_RESEARCH_MATERIALS,
   SAMPLE_CATEGORIES,
   SAMPLE_MATRICES,
+  STORAGE_TEMPERATURE_OPTIONS,
   SampleCategory,
   WizardSample,
   applyCategoryDefaults,
@@ -290,6 +291,69 @@ export default function StepSampleInfo({
                       onChange={e => updateSample(sample.id, { client_reference: e.target.value })}
                       placeholder="Internal PO or SKU"
                     />
+                  </div>
+
+                  <div className="sm:col-span-2 rounded-lg border border-atlas-border bg-neutral-50/80 p-4 space-y-4">
+                    <div>
+                      <p className="label mb-1">Storage preferences</p>
+                      <p className="text-xs text-neutral-500 mb-3">
+                        Tell us how your samples should be stored after we receive them.
+                      </p>
+                      <fieldset>
+                        <legend className="sr-only">Storage temperature</legend>
+                        <div className="space-y-2">
+                          {STORAGE_TEMPERATURE_OPTIONS.map(opt => (
+                            <label
+                              key={opt.id}
+                              className="flex items-center gap-2.5 text-sm text-neutral-800 cursor-pointer"
+                            >
+                              <input
+                                type="radio"
+                                name={`storage-temp-${sample.id}`}
+                                checked={sample.storage_temperature === opt.id}
+                                onChange={() => updateSample(sample.id, { storage_temperature: opt.id })}
+                                className="border-neutral-300 text-brand-600"
+                              />
+                              {opt.label}
+                            </label>
+                          ))}
+                        </div>
+                      </fieldset>
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500 mb-2">
+                        Sensitivity flags
+                      </p>
+                      <div className="flex flex-wrap gap-x-6 gap-y-2">
+                        <label className="flex items-center gap-2 text-sm cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={sample.storage_uv_sensitive}
+                            onChange={e => updateSample(sample.id, { storage_uv_sensitive: e.target.checked })}
+                            className="rounded border-neutral-300 text-brand-600"
+                          />
+                          UV sensitive
+                        </label>
+                        <label className="flex items-center gap-2 text-sm cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={sample.storage_moisture_sensitive}
+                            onChange={e => updateSample(sample.id, { storage_moisture_sensitive: e.target.checked })}
+                            className="rounded border-neutral-300 text-brand-600"
+                          />
+                          Moisture sensitive
+                        </label>
+                        <label className="flex items-center gap-2 text-sm cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={sample.storage_oxygen_sensitive}
+                            onChange={e => updateSample(sample.id, { storage_oxygen_sensitive: e.target.checked })}
+                            className="rounded border-neutral-300 text-brand-600"
+                          />
+                          Oxygen sensitive
+                        </label>
+                      </div>
+                    </div>
                   </div>
 
                   <div className="sm:col-span-2">
