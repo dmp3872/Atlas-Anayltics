@@ -78,9 +78,9 @@ export const ATLAS_SAFETY_PRO_INCLUDES = [
   'Identity (ID)',
   'Heavy Metals',
   'Endotoxin (LAL)',
-  'Sterility (PCR)',
+  'Sterility (14-day culture)',
   'Fentanyl Detection',
   'Conformity Vials',
 ] as const;
 
-export const ATLAS_SAFETY_PRO_PRICE = 850;
+export const ATLAS_SAFETY_PRO_PRICE = 700;

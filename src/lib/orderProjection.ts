@@ -200,7 +200,7 @@ export function packageCapabilities(id: 'full_qc' | 'atlas_pro'): PackageCapabil
         'conformity',
         'heavy_metals_icpms',
         'endotoxin_usp85',
-        'sterility_pcr',
+        'sterility_culture',
       ],
     };
   }
@@ -217,7 +217,7 @@ export function packageCapabilities(id: 'full_qc' | 'atlas_pro'): PackageCapabil
     includesSterility: true,
     includesConformity: false,
     includesFentanylOption: false,
-    methodKeys: ['identity', 'purity', 'quantity', 'sterility_pcr'],
+    methodKeys: ['identity', 'purity', 'quantity', 'sterility_culture'],
   };
 }
 
@@ -370,7 +370,7 @@ export function buildVialAllocation(
       {
         index: 5,
         label: 'V5',
-        purpose: 'Sterility (PCR)',
+        purpose: 'Sterility (14-day culture)',
         assays: ['Sterility'],
         role: 'assay',
         included: true,
@@ -425,7 +425,7 @@ export function buildVialAllocation(
       {
         index: 3,
         label: 'V3',
-        purpose: 'Sterility (PCR)',
+        purpose: 'Sterility (14-day culture)',
         assays: ['Sterility'],
         role: 'assay',
         included: true,

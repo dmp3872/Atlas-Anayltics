@@ -23,12 +23,12 @@ const migration = readFileSync(
 // --- Full QC catalog ---
 assert.match(catalogSrc, /id: 'full_qc'[\s\S]*?price: 400/);
 assert.match(catalogSrc, /FULL_QC_PANEL[\s\S]*?price: 400/);
-assert.match(catalogSrc, /FULL_QC_BUNDLED_TEST_IDS = \[\s*'purity_hplc',\s*'sterility_pcr'/);
+assert.match(catalogSrc, /FULL_QC_BUNDLED_TEST_IDS = \[\s*'purity_hplc',\s*'sterility_culture'/);
 assert.doesNotMatch(
   catalogSrc.slice(catalogSrc.indexOf('FULL_QC_BUNDLED_TEST_IDS'), catalogSrc.indexOf('export const FULL_QC_PANEL')),
   /heavy_metals_icpms|endotoxin_usp85/,
 );
-assert.match(catalogSrc, /'Sterility \(PCR\)'/);
+assert.match(catalogSrc, /'Sterility \(14-day culture\)'/);
 assert.match(catalogSrc, /id: 'ph'[\s\S]*?name: 'pH Testing'[\s\S]*?price: 200/);
 assert.match(projectionSrc, /export function sampleIsPhOnlyOrder/);
 assert.doesNotMatch(

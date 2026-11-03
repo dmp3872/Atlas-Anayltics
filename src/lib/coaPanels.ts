@@ -114,7 +114,7 @@ export const QC_PANELS = [
   'Net Content (Weight)',
   'Endotoxin (USP <85>)',
   'Heavy Metals (ICP-MS)',
-  'Sterility (PCR)',
+  'Sterility (14-day culture)',
   'Microbial Screen',
   CONFORMITY_PANEL_NAME,
 ];
@@ -124,7 +124,7 @@ export const FULL_QC_PANELS = [
   'Purity & Quantitation (HPLC)',
   'Identity Confirmation (MS)',
   'Net Content (Weight)',
-  'Sterility (PCR)',
+  'Sterility (14-day culture)',
 ];
 
 export const ATLAS_PRO_PANELS = [
@@ -133,7 +133,7 @@ export const ATLAS_PRO_PANELS = [
   'Net Content (Weight)',
   'Endotoxin (USP <85>)',
   'Heavy Metals (ICP-MS)',
-  'Sterility (PCR)',
+  'Sterility (14-day culture)',
   CONFORMITY_PANEL_NAME,
 ];
 

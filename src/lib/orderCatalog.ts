@@ -82,7 +82,7 @@ export const LAB_TEST_SERVICES: LabTestService[] = [
     description: ATLAS_SAFETY_PRO_INCLUDES.filter(i => i !== 'Fentanyl Detection').join(', '),
     price: ATLAS_SAFETY_PRO_PRICE,
     turnaroundDays: 5,
-    turnaroundLabel: '3–5 business days',
+    turnaroundLabel: '3–5 business days · sterility 14 days',
     vialsRequired: 5,
     available: true,
     canBePrimary: true,
@@ -91,10 +91,10 @@ export const LAB_TEST_SERVICES: LabTestService[] = [
   {
     id: 'full_qc',
     name: 'Full QC Panel',
-    description: 'Identity, purity, quantity, and sterility screen',
+    description: 'Identity, purity, quantity, and 14-day culture sterility',
     price: 400,
     turnaroundDays: 5,
-    turnaroundLabel: '3–5 business days',
+    turnaroundLabel: '3–5 business days · sterility 14 days',
     vialsRequired: 3,
     available: true,
     canBePrimary: true,
@@ -141,9 +141,10 @@ export const LAB_TEST_SERVICES: LabTestService[] = [
     price: 150,
     turnaroundDays: 3,
     vialsRequired: 1,
-    available: true,
+    available: false,
     canBePrimary: true,
     kind: 'assay',
+    comingSoonLabel: 'Temporarily unavailable',
   },
   {
     id: 'sterility_culture',
@@ -236,7 +237,7 @@ export const ATLAS_PRO_BUNDLED_TEST_IDS = [
   'purity_hplc',
   'heavy_metals_icpms',
   'endotoxin_usp85',
-  'sterility_pcr',
+  'sterility_culture',
 ] as const;
 
 export const ATLAS_PRO_PANEL = {
@@ -254,7 +255,7 @@ export const ATLAS_PRO_PANEL = {
     'Quantity verification',
     'Heavy metals screen',
     '+ Endotoxin (LAL)',
-    '+ Sterility (PCR)',
+    '+ Sterility (14-day culture)',
     '+ 3-vial conformity testing (2 comparison vials included)',
   ],
   emphasized: true as const,
@@ -262,7 +263,7 @@ export const ATLAS_PRO_PANEL = {
 
 export const FULL_QC_BUNDLED_TEST_IDS = [
   'purity_hplc',
-  'sterility_pcr',
+  'sterility_culture',
 ] as const;
 
 export const FULL_QC_PANEL = {
@@ -278,7 +279,7 @@ export const FULL_QC_PANEL = {
     'Identity confirmation',
     'Purity analysis (%)',
     'Quantity verification',
-    'Sterility (PCR)',
+    'Sterility (14-day culture)',
   ],
   emphasized: false as const,
 };

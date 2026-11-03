@@ -560,7 +560,7 @@ export const EMPTY_LAB_RESULTS: LabCoaResults = {
   assayMethod: 'hplc_uv_vis',
   molecularWeight: '',
   includeMolecularWeight: false,
-  sterilityMethod: 'pcr',
+  sterilityMethod: 'culture_14_day',
   sterilityProjectedCompletion: '',
   sterilityPass: null,
   endotoxinEuMl: '',

@@ -257,7 +257,7 @@ export default function StepSelectTesting({
                           Also included in Atlas Pro
                         </p>
                         <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs text-neutral-700">
-                          {['Heavy metals screen', 'Endotoxin (LAL)', 'Sterility (PCR)', 'Digital verified COA'].map(item => (
+                          {['Heavy metals screen', 'Endotoxin (LAL)', 'Sterility (14-day culture)', 'Digital verified COA'].map(item => (
                             <span key={item} className="inline-flex items-start gap-1.5">
                               <Check size={12} className="mt-0.5 shrink-0 text-atlas-success" />
                               {item}
