@@ -116,7 +116,7 @@ export function coaAllowsBrandedCopy(coa: {
   return Boolean(coa.issued_at);
 }
 
-export type BrandedCoaPaymentMethod = 'card' | 'crypto' | 'prepaid';
+export type BrandedCoaPaymentMethod = 'card' | 'prepaid';
 
 export interface BrandedCoaCloneResult {
   id: string;
@@ -130,10 +130,15 @@ export async function purchaseBrandedCoaCopy(opts: {
   sourceCoaId: string;
   companyId: string;
   paymentMethod: BrandedCoaPaymentMethod;
+  paymentIntentId?: string;
 }): Promise<BrandedCoaCloneResult> {
   const { data: sessionData } = await supabase.auth.getSession();
   const token = sessionData.session?.access_token;
   if (!token) throw new Error('Sign in to purchase an additional COA.');
+
+  // Card payments are only verified by the API; the RPC must never issue a card-paid copy.
+  const cardPayment = opts.paymentMethod === 'card';
+  const cardUnavailable = 'Card checkout is unavailable right now. Please try again later.';
 
   // Prefer the Vercel API (service-role clone). Local Vite has no /api — fall through to RPC.
   try {
@@ -147,22 +152,25 @@ export async function purchaseBrandedCoaCopy(opts: {
         sourceCoaId: opts.sourceCoaId,
         companyId: opts.companyId,
         paymentMethod: opts.paymentMethod,
+        ...(opts.paymentIntentId ? { paymentIntentId: opts.paymentIntentId } : {}),
       }),
     });
     const contentType = res.headers.get('content-type') || '';
     const isJson = contentType.includes('application/json');
     // Local Vite serves the SPA HTML for unknown /api paths — treat as "no API".
     if (!isJson) {
-      if (res.status === 404 || res.status === 200) {
+      if (cardPayment) {
+        throw new Error(cardUnavailable);
+      } else if (res.status === 404 || res.status === 200) {
         // Fall through to the database RPC.
       } else {
         throw new Error('Could not create the branded COA. Please try again.');
       }
-    } else if (res.status !== 404) {
+    } else if (res.status !== 404 || cardPayment) {
       const payload = await res.json().catch(() => ({})) as Record<string, unknown>;
       const apiError = typeof payload.error === 'string' ? payload.error.trim() : '';
       // Missing serverless keys — use the database function instead of blocking checkout.
-      if (!res.ok && /not configured|missing Supabase keys/i.test(apiError)) {
+      if (!res.ok && !cardPayment && /not configured|missing Supabase keys/i.test(apiError)) {
         // Fall through to RPC.
       } else if (!res.ok) {
         throw new Error(apiError || 'Could not create the branded COA.');
@@ -179,10 +187,12 @@ export async function purchaseBrandedCoaCopy(opts: {
     }
   } catch (err) {
     // Network / missing local API — try RPC next. Real API errors already threw above.
-    if (!(err instanceof TypeError) && !(err instanceof Error && /Failed to fetch|NetworkError|Load failed/i.test(err.message))) {
-      throw err;
-    }
+    const networkError = err instanceof TypeError
+      || (err instanceof Error && /Failed to fetch|NetworkError|Load failed/i.test(err.message));
+    if (!networkError) throw err;
+    if (cardPayment) throw new Error(cardUnavailable);
   }
+  if (cardPayment) throw new Error(cardUnavailable);
 
   const { data, error } = await supabase.rpc('clone_coa_for_brand', {
     p_source_coa_id: opts.sourceCoaId,

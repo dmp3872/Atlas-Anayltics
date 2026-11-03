@@ -1,92 +1,90 @@
-import { cloneCoaForBrandServer, createBrandCheckoutClients } from './lib/cloneCoaForBrandServer.js';
+import { cloneCoaForBrandServer, verifyBrandedCoaPayment } from './lib/cloneCoaForBrandServer.js';
+import {
+  HttpError,
+  STRIPE_NOT_CONFIGURED,
+  getStripe,
+  handlePreflight,
+  header,
+  isKnownApiError,
+  json,
+  readBody,
+  requireUser,
+  sendError,
+  supabaseEnv,
+  type ApiReq,
+  type ApiRes,
+} from './lib/stripeServer.js';
 
-type Req = {
-  method?: string;
-  headers: Record<string, string | string[] | undefined>;
-  body?: unknown;
-};
-
-type Res = {
-  status: (code: number) => Res;
-  json: (body: unknown) => void;
-  setHeader: (k: string, v: string) => void;
-  end: () => void;
-};
+const NOT_CONFIGURED = 'Branded COA checkout is not configured on the server (missing Supabase keys).';
 
 type Body = {
-  sourceCoaId?: string;
-  companyId?: string;
-  paymentMethod?: string;
+  sourceCoaId?: unknown;
+  companyId?: unknown;
+  paymentMethod?: unknown;
+  paymentIntentId?: unknown;
 };
 
-function json(res: Res, status: number, body: Record<string, unknown>) {
-  res.status(status).json(body);
-}
-
-function header(req: Req, name: string): string {
-  const raw = req.headers[name] ?? req.headers[name.toLowerCase()];
-  return Array.isArray(raw) ? (raw[0] || '') : String(raw || '');
-}
-
-export default async function handler(req: Req, res: Res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
-
-  if (req.method === 'OPTIONS') return res.status(204).end();
-  if (req.method !== 'POST') return json(res, 405, { error: 'Method not allowed' });
-
-  const url = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '';
-  const anon = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '';
-  const service = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-  if (!url || !anon || !service) {
-    return json(res, 503, {
-      error: 'Branded COA checkout is not configured on the server (missing Supabase keys).',
-    });
-  }
-
-  const auth = header(req, 'authorization');
-  if (!auth.startsWith('Bearer ')) {
-    return json(res, 401, { error: 'Sign in to purchase an additional COA.' });
-  }
-
-  let body: Body = {};
-  try {
-    body = (typeof req.body === 'string' ? JSON.parse(req.body) : req.body || {}) as Body;
-  } catch {
-    return json(res, 400, { error: 'Invalid JSON body.' });
-  }
-
-  const sourceCoaId = String(body.sourceCoaId || '').trim();
-  const companyId = String(body.companyId || '').trim();
-  const paymentMethod = String(body.paymentMethod || 'card').trim().toLowerCase();
-  if (!sourceCoaId || !companyId) {
-    return json(res, 400, { error: 'sourceCoaId and companyId are required.' });
-  }
-
-  const { userClient, admin } = createBrandCheckoutClients({
-    url,
-    anon,
-    service,
-    authHeader: auth,
-  });
-
-  const { data: userData, error: userErr } = await userClient.auth.getUser();
-  if (userErr || !userData.user) {
-    return json(res, 401, { error: 'Invalid or expired session. Sign in again.' });
-  }
+export default async function handler(req: ApiReq, res: ApiRes) {
+  if (handlePreflight(req, res)) return;
 
   try {
+    const body = readBody<Body>(req);
+    const sourceCoaId = String(body.sourceCoaId || '').trim();
+    const companyId = String(body.companyId || '').trim();
+    const paymentMethod = String(body.paymentMethod || 'card').trim().toLowerCase();
+    const paymentIntentId = String(body.paymentIntentId || '').trim();
+    if (!sourceCoaId || !companyId) {
+      throw new HttpError(400, 'sourceCoaId and companyId are required.');
+    }
+    if (paymentMethod === 'crypto') {
+      throw new HttpError(400, 'Crypto checkout is not available for additional COAs yet.');
+    }
+    if (paymentMethod !== 'card' && paymentMethod !== 'prepaid') {
+      throw new HttpError(400, 'Invalid payment method.');
+    }
+
+    const { url, anon, service } = supabaseEnv();
+    if (!url || !anon || !service) {
+      throw new HttpError(503, NOT_CONFIGURED);
+    }
+
+    const auth = header(req, 'authorization');
+    if (!auth.startsWith('Bearer ')) {
+      throw new HttpError(401, 'Sign in to purchase an additional COA.');
+    }
+
+    const stripe = paymentMethod === 'card' ? getStripe() : null;
+    if (paymentMethod === 'card') {
+      if (!stripe) throw new HttpError(503, STRIPE_NOT_CONFIGURED);
+      if (!paymentIntentId) throw new HttpError(400, 'paymentIntentId is required for card payments.');
+    }
+
+    const { user, userClient, admin } = await requireUser(auth);
+    if (!admin) throw new HttpError(503, NOT_CONFIGURED);
+
+    if (stripe) {
+      await verifyBrandedCoaPayment({
+        stripe,
+        admin,
+        userId: user.id,
+        sourceCoaId,
+        companyId,
+        paymentIntentId,
+      });
+    }
+
     const result = await cloneCoaForBrandServer({
       userClient,
       admin,
-      userId: userData.user.id,
+      userId: user.id,
       sourceCoaId,
       companyId,
       paymentMethod,
+      paymentIntentId: paymentMethod === 'card' ? paymentIntentId : undefined,
     });
     return json(res, 200, result);
   } catch (err) {
+    if (isKnownApiError(err)) return sendError(res, err, 'Could not create the branded COA.');
     const message = err instanceof Error ? err.message : 'Could not create the branded COA.';
     const status = /sign in|session/i.test(message)
       ? 401

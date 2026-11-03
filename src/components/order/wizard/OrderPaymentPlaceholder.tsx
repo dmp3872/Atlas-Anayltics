@@ -1,8 +1,17 @@
 import { useState } from 'react';
 import { Check, CreditCard, Lock, Wallet } from 'lucide-react';
 import { formatCurrency } from '../../../lib/utils';
+import { stripeEnabled } from '../../../lib/stripeClient';
+import StripeCardCheckout, { StripeIntent } from '../../payment/StripeCardCheckout';
 
 export type SimulatedPaymentMethod = 'card' | 'crypto';
+
+export interface StripeCheckoutConfig {
+  createIntent: () => Promise<StripeIntent>;
+  onSucceeded: (paymentIntentId: string) => Promise<void>;
+  disabled?: boolean;
+  note?: string;
+}
 
 interface Props {
   amount: number;
@@ -19,15 +28,20 @@ interface Props {
   payButtonLabel?: string;
   processingLabel?: string;
   footerNote?: string;
+  /** Live Stripe card checkout; used for the card tab when a publishable key is configured. */
+  stripeCheckout?: StripeCheckoutConfig;
 }
 
 const CRYPTO_ASSETS = ['USDC', 'USDT', 'BTC', 'ETH'] as const;
+
+/** Crypto is simulated (no real transfer), so it stays hidden until a live processor exists. */
+const CRYPTO_CHECKOUT_ENABLED = false;
 
 /** Simulated card / crypto payment until live processors are connected. */
 export default function OrderPaymentPlaceholder({
   amount,
   paid,
-  method,
+  method: requestedMethod,
   onMethodChange,
   onPaidChange,
   onCardPayAndSubmit,
@@ -37,7 +51,11 @@ export default function OrderPaymentPlaceholder({
   payButtonLabel,
   processingLabel,
   footerNote,
+  stripeCheckout,
 }: Props) {
+  const method: SimulatedPaymentMethod = CRYPTO_CHECKOUT_ENABLED ? requestedMethod : 'card';
+  const liveCard = stripeEnabled && !!stripeCheckout;
+  const liveCardTab = liveCard && method === 'card';
   const [name, setName] = useState('');
   const [number, setNumber] = useState('');
   const [expiry, setExpiry] = useState('');
@@ -158,14 +176,19 @@ export default function OrderPaymentPlaceholder({
             Payment
           </h3>
           <p className="text-sm text-neutral-500 mt-1">
-            {description || `Pay ${formatCurrency(amount)} to unlock order submission. Live Stripe / crypto checkout comes later.`}
+            {liveCardTab
+              ? `Pay ${formatCurrency(amount)} by card. Your card is charged and the laboratory order submits automatically.`
+              : description || `Pay ${formatCurrency(amount)} to unlock order submission. Live Stripe / crypto checkout comes later.`}
           </p>
         </div>
-        <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800 bg-amber-100 px-2 py-1 rounded">
-          Simulation
-        </span>
+        {!liveCardTab && (
+          <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800 bg-amber-100 px-2 py-1 rounded">
+            Simulation
+          </span>
+        )}
       </div>
 
+      {CRYPTO_CHECKOUT_ENABLED && (
       <div className="grid grid-cols-2 gap-2" role="tablist" aria-label="Payment method">
         <button
           type="button"
@@ -181,7 +204,7 @@ export default function OrderPaymentPlaceholder({
           <p className="text-sm font-bold text-black flex items-center gap-1.5">
             <CreditCard size={15} /> Card
           </p>
-          <p className="text-xs text-neutral-500 mt-0.5">Stripe placeholder</p>
+          <p className="text-xs text-neutral-500 mt-0.5">{liveCard ? 'Secure checkout via Stripe' : 'Stripe placeholder'}</p>
         </button>
         <button
           type="button"
@@ -200,8 +223,19 @@ export default function OrderPaymentPlaceholder({
           <p className="text-xs text-neutral-500 mt-0.5">USDC, USDT, BTC, ETH</p>
         </button>
       </div>
+      )}
 
-      {method === 'card' ? (
+      {liveCardTab && stripeCheckout ? (
+        <StripeCardCheckout
+          key={amount}
+          createIntent={stripeCheckout.createIntent}
+          onSucceeded={stripeCheckout.onSucceeded}
+          startLabel="Continue to secure payment"
+          payLabel={total => `Pay & submit order · ${formatCurrency(total)}`}
+          disabled={stripeCheckout.disabled || amount <= 0}
+          note={stripeCheckout.note}
+        />
+      ) : method === 'card' ? (
         <div className="grid sm:grid-cols-2 gap-3">
           <div className="sm:col-span-2">
             <label className="label" htmlFor="sim-card-name">Name on card</label>
@@ -289,29 +323,33 @@ export default function OrderPaymentPlaceholder({
         </div>
       )}
 
-      {error && (
-        <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
-      )}
+      {!liveCardTab && (
+        <>
+          {error && (
+            <p className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>
+          )}
 
-      <button
-        type="button"
-        className="btn-primary w-full sm:w-auto gap-2"
-        disabled={processing || amount <= 0}
-        onClick={() => void (method === 'crypto' ? simulateCryptoPay() : simulateCardPay())}
-      >
-        {processing
-          ? (processingLabel || (method === 'card' ? 'Paying & submitting…' : 'Authorizing…'))
-          : payButtonLabel
-            || (method === 'crypto'
-              ? `Simulate ${asset} payment · ${formatCurrency(amount)}`
-              : `Pay & submit order · ${formatCurrency(amount)}`)}
-      </button>
-      <p className="text-[11px] text-neutral-500 flex items-center gap-1">
-        <Lock size={11} />
-        {footerNote || (method === 'card'
-          ? 'Simulated card charge — submits the laboratory order automatically.'
-          : 'No real transfer — simulate crypto payment, then submit below.')}
-      </p>
+          <button
+            type="button"
+            className="btn-primary w-full sm:w-auto gap-2"
+            disabled={processing || amount <= 0}
+            onClick={() => void (method === 'crypto' ? simulateCryptoPay() : simulateCardPay())}
+          >
+            {processing
+              ? (processingLabel || (method === 'card' ? 'Paying & submitting…' : 'Authorizing…'))
+              : payButtonLabel
+                || (method === 'crypto'
+                  ? `Simulate ${asset} payment · ${formatCurrency(amount)}`
+                  : `Pay & submit order · ${formatCurrency(amount)}`)}
+          </button>
+          <p className="text-[11px] text-neutral-500 flex items-center gap-1">
+            <Lock size={11} />
+            {footerNote || (method === 'card'
+              ? 'Simulated card charge — submits the laboratory order automatically.'
+              : 'No real transfer — simulate crypto payment, then submit below.')}
+          </p>
+        </>
+      )}
     </div>
   );
 }

@@ -1,6 +1,6 @@
-import { SampleType } from './types';
-import { formatCurrency } from './utils';
-import { ATLAS_SAFETY_PRO_INCLUDES, ATLAS_SAFETY_PRO_PRICE } from './submissionUtils';
+import { SampleType } from './types.js';
+import { formatCurrency } from './utils.js';
+import { ATLAS_SAFETY_PRO_INCLUDES, ATLAS_SAFETY_PRO_PRICE } from './submissionUtils.js';
 
 export type SampleMatrix =
   | 'Powder'

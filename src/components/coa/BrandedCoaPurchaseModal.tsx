@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { AlertCircle, Building2, CheckCircle, CreditCard, Loader, Plus, Wallet, X } from 'lucide-react';
@@ -10,6 +10,8 @@ import {
 } from '../../lib/coaProfile';
 import { POST_ISSUE_BRAND_FEE } from '../../lib/orderCatalog';
 import { formatCurrency } from '../../lib/utils';
+import { createPaymentIntent, stripeEnabled } from '../../lib/stripeClient';
+import StripeCardCheckout, { StripeIntent } from '../payment/StripeCardCheckout';
 import CoaProfileFormFields, {
   EMPTY_COA_PROFILE_FORM,
   CoaProfileFormState,
@@ -41,6 +43,9 @@ export default function BrandedCoaPurchaseModal({
   const [form, setForm] = useState<CoaProfileFormState>(EMPTY_COA_PROFILE_FORM);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [formVersion, setFormVersion] = useState(0);
+  const paidCompanyIdRef = useRef<string | null>(null);
+  const savedNewCompanyIdRef = useRef<string | null>(null);
 
   const currentBrand = (coa.company_name || '').trim().toLowerCase();
   const otherCompanies = useMemo(
@@ -58,6 +63,8 @@ export default function BrandedCoaPurchaseModal({
     setLoading(true);
     setError('');
     setForm(EMPTY_COA_PROFILE_FORM);
+    paidCompanyIdRef.current = null;
+    savedNewCompanyIdRef.current = null;
     void fetchUserCompanies(userId)
       .then(list => {
         if (cancelled) return;
@@ -118,19 +125,51 @@ export default function BrandedCoaPurchaseModal({
     }
     setCompanies(prev => [...prev, company]);
     setSelectedId(company.id);
+    savedNewCompanyIdRef.current = company.id;
     return company.id;
   }
 
-  async function checkout(paymentMethod: 'card' | 'crypto' | 'prepaid') {
+  function checkoutBlockedMessage(): string {
+    return mode === 'new'
+      ? (currentBrand && form.name.trim().toLowerCase() === currentBrand
+        ? 'Enter a different brand name than the current certificate.'
+        : 'Enter a brand name above to continue.')
+      : 'Select a brand profile to continue.';
+  }
+
+  async function createBrandedIntent(): Promise<StripeIntent> {
+    if (loading || !canCheckout) {
+      const msg = loading ? 'Profiles are still loading.' : checkoutBlockedMessage();
+      setError(msg);
+      throw new Error(msg);
+    }
+    setError('');
+    const companyId = (mode === 'new' && savedNewCompanyIdRef.current) || await resolveCompanyId();
+    paidCompanyIdRef.current = companyId;
+    return createPaymentIntent({ purpose: 'branded_coa', sourceCoaId: coa.id, companyId });
+  }
+
+  async function onCardSucceeded(paymentIntentId: string) {
+    const companyId = paidCompanyIdRef.current;
+    if (!companyId) throw new Error('Brand profile was not recorded for this payment.');
+    setBusy(true);
+    try {
+      const result = await purchaseBrandedCoaCopy({
+        sourceCoaId: coa.id,
+        companyId,
+        paymentMethod: 'card',
+        paymentIntentId,
+      });
+      onPurchased(result.slug);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function checkout(paymentMethod: 'card' | 'prepaid') {
     if (busy || loading) return;
     if (!canCheckout) {
-      setError(
-        mode === 'new'
-          ? (currentBrand && form.name.trim().toLowerCase() === currentBrand
-            ? 'Enter a different brand name than the current certificate.'
-            : 'Enter a brand name above to continue.')
-          : 'Select a brand profile to continue.',
-      );
+      setError(checkoutBlockedMessage());
       return;
     }
     setBusy(true);
@@ -290,6 +329,8 @@ export default function BrandedCoaPurchaseModal({
                     form={form}
                     onChange={patch => {
                       setForm(prev => ({ ...prev, ...patch }));
+                      savedNewCompanyIdRef.current = null;
+                      setFormVersion(v => v + 1);
                       setError('');
                     }}
                     onError={setError}
@@ -302,12 +343,16 @@ export default function BrandedCoaPurchaseModal({
                   <div>
                     <p className="font-bold text-black">Checkout</p>
                     <p className="text-sm text-neutral-600 mt-0.5">
-                      {formatCurrency(POST_ISSUE_BRAND_FEE)} · simulated payment until live card checkout is connected
+                      {stripeEnabled
+                        ? `${formatCurrency(POST_ISSUE_BRAND_FEE)} · your card is charged and the COA is issued right away`
+                        : `${formatCurrency(POST_ISSUE_BRAND_FEE)} · simulated payment until live card checkout is connected`}
                     </p>
                   </div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800 bg-amber-100 px-2 py-1 rounded shrink-0">
-                    Simulation
-                  </span>
+                  {!stripeEnabled && (
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-amber-800 bg-amber-100 px-2 py-1 rounded shrink-0">
+                      Simulation
+                    </span>
+                  )}
                 </div>
 
                 {canPrepaid && (
@@ -326,23 +371,34 @@ export default function BrandedCoaPurchaseModal({
                   </button>
                 )}
 
-                <button
-                  type="button"
-                  disabled={busy || loading}
-                  onClick={() => void checkout('card')}
-                  className="btn-primary w-full gap-2 justify-center disabled:opacity-50"
-                >
-                  {busy ? (
-                    <>
-                      <Loader size={16} className="animate-spin" /> Issuing additional COA…
-                    </>
-                  ) : (
-                    <>
-                      <CreditCard size={16} />
-                      Pay {formatCurrency(POST_ISSUE_BRAND_FEE)} &amp; issue COA
-                    </>
-                  )}
-                </button>
+                {stripeEnabled ? (
+                  <StripeCardCheckout
+                    key={`${mode}:${mode === 'existing' ? selectedId : formVersion}`}
+                    createIntent={createBrandedIntent}
+                    onSucceeded={onCardSucceeded}
+                    startLabel="Continue to secure payment"
+                    payLabel={amount => `Pay ${formatCurrency(amount)} & issue COA`}
+                    disabled={loading}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    disabled={busy || loading}
+                    onClick={() => void checkout('card')}
+                    className="btn-primary w-full gap-2 justify-center disabled:opacity-50"
+                  >
+                    {busy ? (
+                      <>
+                        <Loader size={16} className="animate-spin" /> Issuing additional COA…
+                      </>
+                    ) : (
+                      <>
+                        <CreditCard size={16} />
+                        Pay {formatCurrency(POST_ISSUE_BRAND_FEE)} &amp; issue COA
+                      </>
+                    )}
+                  </button>
+                )}
                 {!canCheckout && (
                   <p className="text-xs text-neutral-500">
                     {mode === 'new'

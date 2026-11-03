@@ -1,4 +1,4 @@
-import { SubmissionStatus } from './types';
+import { SubmissionStatus } from './types.js';
 
 export const SUBMISSION_STATUS_LABELS: Record<SubmissionStatus, string> = {
   draft: 'Draft',

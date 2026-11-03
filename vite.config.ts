@@ -19,15 +19,22 @@ function loadEnvIntoProcess() {
   }
 }
 
-/** Local Vite middleware so Additional COA checkout works without deploying. */
-function brandedCoaApiPlugin(): Plugin {
+const LOCAL_API_ROUTES: Record<string, string> = {
+  '/api/clone-coa-for-brand': '/api/clone-coa-for-brand.ts',
+  '/api/create-payment-intent': '/api/create-payment-intent.ts',
+  '/api/confirm-order-payment': '/api/confirm-order-payment.ts',
+};
+
+/** Local Vite middleware so the Vercel API functions work without deploying. */
+function localApiPlugin(): Plugin {
   return {
-    name: 'branded-coa-api',
+    name: 'local-api-routes',
     configureServer(server: ViteDevServer) {
       loadEnvIntoProcess();
       server.middlewares.use(async (req, res, next) => {
         const url = req.url?.split('?')[0] || '';
-        if (url !== '/api/clone-coa-for-brand') return next();
+        const modulePath = LOCAL_API_ROUTES[url];
+        if (!modulePath) return next();
 
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -52,7 +59,7 @@ function brandedCoaApiPlugin(): Plugin {
             try {
               const raw = Buffer.concat(chunks).toString('utf8');
               const body = raw ? JSON.parse(raw) : {};
-              const { default: handler } = await server.ssrLoadModule('/api/clone-coa-for-brand.ts');
+              const { default: handler } = await server.ssrLoadModule(modulePath);
               const fakeRes = {
                 statusCode: 200,
                 status(code: number) {
@@ -91,7 +98,7 @@ function brandedCoaApiPlugin(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [react(), brandedCoaApiPlugin()],
+  plugins: [react(), localApiPlugin()],
   optimizeDeps: {
     exclude: ['lucide-react'],
   },

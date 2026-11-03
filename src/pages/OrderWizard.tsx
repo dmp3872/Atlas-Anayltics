@@ -42,6 +42,8 @@ import { defaultCompany, fetchUserCompanies } from '../lib/coaProfile';
 import { Company } from '../lib/types';
 import { computeOrderReadiness } from '../lib/orderReadiness';
 import { wizardStageFromStep } from '../lib/orderProjection';
+import { confirmOrderPayment, createPaymentIntent, stripeEnabled } from '../lib/stripeClient';
+import type { StripeIntent } from '../components/payment/StripeCardCheckout';
 
 const STEPS = [
   { id: 1, label: 'Select Testing', sub: 'Category & assays', icon: FlaskConical },
@@ -58,6 +60,7 @@ interface SuccessInfo {
   status: string;
   shippingLabelId?: string | null;
   shippingPreboarded?: boolean;
+  paymentWarning?: string;
 }
 
 export default function OrderWizard() {
@@ -147,9 +150,6 @@ export default function OrderWizard() {
       setPromoCode(draft.promoCode);
       setCompanyName(draft.companyName || profile?.company_name || '');
       setSelectedCompanyId(draft.selectedCompanyId || '');
-      if (draft.paymentMethod === 'crypto' || draft.paymentMethod === 'card') {
-        setPaymentMethod(draft.paymentMethod);
-      }
       if (draft.promoCode.trim().toUpperCase() === 'ATLAS10') setPromoApplied(true);
     }
   }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -348,13 +348,21 @@ export default function OrderWizard() {
     }
   }
 
-  async function submitOrder(opts?: { forcePaid?: boolean; method?: SimulatedPaymentMethod }) {
-    if (!user || loading) return;
+  async function submitOrder(opts?: {
+    forcePaid?: boolean;
+    method?: SimulatedPaymentMethod;
+    paymentIntentId?: string;
+  }) {
+    if (!user || loading) {
+      if (opts?.paymentIntentId) throw new Error('Order submission is already in progress.');
+      return;
+    }
     setError('');
     setValidationError('');
 
     const paid = opts?.forcePaid === true || paymentPaid;
     const method = opts?.method ?? paymentMethod;
+    const piId = opts?.paymentIntentId;
 
     if (!readyExceptPayment) {
       setValidationError('Complete confirmations and required fields before paying / submitting.');
@@ -365,7 +373,8 @@ export default function OrderWizard() {
       throw new Error('Simulate payment on the review page before submitting.');
     }
 
-    if (opts?.forcePaid) setPaymentPaid(true);
+    // A live charge must never unlock the simulated submit button if the insert fails.
+    if (opts?.forcePaid && !piId) setPaymentPaid(true);
     if (opts?.method) setPaymentMethod(opts.method);
 
     setLoading(true);
@@ -378,21 +387,30 @@ export default function OrderWizard() {
         coa_profile_id: selectedCompanyId,
         coa_profile_name: selectedCompany?.name ?? companyName,
         samples_detail: samples.map(s => sampleMetadataPayload(s, companyName, catalog)),
-        payment_simulation: true,
-        payment_provider: method === 'crypto' ? 'crypto_placeholder' : 'stripe_placeholder',
+        ...(piId
+          ? { payment_simulation: false, payment_provider: 'stripe', stripe_payment_intent_id: piId }
+          : {
+            payment_simulation: true,
+            payment_provider: method === 'crypto' ? 'crypto_placeholder' : 'stripe_placeholder',
+          }),
       };
 
       const anyRush = samples.some(s => s.rush);
+      const paymentFields: Record<string, unknown> = piId
+        ? { payment_status: 'unpaid', payment_note: `Stripe payment processing · ${piId}` }
+        : {
+          payment_status: 'paid',
+          paid_at: new Date().toISOString(),
+          payment_note:
+            method === 'crypto'
+              ? 'Simulated crypto payment (placeholder)'
+              : 'Simulated Stripe card payment (placeholder)',
+        };
       const orderPayload: Record<string, unknown> = {
         user_id: user.id,
         order_number: orderNumber,
         status: 'awaiting_sample',
-        payment_status: 'paid',
-        paid_at: new Date().toISOString(),
-        payment_note:
-          method === 'crypto'
-            ? 'Simulated crypto payment (placeholder)'
-            : 'Simulated Stripe card payment (placeholder)',
+        ...paymentFields,
         rush_processing: anyRush,
         lab_priority: anyRush ? 'high' : 'normal',
         notes: notes ? `${notes}\n\n---\n${JSON.stringify(orderMeta)}` : JSON.stringify(orderMeta),
@@ -440,6 +458,16 @@ export default function OrderWizard() {
       const { error: samplesError } = await supabase.from('order_samples').insert(sampleRows);
       if (samplesError) throw samplesError;
 
+      let paymentWarning: string | undefined;
+      if (piId) {
+        try {
+          await confirmOrderPayment(order.id, piId);
+        } catch (confirmErr) {
+          console.warn('confirm-order-payment failed:', confirmErr);
+          paymentWarning = `Your order was placed and your card was charged, but payment verification is still pending. The lab will confirm it shortly — payment reference ${piId}.`;
+        }
+      }
+
       await notifyOrderUpdate(user.id, orderNumber, 'submitted');
       clearOrderDraft(user.id);
 
@@ -452,6 +480,7 @@ export default function OrderWizard() {
         status: order.status || 'awaiting_sample',
         shippingLabelId: shippingLabelId,
         shippingPreboarded: !!profile?.shipping_preboarded,
+        paymentWarning,
       });
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err: unknown) {
@@ -464,6 +493,29 @@ export default function OrderWizard() {
 
   async function handleCardPayAndSubmit() {
     await submitOrder({ forcePaid: true, method: 'card' });
+  }
+
+  async function createOrderIntent(): Promise<StripeIntent> {
+    if (!readyExceptPayment) {
+      const msg = 'Complete confirmations and required fields before paying.';
+      setValidationError(msg);
+      throw new Error(msg);
+    }
+    setValidationError('');
+    const intent = await createPaymentIntent({
+      purpose: 'order',
+      samples,
+      companyId: selectedCompanyId,
+      promoCode: promoApplied ? promoCode : undefined,
+    });
+    if (Math.abs(intent.amount - total) > 0.01) {
+      console.warn(`Server order total ${intent.amount} differs from client estimate ${total}.`);
+    }
+    return intent;
+  }
+
+  async function onStripeSucceeded(paymentIntentId: string) {
+    await submitOrder({ forcePaid: true, method: 'card', paymentIntentId });
   }
 
   function resetForAnotherOrder() {
@@ -503,6 +555,12 @@ export default function OrderWizard() {
           </div>
         </header>
         <div className="flex-1 max-w-6xl mx-auto w-full px-4 py-10">
+          {success.paymentWarning && (
+            <div className="mb-4 p-3 bg-amber-50 border border-amber-300 rounded-lg flex gap-2 text-sm text-amber-900" role="status">
+              <AlertCircle size={16} className="flex-shrink-0 mt-0.5" />
+              {success.paymentWarning}
+            </div>
+          )}
           <OrderSuccess
             orderId={success.orderId}
             orderNumber={success.orderNumber}
@@ -664,6 +722,12 @@ export default function OrderWizard() {
                   setPaymentPaid(false);
                 }}
                 onCardPayAndSubmit={handleCardPayAndSubmit}
+                stripeCheckout={stripeEnabled ? {
+                  createIntent: createOrderIntent,
+                  onSucceeded: onStripeSucceeded,
+                  disabled: loading,
+                  note: readyExceptPayment ? undefined : 'Complete the confirmations above before paying.',
+                } : undefined}
                 readiness={readiness}
               />
             )}

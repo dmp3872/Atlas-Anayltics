@@ -1,5 +1,5 @@
-import type { LabTestService } from './orderCatalog';
-import { ATLAS_SAFETY_PRO_PRICE } from './submissionUtils';
+import type { LabTestService } from './orderCatalog.js';
+import { ATLAS_SAFETY_PRO_PRICE } from './submissionUtils.js';
 
 /** Negotiated Atlas Safety Pro (Atlas Pro) package prices by login email. */
 const ATLAS_PRO_PRICE_BY_EMAIL: Record<string, number> = {

@@ -1,4 +1,6 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import type Stripe from 'stripe';
+import { HttpError } from './stripeServer.js';
 
 export const POST_ISSUE_BRAND_FEE_SERVER = 50;
 const MAX_BRANDS = 5;
@@ -28,66 +30,42 @@ function allocateSlug(): string {
 }
 
 /**
- * Clone an issued COA onto another brand profile.
- * Tries the DB RPC first (when migration is applied), then service-role insert.
+ * Load and validate the source COA + target company for a branded copy.
+ * Runs before charging (create-payment-intent) and again before inserting.
  */
-export async function cloneCoaForBrandServer(opts: {
-  userClient: SupabaseClient;
-  admin: SupabaseClient;
-  userId: string;
-  sourceCoaId: string;
-  companyId: string;
-  paymentMethod: string;
-}): Promise<CloneCoaBrandResult> {
-  const paymentMethod = opts.paymentMethod.trim().toLowerCase();
-  if (!['card', 'crypto', 'prepaid'].includes(paymentMethod)) {
-    throw new Error('Invalid payment method.');
-  }
-
-  const userRpc = await opts.userClient.rpc('clone_coa_for_brand', {
-    p_source_coa_id: opts.sourceCoaId,
-    p_company_id: opts.companyId,
-    p_payment_method: paymentMethod,
-  });
-  if (!userRpc.error && userRpc.data) {
-    const row = userRpc.data as Record<string, unknown>;
-    if (typeof row.slug === 'string' && row.slug) {
-      return {
-        id: String(row.id ?? ''),
-        slug: row.slug,
-        company_name: typeof row.company_name === 'string' ? row.company_name : '',
-        fee: typeof row.fee === 'number' ? row.fee : POST_ISSUE_BRAND_FEE_SERVER,
-      };
-    }
-  }
-
-  const { data: src, error: srcErr } = await opts.admin
+export async function loadBrandCloneContext(
+  db: SupabaseClient,
+  userId: string,
+  sourceCoaId: string,
+  companyId: string,
+) {
+  const { data: src, error: srcErr } = await db
     .from('coas')
     .select('*')
-    .eq('id', opts.sourceCoaId)
+    .eq('id', sourceCoaId)
     .maybeSingle();
-  if (srcErr || !src) throw new Error('Certificate not found.');
-  if (src.user_id !== opts.userId) {
-    throw new Error('You can only brand your own certificates.');
+  if (srcErr || !src) throw new HttpError(404, 'Certificate not found.');
+  if (src.user_id !== userId) {
+    throw new HttpError(403, 'You can only brand your own certificates.');
   }
   const stage = String(src.coa_workflow_stage || '');
   if (!['issued', 'pending_review', 'verified', 'published'].includes(stage) && !src.issued_at) {
-    throw new Error('This certificate is not ready to copy yet.');
+    throw new HttpError(400, 'This certificate is not ready to copy yet.');
   }
 
-  const { data: company, error: companyErr } = await opts.admin
+  const { data: company, error: companyErr } = await db
     .from('companies')
     .select('*')
-    .eq('id', opts.companyId)
+    .eq('id', companyId)
     .maybeSingle();
-  if (companyErr || !company || company.user_id !== opts.userId) {
-    throw new Error('Select one of your COA profiles.');
+  if (companyErr || !company || company.user_id !== userId) {
+    throw new HttpError(400, 'Select one of your COA profiles.');
   }
   if (String(company.name || '').trim().toLowerCase() === String(src.company_name || '').trim().toLowerCase()) {
-    throw new Error(`This certificate is already branded as ${company.name}.`);
+    throw new HttpError(400, `This certificate is already branded as ${company.name}.`);
   }
 
-  let siblingsQuery = opts.admin.from('coas').select('id, company_name').eq('user_id', opts.userId);
+  let siblingsQuery = db.from('coas').select('id, company_name').eq('user_id', userId);
   if (src.sample_id) {
     siblingsQuery = siblingsQuery.eq('sample_id', src.sample_id);
   } else {
@@ -98,14 +76,106 @@ export async function cloneCoaForBrandServer(opts: {
   const { data: siblings } = await siblingsQuery;
   const list = siblings || [];
   if (list.length >= MAX_BRANDS) {
-    throw new Error('This sample already has the maximum number of branded COAs.');
+    throw new HttpError(400, 'This sample already has the maximum number of branded COAs.');
   }
   if (list.some(c =>
     c.id !== src.id
     && String(c.company_name || '').trim().toLowerCase() === String(company.name || '').trim().toLowerCase()
   )) {
-    throw new Error(`A COA for ${company.name} already exists for this sample.`);
+    throw new HttpError(400, `A COA for ${company.name} already exists for this sample.`);
   }
+  return { src, company };
+}
+
+/**
+ * Throws unless the PaymentIntent is a succeeded, unused $50 branded-COA charge
+ * for this exact user / source COA / company.
+ */
+export async function verifyBrandedCoaPayment(opts: {
+  stripe: Stripe;
+  admin: SupabaseClient;
+  userId: string;
+  sourceCoaId: string;
+  companyId: string;
+  paymentIntentId: string;
+}): Promise<string> {
+  const pi = await opts.stripe.paymentIntents.retrieve(opts.paymentIntentId);
+  if (pi.status !== 'succeeded') {
+    throw new HttpError(400, 'Card payment has not completed.');
+  }
+  const meta = pi.metadata || {};
+  if (
+    pi.amount_received !== Math.round(POST_ISSUE_BRAND_FEE_SERVER * 100)
+    || meta.purpose !== 'branded_coa'
+    || meta.user_id !== opts.userId
+    || meta.source_coa_id !== opts.sourceCoaId
+    || meta.company_id !== opts.companyId
+  ) {
+    throw new HttpError(400, 'This payment does not match the requested branded COA.');
+  }
+  const { data: used, error: usedErr } = await opts.admin
+    .from('coas')
+    .select('id')
+    .eq('result_summary->branded_copy_purchase->>payment_intent_id', pi.id)
+    .limit(1);
+  if (usedErr) throw new Error(usedErr.message);
+  if (used && used.length > 0) {
+    throw new HttpError(409, 'This payment was already used for a branded COA.');
+  }
+  return pi.id;
+}
+
+/**
+ * Clone an issued COA onto another brand profile.
+ * Prepaid tries the DB RPC first (when migration is applied), then service-role insert.
+ * Card requires a verified PaymentIntent and always uses the service-role insert.
+ */
+export async function cloneCoaForBrandServer(opts: {
+  userClient: SupabaseClient;
+  admin: SupabaseClient;
+  userId: string;
+  sourceCoaId: string;
+  companyId: string;
+  paymentMethod: string;
+  /** Verified PaymentIntent id; required when paymentMethod is 'card'. */
+  paymentIntentId?: string;
+}): Promise<CloneCoaBrandResult> {
+  const paymentMethod = opts.paymentMethod.trim().toLowerCase();
+  if (paymentMethod === 'crypto') {
+    throw new HttpError(400, 'Crypto checkout is not available for additional COAs yet.');
+  }
+  if (!['card', 'prepaid'].includes(paymentMethod)) {
+    throw new HttpError(400, 'Invalid payment method.');
+  }
+  if (paymentMethod === 'card' && !opts.paymentIntentId) {
+    throw new HttpError(400, 'paymentIntentId is required for card payments.');
+  }
+
+  if (paymentMethod === 'prepaid') {
+    const userRpc = await opts.userClient.rpc('clone_coa_for_brand', {
+      p_source_coa_id: opts.sourceCoaId,
+      p_company_id: opts.companyId,
+      p_payment_method: paymentMethod,
+    });
+    if (!userRpc.error && userRpc.data) {
+      const row = userRpc.data as Record<string, unknown>;
+      if (typeof row.slug === 'string' && row.slug) {
+        return {
+          id: String(row.id ?? ''),
+          slug: row.slug,
+          company_name: typeof row.company_name === 'string' ? row.company_name : '',
+          fee: typeof row.fee === 'number' ? row.fee : POST_ISSUE_BRAND_FEE_SERVER,
+        };
+      }
+    }
+  }
+
+  const { src, company } = await loadBrandCloneContext(
+    opts.admin,
+    opts.userId,
+    opts.sourceCoaId,
+    opts.companyId,
+  );
 
   if (paymentMethod === 'prepaid') {
     const { data: profile } = await opts.admin
@@ -149,6 +219,7 @@ export async function cloneCoaForBrandServer(opts: {
     amount: POST_ISSUE_BRAND_FEE_SERVER,
     payment_method: paymentMethod,
     at: new Date().toISOString(),
+    ...(paymentMethod === 'card' ? { payment_intent_id: opts.paymentIntentId } : {}),
   };
   summary.update_log = log.slice(-24);
 

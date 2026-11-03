@@ -1,4 +1,4 @@
-import { OrderStatus, PaymentStatus, SampleStatus } from './types';
+import { OrderStatus, PaymentStatus, SampleStatus } from './types.js';
 
 export function formatCurrency(amount: number): string {
   return new Intl.NumberFormat('en-US', {

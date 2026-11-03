@@ -17,7 +17,7 @@ import {
 import { formatCurrency } from '../../../lib/utils';
 import { Company } from '../../../lib/types';
 import { ReadinessReport } from '../../../lib/orderReadiness';
-import OrderPaymentPlaceholder, { SimulatedPaymentMethod } from './OrderPaymentPlaceholder';
+import OrderPaymentPlaceholder, { SimulatedPaymentMethod, StripeCheckoutConfig } from './OrderPaymentPlaceholder';
 import VialAllocationMap from '../VialAllocationMap';
 
 interface Confirmations {
@@ -46,6 +46,7 @@ interface Props {
   paymentMethod: SimulatedPaymentMethod;
   onPaymentMethodChange: (method: SimulatedPaymentMethod) => void;
   onCardPayAndSubmit?: () => Promise<void>;
+  stripeCheckout?: StripeCheckoutConfig;
   readiness?: ReadinessReport;
 }
 
@@ -69,6 +70,7 @@ export default function StepReviewSubmit({
   paymentMethod,
   onPaymentMethodChange,
   onCardPayAndSubmit,
+  stripeCheckout,
   readiness,
 }: Props) {
   const totals = orderTotals(samples, companyName, catalog);
@@ -291,6 +293,7 @@ export default function StepReviewSubmit({
         onMethodChange={onPaymentMethodChange}
         onPaidChange={onPaymentPaidChange}
         onCardPayAndSubmit={onCardPayAndSubmit}
+        stripeCheckout={stripeCheckout}
       />
     </div>
   );
