@@ -140,6 +140,9 @@ export default async function handler(req: ApiReq, res: ApiRes) {
       if (!sourceCoaId || !companyId) {
         throw new HttpError(400, 'sourceCoaId and companyId are required.');
       }
+      if (POST_ISSUE_BRAND_FEE <= 0) {
+        throw new HttpError(400, 'Additional COAs are free right now — no payment needed.');
+      }
       // Issuing the copy needs the service role; refuse before charging so a card is never billed for nothing.
       if (!admin) {
         throw new HttpError(503, 'Additional COA card checkout is not configured on the server yet.');

@@ -6,14 +6,14 @@ import {
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { COA } from '../lib/types';
-import { formatDate } from '../lib/utils';
+import { formatCurrency, formatDate } from '../lib/utils';
 import { verifyCoaIntegrity } from '../lib/coaVerify';
 import { hydrateCoaImages, prepareVialImage, readCoaPdfStats, resolveCoaHeaderLogo, resolveCoaWatermark } from '../lib/coaImages';
 import { matrixTypeFromSampleMetadata } from '../lib/coaPanels';
 import { partitionCoaPanels, panelStatusLabel, panelStatusToneClass, resolvePanelPass, formatCoaResultDisplay, isEndotoxinPanelName, endotoxinConformityLabel } from '../lib/coaDisplayPanels';
 import { fetchCoaByCode, fetchImagesByCode } from '../lib/publicCoa';
 import { formatCoaDecimal, parseAssayMethod, ASSAY_METHOD_LABELS, assayMethodFromPanels, hydrateMultiVialPanelResults, resolveCasNumber, applyQuantityUnit, coaShowsChromatogram, coaIsPhOnly } from '../lib/labCoaForm';
-import { labelClaimFromSummary, netContentSpecificationDisplay } from '../lib/orderCatalog';
+import { labelClaimFromSummary, netContentSpecificationDisplay, POST_ISSUE_BRAND_FEE } from '../lib/orderCatalog';
 import { compressImageDataUrl } from '../lib/imageCompress';
 import { coaDigitalPdfFilename, downloadCoaPdfFromElement } from '../lib/coaPdf';
 import { coaHasDirectorSignature, coaSignatureProgress, coaWorkflowStage } from '../lib/coaWorkflow';
@@ -835,7 +835,7 @@ export default function COADetail() {
                 onClick={() => setBrandModalOpen(true)}
                 className="btn-outline flex-1 gap-2 justify-center"
               >
-                <Building2 size={16} /> Additional COA $50
+                <Building2 size={16} /> Additional COA{POST_ISSUE_BRAND_FEE > 0 ? ` ${formatCurrency(POST_ISSUE_BRAND_FEE)}` : ''}
               </button>
             )}
             <button

@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { Company } from './types';
+import { POST_ISSUE_BRAND_FEE } from './orderCatalog';
 
 export interface CoaProfileInput {
   name: string;
@@ -116,7 +117,7 @@ export function coaAllowsBrandedCopy(coa: {
   return Boolean(coa.issued_at);
 }
 
-export type BrandedCoaPaymentMethod = 'card' | 'prepaid';
+export type BrandedCoaPaymentMethod = 'card' | 'prepaid' | 'free';
 
 export interface BrandedCoaCloneResult {
   id: string;
@@ -125,7 +126,7 @@ export interface BrandedCoaCloneResult {
   fee: number;
 }
 
-/** Clone an issued COA onto another of the owner's COA profiles after the $50 fee. */
+/** Clone an issued COA onto another of the owner's COA profiles (fee: POST_ISSUE_BRAND_FEE). */
 export async function purchaseBrandedCoaCopy(opts: {
   sourceCoaId: string;
   companyId: string;
@@ -181,7 +182,7 @@ export async function purchaseBrandedCoaCopy(opts: {
           id: String(payload.id ?? ''),
           slug,
           company_name: typeof payload.company_name === 'string' ? payload.company_name : '',
-          fee: typeof payload.fee === 'number' ? payload.fee : 50,
+          fee: typeof payload.fee === 'number' ? payload.fee : POST_ISSUE_BRAND_FEE,
         };
       }
     }
@@ -214,6 +215,6 @@ export async function purchaseBrandedCoaCopy(opts: {
     id: String(row.id ?? ''),
     slug,
     company_name: typeof row.company_name === 'string' ? row.company_name : '',
-    fee: typeof row.fee === 'number' ? row.fee : 50,
+    fee: typeof row.fee === 'number' ? row.fee : POST_ISSUE_BRAND_FEE,
   };
 }

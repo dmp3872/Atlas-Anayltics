@@ -36,7 +36,7 @@ import OrderShippingChecklist from '../components/order/OrderShippingChecklist';
 import AtlasDigitalCoaCard from '../components/order/AtlasDigitalCoaCard';
 import OrderNotesThread from '../components/order/OrderNotesThread';
 import { assayResultsFromPanels, assayChipStatusesFromPanels, isHeavyMetalPanel, partitionCoaPanels, resolvePanelPass } from '../lib/coaDisplayPanels';
-import { TestMode, wizardSampleFromOrderSample } from '../lib/orderCatalog';
+import { POST_ISSUE_BRAND_FEE, TestMode, wizardSampleFromOrderSample } from '../lib/orderCatalog';
 import { trackingStageFromStatuses } from '../lib/orderProjection';
 import { queueNotification } from '../lib/notifications';
 import { hydrateCoaImages } from '../lib/coaImages';
@@ -914,7 +914,7 @@ export default function Portal() {
                                         onClick={() => setBrandCoa(primary)}
                                         className="btn-ghost text-[11px] py-1 px-2 gap-1 inline-flex text-brand-700"
                                       >
-                                        <Building2 size={11} /> Additional COA $50
+                                        <Building2 size={11} /> Additional COA{POST_ISSUE_BRAND_FEE > 0 ? ` ${formatCurrency(POST_ISSUE_BRAND_FEE)}` : ''}
                                       </button>
                                     )}
                                   </div>

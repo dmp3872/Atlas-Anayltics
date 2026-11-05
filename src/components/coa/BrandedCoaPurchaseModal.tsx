@@ -166,7 +166,7 @@ export default function BrandedCoaPurchaseModal({
     }
   }
 
-  async function checkout(paymentMethod: 'card' | 'prepaid') {
+  async function checkout(paymentMethod: 'card' | 'prepaid' | 'free') {
     if (busy || loading) return;
     if (!canCheckout) {
       setError(checkoutBlockedMessage());
@@ -190,6 +190,7 @@ export default function BrandedCoaPurchaseModal({
   }
 
   const sampleLabel = coa.display_name || coa.sample_name || 'this sample';
+  const isFree = POST_ISSUE_BRAND_FEE <= 0;
 
   return createPortal(
     <div className="fixed inset-0 z-[200] flex items-end sm:items-center justify-center p-0 sm:p-4">
@@ -212,8 +213,8 @@ export default function BrandedCoaPurchaseModal({
               Additional COA
             </h2>
             <p className="text-sm text-neutral-600 mt-1">
-              Get a copy of <strong>{sampleLabel}</strong> under another brand for{' '}
-              <strong>{formatCurrency(POST_ISSUE_BRAND_FEE)}</strong>. Assay results stay the same;
+              Get a copy of <strong>{sampleLabel}</strong> under another brand
+              {isFree ? <> at <strong>no charge</strong></> : <> for <strong>{formatCurrency(POST_ISSUE_BRAND_FEE)}</strong></>}. Assay results stay the same;
               only the header logo and watermark change.
             </p>
           </div>
@@ -338,6 +339,34 @@ export default function BrandedCoaPurchaseModal({
                 </div>
               )}
 
+              {isFree ? (
+                <div className="rounded-xl border border-brand-200 bg-brand-50/40 p-4 space-y-3">
+                  <p className="text-sm text-neutral-600">No charge · the COA is issued right away.</p>
+                  <button
+                    type="button"
+                    disabled={busy || loading}
+                    onClick={() => void checkout('free')}
+                    className="btn-primary w-full gap-2 justify-center disabled:opacity-50"
+                  >
+                    {busy ? (
+                      <>
+                        <Loader size={16} className="animate-spin" /> Issuing additional COA…
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle size={16} /> Issue additional COA
+                      </>
+                    )}
+                  </button>
+                  {!canCheckout && (
+                    <p className="text-xs text-neutral-500">
+                      {mode === 'new'
+                        ? 'Enter a brand name above to continue.'
+                        : 'Select a brand profile to continue.'}
+                    </p>
+                  )}
+                </div>
+              ) : (
               <div className="rounded-xl border border-brand-200 bg-brand-50/40 p-4 space-y-3">
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -407,6 +436,7 @@ export default function BrandedCoaPurchaseModal({
                   </p>
                 )}
               </div>
+              )}
             </>
           )}
         </div>

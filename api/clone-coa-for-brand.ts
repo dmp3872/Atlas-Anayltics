@@ -1,4 +1,4 @@
-import { cloneCoaForBrandServer, verifyBrandedCoaPayment } from './lib/cloneCoaForBrandServer.js';
+import { BRANDED_COA_IS_FREE, cloneCoaForBrandServer, verifyBrandedCoaPayment } from './lib/cloneCoaForBrandServer.js';
 import {
   HttpError,
   STRIPE_NOT_CONFIGURED,
@@ -31,15 +31,16 @@ export default async function handler(req: ApiReq, res: ApiRes) {
     const body = readBody<Body>(req);
     const sourceCoaId = String(body.sourceCoaId || '').trim();
     const companyId = String(body.companyId || '').trim();
-    const paymentMethod = String(body.paymentMethod || 'card').trim().toLowerCase();
+    const requestedMethod = String(body.paymentMethod || 'card').trim().toLowerCase();
     const paymentIntentId = String(body.paymentIntentId || '').trim();
     if (!sourceCoaId || !companyId) {
       throw new HttpError(400, 'sourceCoaId and companyId are required.');
     }
-    if (paymentMethod === 'crypto') {
+    if (requestedMethod === 'crypto') {
       throw new HttpError(400, 'Crypto checkout is not available for additional COAs yet.');
     }
-    if (paymentMethod !== 'card' && paymentMethod !== 'prepaid') {
+    const paymentMethod = BRANDED_COA_IS_FREE ? 'free' : requestedMethod;
+    if (paymentMethod !== 'card' && paymentMethod !== 'prepaid' && paymentMethod !== 'free') {
       throw new HttpError(400, 'Invalid payment method.');
     }
 

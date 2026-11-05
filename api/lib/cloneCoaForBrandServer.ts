@@ -1,8 +1,10 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type Stripe from 'stripe';
+import { POST_ISSUE_BRAND_FEE } from '../../src/lib/orderCatalog.js';
 import { HttpError } from './stripeServer.js';
 
-export const POST_ISSUE_BRAND_FEE_SERVER = 50;
+export const POST_ISSUE_BRAND_FEE_SERVER = POST_ISSUE_BRAND_FEE;
+export const BRANDED_COA_IS_FREE = POST_ISSUE_BRAND_FEE_SERVER <= 0;
 const MAX_BRANDS = 5;
 
 export type CloneCoaBrandResult = {
@@ -140,18 +142,19 @@ export async function cloneCoaForBrandServer(opts: {
   /** Verified PaymentIntent id; required when paymentMethod is 'card'. */
   paymentIntentId?: string;
 }): Promise<CloneCoaBrandResult> {
-  const paymentMethod = opts.paymentMethod.trim().toLowerCase();
-  if (paymentMethod === 'crypto') {
+  const requested = opts.paymentMethod.trim().toLowerCase();
+  if (requested === 'crypto') {
     throw new HttpError(400, 'Crypto checkout is not available for additional COAs yet.');
   }
-  if (!['card', 'prepaid'].includes(paymentMethod)) {
+  const paymentMethod = BRANDED_COA_IS_FREE ? 'free' : requested;
+  if (!['card', 'prepaid', 'free'].includes(paymentMethod) || (paymentMethod === 'free' && !BRANDED_COA_IS_FREE)) {
     throw new HttpError(400, 'Invalid payment method.');
   }
   if (paymentMethod === 'card' && !opts.paymentIntentId) {
     throw new HttpError(400, 'paymentIntentId is required for card payments.');
   }
 
-  if (paymentMethod === 'prepaid') {
+  if (paymentMethod === 'prepaid' || paymentMethod === 'free') {
     const userRpc = await opts.userClient.rpc('clone_coa_for_brand', {
       p_source_coa_id: opts.sourceCoaId,
       p_company_id: opts.companyId,
@@ -205,7 +208,9 @@ export async function cloneCoaForBrandServer(opts: {
   log.push({
     at: new Date().toISOString(),
     by: 'Client',
-    note: `Branded copy issued for ${company.name} ($${POST_ISSUE_BRAND_FEE_SERVER})`,
+    note: BRANDED_COA_IS_FREE
+      ? `Branded copy issued for ${company.name} (no charge)`
+      : `Branded copy issued for ${company.name} ($${POST_ISSUE_BRAND_FEE_SERVER})`,
   });
   summary.coa_profile_id = company.id;
   summary.apply_company_logo = true;
@@ -283,7 +288,7 @@ export async function cloneCoaForBrandServer(opts: {
     payment_method: paymentMethod,
   });
 
-  if (src.order_id) {
+  if (src.order_id && POST_ISSUE_BRAND_FEE_SERVER > 0) {
     const { data: order } = await opts.admin
       .from('orders')
       .select('total, subtotal')

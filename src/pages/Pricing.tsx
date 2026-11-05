@@ -14,6 +14,7 @@ import {
   CONFORMITY_VIAL_PRICE,
 } from '../lib/utils';
 import { ATLAS_SAFETY_PRO_INCLUDES, ATLAS_SAFETY_PRO_PRICE } from '../lib/submissionUtils';
+import { POST_ISSUE_BRAND_FEE } from '../lib/orderCatalog';
 import { useAuth } from '../context/AuthContext';
 import { atlasProPriceForClient } from '../lib/clientPricing';
 
@@ -342,11 +343,11 @@ export default function Pricing() {
                     <div className="min-w-0">
                       <p className="font-medium text-black text-sm">Additional COA</p>
                       <p className="text-xs text-neutral-500 mt-0.5">
-                        After results are issued, buy extra brand versions from Your COAs — same assays, your other logo.
+                        After results are issued, add extra brand versions from Your COAs — same assays, your other logo.
                       </p>
                     </div>
                     <div className="sm:text-right flex-shrink-0 pl-8 sm:pl-0">
-                      <p className="font-bold text-black">+$50</p>
+                      <p className="font-bold text-black">{POST_ISSUE_BRAND_FEE > 0 ? `+${formatCurrency(POST_ISSUE_BRAND_FEE)}` : 'Free'}</p>
                       <p className="text-xs text-neutral-500">per extra brand</p>
                     </div>
                   </div>

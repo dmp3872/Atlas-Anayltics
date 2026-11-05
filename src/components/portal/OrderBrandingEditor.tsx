@@ -224,7 +224,9 @@ export default function OrderBrandingEditor({ userId, order, samples, coas, onSa
         </h3>
         <p className="text-xs text-neutral-600 mt-1">
           Certificates aren&apos;t complete yet — choose which brand profiles should get a COA.
-          Extra brands are {formatCurrency(MULTI_BRAND_PRICE)} each.
+          {MULTI_BRAND_PRICE > 0
+            ? `Extra brands are ${formatCurrency(MULTI_BRAND_PRICE)} each.`
+            : 'Extra brands are free.'}
         </p>
       </div>
 
@@ -329,7 +331,7 @@ export default function OrderBrandingEditor({ userId, order, samples, coas, onSa
             })}
           </div>
 
-          {extraBrandCount > 0 && (
+          {extraBrandCount > 0 && MULTI_BRAND_PRICE > 0 && (
             <p className="text-xs text-neutral-600">
               {extraBrandCount} extra brand COA{extraBrandCount === 1 ? '' : 's'} · about{' '}
               {formatCurrency(extraBrandCount * MULTI_BRAND_PRICE)} in multi-brand fees
