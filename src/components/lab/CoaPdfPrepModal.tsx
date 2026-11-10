@@ -512,8 +512,8 @@ export default function CoaPdfPrepModal({ coa, sampleMetadata = null, onClose, o
               </div>
               <p className="text-xs text-neutral-500 mb-2">
                 {vialImage
-                  ? 'Already attached at Issue. Replace only if you need a different shot.'
-                  : 'Empty background is trimmed; the whole vial stays in frame.'}
+                  ? 'Already attached at Issue. Use Trim to crop, or Replace for a different shot.'
+                  : 'Upload a vial photo, then Trim to crop it for the certificate.'}
               </p>
               <LogoDropzone
                 value={vialImage}
@@ -522,6 +522,8 @@ export default function CoaPdfPrepModal({ coa, sampleMetadata = null, onClose, o
                 maxBytes={MAX_COA_IMAGE_BYTES}
                 prompt="a vial photo"
                 hint="JPG or PNG, up to 1 MB"
+                allowTrim
+                trimTitle="Trim vial photo"
               />
             </div>
             <div>

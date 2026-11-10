@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
-import { UploadCloud, Trash2 } from 'lucide-react';
+import { UploadCloud, Trash2, Crop } from 'lucide-react';
 import { compressImageFile, MAX_COA_IMAGE_DATA_URL_CHARS } from '../../lib/imageCompress';
+import ImageTrimModal from '../lab/ImageTrimModal';
 
 export const MAX_LOGO_BYTES = 1024 * 1024; // 1 MB file before compress
 export const ACCEPTED_LOGO_TYPES = ['image/jpeg', 'image/png'];
@@ -13,12 +14,17 @@ interface LogoDropzoneProps {
   hint?: string;
   maxBytes?: number;
   prompt?: string;
+  /** Chemists can open a crop tool for vial photos. */
+  allowTrim?: boolean;
+  trimTitle?: string;
 }
 
 export default function LogoDropzone({
   value, onChange, onError, compact = false, hint, maxBytes = MAX_LOGO_BYTES, prompt = 'a logo',
+  allowTrim = false, trimTitle = 'Trim photo',
 }: LogoDropzoneProps) {
   const [dragging, setDragging] = useState(false);
+  const [trimming, setTrimming] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const maxMb = Math.round(maxBytes / (1024 * 1024) * 10) / 10;
   const hintText = hint ?? `JPG or PNG, up to ${maxMb} MB`;
@@ -68,6 +74,15 @@ export default function LogoDropzone({
             className="h-16 w-16 flex-shrink-0 rounded object-contain bg-neutral-50"
           />
           <div className="flex flex-col gap-2">
+            {allowTrim && (
+              <button
+                type="button"
+                onClick={() => setTrimming(true)}
+                className="btn-outline text-xs py-1.5 px-3 inline-flex items-center gap-1.5"
+              >
+                <Crop size={13} /> Trim
+              </button>
+            )}
             <button
               type="button"
               onClick={() => inputRef.current?.click()}
@@ -106,6 +121,14 @@ export default function LogoDropzone({
           <p className="text-xs text-neutral-400">{hintText}</p>
         </div>
       )}
+      {allowTrim && trimming && value ? (
+        <ImageTrimModal
+          src={value}
+          title={trimTitle}
+          onClose={() => setTrimming(false)}
+          onApply={onChange}
+        />
+      ) : null}
     </>
   );
 }

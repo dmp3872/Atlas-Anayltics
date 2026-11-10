@@ -2779,7 +2779,7 @@ export default function Lab() {
                 <div>
                   <label className="label mb-2 block">Vial photo</label>
                   <p className="text-xs text-neutral-500 mb-2">
-                    Chemist upload. Empty background is auto-cropped. Header logo comes from the client profile above.
+                    Chemist upload. Use Trim to crop the shot yourself. Header logo comes from the client profile above.
                   </p>
                   <LogoDropzone
                     value={vialImage}
@@ -2788,6 +2788,8 @@ export default function Lab() {
                     maxBytes={MAX_COA_IMAGE_BYTES}
                     prompt="a vial photo"
                     hint="JPG or PNG of the physical vial, up to 2 MB"
+                    allowTrim
+                    trimTitle="Trim vial photo"
                   />
                 </div>
                 <div className="sm:col-span-2">
