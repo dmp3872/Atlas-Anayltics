@@ -211,7 +211,7 @@ export default function COADetail() {
         if (cancelled) return;
 
         const rawVial = imgRow?.vial_image || hydrated.vial_image || '';
-        // Crop + zoom so the vial fills/centers in the certificate frame.
+        // Trim margins and center the whole vial in the certificate frame.
         const preparedVial = rawVial ? await prepareVialImage(rawVial) : '';
         // Header logo: keep the original src for display. Re-compressing large brand PNGs
         // can return '' and wipe the client mark from the certificate + PNG export.
@@ -564,7 +564,7 @@ export default function COADetail() {
                   <img
                     src={coa.vial_image}
                     alt="Sample vial"
-                    className="block w-full h-full min-h-[7.5rem] object-cover object-center scale-[1.06]"
+                    className="block w-full h-full min-h-[7.5rem] object-contain object-center"
                   />
                 </div>
                 {vialSizeBadge ? (

@@ -79,6 +79,7 @@ export default function ReceivingDesk({ orders, samples, clients, onChanged }: P
       .map(sample => {
         const order = orderMap.get(sample.order_id);
         if (!order || order.status === 'cancelled' || order.status === 'complete') return null;
+        if (sample.status === 'cancelled') return null;
         const paid = orderIsPayable(order.payment_status);
         const awaiting = sample.status === 'awaiting_sample';
         const needsPayment = !paid;

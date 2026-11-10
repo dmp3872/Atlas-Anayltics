@@ -255,7 +255,7 @@ export default function Lab() {
     setLoading(true);
     const [p, s, o, c] = await Promise.all([
       supabase.from('user_profiles').select('*'),
-      supabase.from('order_samples').select('*').order('created_at', { ascending: false }),
+      supabase.from('order_samples').select('*').neq('status', 'cancelled').order('created_at', { ascending: false }),
       supabase.from('orders').select('*').order('created_at', { ascending: false }),
       supabase.from('coas').select(COA_LIST_COLUMNS).order('created_at', { ascending: false }),
     ]);

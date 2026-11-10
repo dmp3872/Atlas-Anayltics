@@ -1,8 +1,7 @@
 import { supabase } from './supabase';
 
 /**
- * Unambiguous alphabet — no I/O/0/1 (easy to confuse when read aloud or handwritten).
- * 32 chars → 32^6 ≈ 1.07e9 codes per day.
+ * Legacy alphanumeric alphabet (no I/O/0/1); still accepted when validating older LIMS IDs.
  */
 export const SAMPLE_CODE_ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
 
@@ -32,33 +31,53 @@ function yearMonthDayPrefix(createdAt: Date | string | number = new Date()): str
   return `${yy}${mm}${dd}`;
 }
 
-function randomToken(length = RANDOM_LEN): string {
-  const alphabet = SAMPLE_CODE_ALPHABET;
-  const bytes = new Uint8Array(length);
+function randomDigits(length = RANDOM_LEN): string {
+  const bytes = new Uint32Array(length);
   crypto.getRandomValues(bytes);
   let out = '';
   for (let i = 0; i < length; i++) {
-    out += alphabet[bytes[i]! % alphabet.length]!;
+    out += String(bytes[i]! % 10);
   }
   return out;
 }
 
+/** Rejects digit strings that read as a pattern (000000, 123456, 987654) rather than a random ID. */
+function looksPatterned(digits: string): boolean {
+  if (/^(\d)\1+$/.test(digits)) return true;
+  let up = true;
+  let down = true;
+  for (let i = 1; i < digits.length; i++) {
+    const step = Number(digits[i]) - Number(digits[i - 1]);
+    if (step !== 1) up = false;
+    if (step !== -1) down = false;
+  }
+  return up || down;
+}
+
+function randomNumericToken(length = RANDOM_LEN): string {
+  let token = randomDigits(length);
+  while (looksPatterned(token)) token = randomDigits(length);
+  return token;
+}
+
 /**
- * Current format: YYMMDD-XXXXXX (e.g. 260917-K7M4Q9 = Sep 17, 2026).
- * Year, month, and day come from intake / sample created date.
+ * Current format: YYMMDD-NNNNNN (e.g. 260917-482915 = Sep 17, 2026).
+ * Year, month, and day come from intake / sample created date; the suffix is random digits,
+ * so IDs are never sequential, and allocation checks every existing ID so they never repeat.
  */
 export function generateSampleCode(createdAt: Date | string | number = new Date()): string {
-  return `${yearMonthDayPrefix(createdAt)}-${randomToken(RANDOM_LEN)}`;
+  return `${yearMonthDayPrefix(createdAt)}-${randomNumericToken(RANDOM_LEN)}`;
 }
 
 /** Human-readable example for placeholders / help text. */
 export function sampleCodeExample(createdAt: Date | string | number = new Date()): string {
-  return `${yearMonthDayPrefix(createdAt)}-K7M4Q9`;
+  return `${yearMonthDayPrefix(createdAt)}-482915`;
 }
 
 /**
  * Accepts:
- * - current YYMMDD-XXXXXX (260917-K7M4Q9)
+ * - current YYMMDD-NNNNNN (260917-482915)
+ * - prior YYMMDD-XXXXXX (260917-K7M4Q9)
  * - prior YYMM-XXXXXX (2608-K7M4Q9)
  * - brief YY-MM-XXXXXX (26-08-K7M4Q9) from the intermediate format
  * - legacy YY-XXXXXX (26-K7M4Q9)
@@ -66,11 +85,13 @@ export function sampleCodeExample(createdAt: Date | string | number = new Date()
 export function isValidSampleCode(code: string): boolean {
   const normalized = (code || '').trim().toUpperCase();
   const alpha = SAMPLE_CODE_ALPHABET;
+  const numeric = new RegExp(`^\\d{6}-\\d{${RANDOM_LEN}}$`);
   const withDay = new RegExp(`^\\d{6}-[${alpha}]{${RANDOM_LEN}}$`);
   const monthOnly = new RegExp(`^\\d{4}-[${alpha}]{${RANDOM_LEN}}$`);
   const dashedYm = new RegExp(`^\\d{2}-\\d{2}-[${alpha}]{${RANDOM_LEN}}$`);
   const legacy = new RegExp(`^\\d{2}-[${alpha}]{${RANDOM_LEN}}$`);
-  return withDay.test(normalized)
+  return numeric.test(normalized)
+    || withDay.test(normalized)
     || monthOnly.test(normalized)
     || dashedYm.test(normalized)
     || legacy.test(normalized);
@@ -103,5 +124,5 @@ export async function allocateUniqueSampleCode(
   throw new Error('Could not allocate a unique sample code. Try again.');
 }
 
-/** Alias — LIMS IDs use the same YYMMDD-XXXXXX system as COA sample codes. */
+/** Alias — LIMS IDs use the same YYMMDD-NNNNNN system as COA sample codes. */
 export const allocateUniqueAccessionNumber = allocateUniqueSampleCode;

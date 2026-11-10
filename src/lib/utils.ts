@@ -42,6 +42,7 @@ export const SAMPLE_STATUS_LABELS: Record<SampleStatus, string> = {
   analyzing: 'In testing',
   in_review: 'In review',
   complete: 'Complete',
+  cancelled: 'Cancelled',
 };
 
 export const PAYMENT_STATUS_LABELS: Record<PaymentStatus, string> = {

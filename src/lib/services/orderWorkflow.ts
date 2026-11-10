@@ -154,6 +154,25 @@ export async function cancelOrder(
   return { error: null, order: data as Order };
 }
 
+/** Client cancels a sample the lab has not received yet; cancels the order when no samples remain. */
+export async function cancelOrderSample(
+  sampleId: string,
+  reason = '',
+): Promise<{ error: Error | null; orderCancelled?: boolean }> {
+  const { data, error } = await supabase.rpc('cancel_order_sample', {
+    p_sample_id: sampleId,
+    p_reason: reason,
+  });
+  if (error) {
+    const missing = /cancel_order_sample|schema cache|could not find the function/i.test(error.message);
+    return {
+      error: new Error(missing ? 'Sample cancellation is not set up yet. Contact Atlas.' : error.message),
+    };
+  }
+  const row = (data ?? {}) as { order_cancelled?: boolean };
+  return { error: null, orderCancelled: !!row.order_cancelled };
+}
+
 /** YYYY-MM-DD for a date input, from an existing ETA or standard TAT from today. */
 export function defaultIntakeEtaDateValue(order: Pick<Order, 'estimated_ready_at' | 'due_at' | 'rush_processing'>): string {
   const existing = order.estimated_ready_at || order.due_at;

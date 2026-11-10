@@ -513,7 +513,7 @@ export default function CoaPdfPrepModal({ coa, sampleMetadata = null, onClose, o
               <p className="text-xs text-neutral-500 mb-2">
                 {vialImage
                   ? 'Already attached at Issue. Replace only if you need a different shot.'
-                  : 'Empty background is auto-cropped so the vial fills the certificate frame.'}
+                  : 'Empty background is trimmed; the whole vial stays in frame.'}
               </p>
               <LogoDropzone
                 value={vialImage}

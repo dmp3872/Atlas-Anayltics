@@ -830,25 +830,6 @@ function drawContainedImage(
   });
 }
 
-/** Fill the rect (cover), zoomed slightly, centered — for vial product shots. */
-function drawCoveredImage(
-  page: PDFPage,
-  image: PDFImage,
-  rect: { x: number; y: number; width: number; height: number },
-  zoom = 1.12,
-) {
-  const { width: iw, height: ih } = image;
-  const scale = Math.max(rect.width / iw, rect.height / ih) * zoom;
-  const drawW = iw * scale;
-  const drawH = ih * scale;
-  page.drawImage(image, {
-    x: rect.x + (rect.width - drawW) / 2,
-    y: rect.y + (rect.height - drawH) / 2,
-    width: drawW,
-    height: drawH,
-  });
-}
-
 function drawTableGrid(
   page: PDFPage,
   bottom: number,
@@ -1099,12 +1080,12 @@ export async function buildCoaPdfBytes(coa: COA): Promise<Uint8Array> {
         borderColor: ink,
         borderWidth: 0.6,
       });
-      drawCoveredImage(page, vialImage, {
+      drawContainedImage(page, vialImage, {
         x: frame.x + VIAL_PHOTO_INSET,
         y: frame.y + VIAL_PHOTO_INSET,
         width: frame.width - VIAL_PHOTO_INSET * 2,
         height: frame.height - VIAL_PHOTO_INSET * 2,
-      }, 1.1);
+      });
     }
   }
 

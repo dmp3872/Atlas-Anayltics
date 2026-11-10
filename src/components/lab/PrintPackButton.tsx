@@ -3,6 +3,7 @@ import { Order, OrderSample } from '../../lib/types';
 import { ATLAS_SHIP_TO } from '../../lib/shippingLabel';
 import { formatDateTime } from '../../lib/utils';
 import { LAB_PRINT_PACK_ENABLED } from '../../lib/labFeatures';
+import { downloadZebraPrintPack } from '../../lib/zebraLabels';
 
 interface Props {
   order: Order;
@@ -14,6 +15,7 @@ interface Props {
 
 /**
  * One-click print pack: LIMS ID sticker, vial labels, receiving receipt.
+ * "Zebra" downloads the same stickers as a ZPL file for a Zebra label printer.
  * Gated by LAB_PRINT_PACK_ENABLED — flip that flag to hide without deleting.
  */
 export default function PrintPackButton({
@@ -116,15 +118,38 @@ export default function PrintPackButton({
     win.document.close();
   }
 
+  function downloadZebra() {
+    downloadZebraPrintPack(
+      {
+        code,
+        sampleName: name,
+        companyName: order.company_name || '',
+        orderNumber: order.order_number,
+        vialCount: vials,
+      },
+      `${code || order.order_number}-zebra`,
+    );
+  }
+
   return (
-    <button
-      type="button"
-      onClick={printPack}
-      className={`btn-outline text-xs py-1.5 gap-1 ${className}`}
-      title="Print LIMS ID sticker, vial labels, and receiving receipt"
-    >
-      <Printer size={12} /> Print pack
-    </button>
+    <span className="inline-flex flex-wrap gap-2">
+      <button
+        type="button"
+        onClick={printPack}
+        className={`btn-outline text-xs py-1.5 gap-1 ${className}`}
+        title="Print LIMS ID sticker, vial labels, and receiving receipt"
+      >
+        <Printer size={12} /> Print pack
+      </button>
+      <button
+        type="button"
+        onClick={downloadZebra}
+        className={`btn-outline text-xs py-1.5 gap-1 ${className}`}
+        title="Download LIMS ID + vial labels as a Zebra (ZPL) file"
+      >
+        <Printer size={12} /> Zebra labels
+      </button>
+    </span>
   );
 }
 

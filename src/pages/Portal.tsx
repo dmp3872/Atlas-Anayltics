@@ -23,6 +23,7 @@ import {
 } from '../lib/portalPrefs';
 import { loadOrderDraft, draftSummary } from '../lib/orderDraft';
 import { canDiscardOrder, discardOrder } from '../lib/orderDiscard';
+import { cancelOrderSample } from '../lib/services/orderWorkflow';
 import { expectedPanelNames, matchCoaForSample, coasForSample, groupClientCoas } from '../lib/coaPanels';
 import SampleCoaPicker from '../components/portal/SampleCoaPicker';
 import { testsForSample } from '../lib/labQueue';
@@ -439,6 +440,7 @@ export default function Portal() {
   const [coaPeptide, setCoaPeptide] = useState('all');
   const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
   const [discardingOrderId, setDiscardingOrderId] = useState<string | null>(null);
+  const [cancellingSampleId, setCancellingSampleId] = useState<string | null>(null);
   const [celebrationCoa, setCelebrationCoa] = useState<COA | null>(null);
   const [brandCoa, setBrandCoa] = useState<COA | null>(null);
 
@@ -683,6 +685,30 @@ export default function Portal() {
       return next;
     });
     setDiscardingOrderId(null);
+  }
+
+  async function handleCancelSample(sample: OrderSample, order: Order) {
+    if (sample.status !== 'awaiting_sample') return;
+    const label = sample.display_name || sample.sample_name;
+    const reason = window.prompt(
+      `Cancel "${label}" on order ${order.order_number}? The lab will not expect this sample.\n\nReason (optional, e.g. "duplicate order"):`,
+      '',
+    );
+    if (reason === null) return;
+    setCancellingSampleId(sample.id);
+    const { error, orderCancelled } = await cancelOrderSample(sample.id, reason);
+    setCancellingSampleId(null);
+    if (error) {
+      alert(error.message);
+      return;
+    }
+    const now = new Date().toISOString();
+    setSamples(prev => prev.map(s => (
+      s.id === sample.id ? { ...s, status: 'cancelled', cancelled_at: now, cancel_reason: reason.trim() } : s
+    )));
+    if (orderCancelled) {
+      setOrders(prev => prev.map(o => (o.id === order.id ? { ...o, status: 'cancelled' } : o)));
+    }
   }
 
   return (
@@ -1239,8 +1265,22 @@ export default function Portal() {
                                 </div>
                               </div>
                               <div className="flex-shrink-0">
-                                {sampleCoas.length > 0 ? (
+                                {s.status === 'cancelled' ? (
+                                  <span className="text-xs font-semibold text-neutral-500 whitespace-nowrap inline-flex items-center gap-1">
+                                    <XCircle size={12} /> Cancelled
+                                  </span>
+                                ) : sampleCoas.length > 0 ? (
                                   <SampleCoaPicker sample={s} coas={coas} />
+                                ) : s.status === 'awaiting_sample' ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleCancelSample(s, order)}
+                                    disabled={cancellingSampleId === s.id}
+                                    className="btn-outline text-xs py-1.5 gap-1 inline-flex whitespace-nowrap border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50"
+                                    title="Cancel this sample before it is received by the lab"
+                                  >
+                                    <X size={12} /> {cancellingSampleId === s.id ? 'Cancelling…' : 'Cancel sample'}
+                                  </button>
                                 ) : s.status === 'complete' ? (
                                   <Link to={`/sample/${s.id}/coa`} className="btn-outline text-xs py-1.5 gap-1 inline-flex whitespace-nowrap">
                                     <ExternalLink size={12} /> View COA

@@ -218,7 +218,7 @@ export function isFullyUnassigned(sample: OrderSample, tests: string[]): boolean
 export function sampleReadyForTesting(sample: OrderSample, order: Order): boolean {
   if (order.status === 'cancelled' || order.status === 'complete') return false;
   if (!orderIsPayable(order.payment_status)) return false;
-  if (sample.status === 'awaiting_sample') return false;
+  if (sample.status === 'awaiting_sample' || sample.status === 'cancelled') return false;
   return true;
 }
 

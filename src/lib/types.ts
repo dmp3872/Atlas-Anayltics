@@ -30,7 +30,8 @@ export type SampleStatus =
   | 'received'
   | 'analyzing'
   | 'in_review'
-  | 'complete';
+  | 'complete'
+  | 'cancelled';
 
 export type COAResult = 'pass' | 'fail' | 'pending';
 export type SampleType = 'single' | 'blend';
@@ -96,6 +97,8 @@ export interface OrderSample {
   accession_number?: string | null;
   /** When the sample was physically accessioned / intaked at the lab. */
   received_at?: string | null;
+  cancelled_at?: string | null;
+  cancel_reason?: string | null;
   created_at: string;
 }
 

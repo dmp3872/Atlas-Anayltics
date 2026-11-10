@@ -409,11 +409,12 @@ export async function trimImageWhitespace(
 }
 
 /**
- * Crop studio whitespace, then zoom/center the vial into a portrait frame so it
- * fills the certificate (and preview) box instead of floating in empty space.
+ * Crop studio whitespace, then fit the whole vial (cap to base) centered in a portrait frame.
+ * Never crops the vial itself, so running it again on an already-prepared image is safe
+ * (it runs at save, page load, and PDF export).
  */
 export async function prepareVialImage(src: string): Promise<string> {
-  const trimmed = await trimImageWhitespace(src, { padRatio: 0.012, threshold: 248 });
+  const trimmed = await trimImageWhitespace(src, { padRatio: 0.03, threshold: 248 });
   const dataUrl = trimmed || (await resolveImageAsDataUrl(src));
   if (!dataUrl) return '';
 
@@ -434,9 +435,7 @@ export async function prepareVialImage(src: string): Promise<string> {
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, outW, outH);
 
-    // Cover-fit + slight extra zoom, then center.
-    const zoom = 1.18;
-    const scale = Math.max(outW / iw, outH / ih) * zoom;
+    const scale = Math.min(outW / iw, outH / ih);
     const dw = iw * scale;
     const dh = ih * scale;
     const dx = (outW - dw) / 2;
