@@ -18,6 +18,8 @@ export type ZebraPackInput = {
   companyName: string;
   orderNumber: string;
   vialCount: number;
+  /** Origin used for QR verify links, e.g. https://atlasanalyticlab.com */
+  verifyBaseUrl?: string;
 };
 
 function dots(inches: number): number {
@@ -34,14 +36,24 @@ function zplText(value: string, maxChars: number): string {
   return clean.length > maxChars ? `${clean.slice(0, maxChars - 1)}.` : clean;
 }
 
+function verifyUrl(input: ZebraPackInput, vialNo?: string): string {
+  const base = (input.verifyBaseUrl || 'https://atlasanalyticlab.com').replace(/\/$/, '');
+  const code = encodeURIComponent(input.code || '');
+  if (vialNo) {
+    return `${base}/verify?slug=${code}&vial=${encodeURIComponent(vialNo)}`;
+  }
+  return `${base}/verify?slug=${code}`;
+}
+
 function limsLabelZpl(input: ZebraPackInput): string {
   const w = dots(ZEBRA_CONFIG.limsLabel.widthIn);
   const h = dots(ZEBRA_CONFIG.limsLabel.heightIn);
   const m = Math.round(h * 0.08);
   const small = Math.round(h * 0.1);
   const big = Math.round(h * 0.17);
-  const barH = Math.round(h * 0.3);
+  const qr = Math.round(Math.min(w, h) * 0.55);
   const code = zplText(input.code || 'PENDING', 24);
+  const qrData = verifyUrl(input);
   return [
     '^XA',
     '^CI28',
@@ -49,10 +61,10 @@ function limsLabelZpl(input: ZebraPackInput): string {
     `^LL${h}`,
     `^PQ${Math.max(1, ZEBRA_CONFIG.limsCopies)}`,
     `^FO${m},${m}^A0N,${small},${small}^FDATLAS ANALYTICS - LIMS ID^FS`,
-    `^FO${m},${m + small + 4}^BY2^BCN,${barH},N,N,N^FD${code}^FS`,
-    `^FO${m},${m + small + barH + 8}^A0N,${big},${big}^FD${code}^FS`,
-    `^FO${m},${m + small + barH + big + 10}^A0N,${small},${small}^FD${zplText(input.sampleName, 32)}^FS`,
-    `^FO${m},${m + small * 2 + barH + big + 12}^A0N,${small},${small}^FD${zplText(`${input.companyName} | ${input.orderNumber}`, 36)}^FS`,
+    `^FO${m},${m + small + 4}^A0N,${big},${big}^FD${code}^FS`,
+    `^FO${m},${m + small + big + 8}^A0N,${small},${small}^FD${zplText(input.sampleName, 28)}^FS`,
+    `^FO${m},${m + small * 2 + big + 10}^A0N,${small},${small}^FD${zplText(`${input.companyName} | ${input.orderNumber}`, 32)}^FS`,
+    `^FO${w - qr - m},${m}^BQN,2,3^FDQA,${qrData}^FS`,
     '^XZ',
   ].join('\n');
 }
@@ -62,16 +74,23 @@ function vialLabelZpl(input: ZebraPackInput, index: number, total: number): stri
   const h = dots(ZEBRA_CONFIG.vialLabel.heightIn);
   const m = Math.round(h * 0.08);
   const small = Math.round(h * 0.16);
-  const big = Math.round(h * 0.24);
+  const big = Math.round(h * 0.22);
+  const vialNo = `V${index}`;
   const code = zplText(input.code || 'PENDING', 24);
+  const vialId = zplText(`${input.code || 'PENDING'}-${vialNo}`, 28);
+  const qrData = verifyUrl(input, vialNo);
+  // Slightly taller vial stock when QR is included — still one label per vial.
+  const labelH = Math.max(h, dots(0.75));
   return [
     '^XA',
     '^CI28',
     `^PW${w}`,
-    `^LL${h}`,
-    `^FO${m},${m}^A0N,${small},${small}^FDVIAL ${index}/${total}^FS`,
+    `^LL${labelH}`,
+    `^FO${m},${m}^A0N,${small},${small}^FD${vialNo} OF ${total}^FS`,
     `^FO${m},${m + small + 2}^A0N,${big},${big}^FD${code}^FS`,
-    `^FO${m},${m + small + big + 4}^A0N,${small},${small}^FD${zplText(input.sampleName, 18)}^FS`,
+    `^FO${m},${m + small + big + 4}^A0N,${small},${small}^FD${vialId}^FS`,
+    `^FO${m},${m + small * 2 + big + 6}^A0N,${small},${small}^FD${zplText(input.sampleName, 16)}^FS`,
+    `^FO${Math.max(m, w - dots(0.55))},${m}^BQN,2,2^FDQA,${qrData}^FS`,
     '^XZ',
   ].join('\n');
 }
