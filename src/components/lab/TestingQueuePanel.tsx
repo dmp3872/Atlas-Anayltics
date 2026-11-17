@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
-  ArrowRight, ChevronDown, ChevronRight, Clock, FlaskConical,
-  FileText, UserPlus, UserMinus, UserCircle2, AlertTriangle,
+  ArrowRight, Check, ChevronDown, ChevronRight, Clock, Copy, Download,
+  FlaskConical, FileText, UserPlus, UserMinus, UserCircle2, AlertTriangle,
 } from 'lucide-react';
 import { LabPriority, Order, OrderSample, SampleStatus } from '../../lib/types';
 import { SAMPLE_STATUS_LABELS } from '../../lib/utils';
@@ -11,6 +11,7 @@ import {
   QueueSampleItem, compareLabPriority, normalizeLabPriority, isFullyUnassigned,
 } from '../../lib/labQueue';
 import { etaHeat, etaHeatPercent, resolveEtaAt } from '../../lib/etaHeat';
+import { downloadCsv } from '../../lib/exportCsv';
 import {
   OrderContextBadges, QueueSampleNotesActions, useOrderContextMeta,
 } from './QueueOrderContext';
@@ -57,6 +58,40 @@ function formatAge(hours: number): string {
   return `${days}d ${Math.round(hours % 24)}h`;
 }
 
+function sampleExportFields(sample: OrderSample) {
+  const meta = parseSampleMetadata(sample.metadata);
+  return {
+    limsId: (sample.accession_number || '').trim().toUpperCase(),
+    sampleName: (sample.display_name || sample.sample_name || '').trim(),
+    lot: (meta.batch_number || '').trim(),
+  };
+}
+
+async function copySampleFields(sample: OrderSample): Promise<boolean> {
+  const { limsId, sampleName, lot } = sampleExportFields(sample);
+  const text = [
+    `LIMS ID\t${limsId || '—'}`,
+    `Sample name\t${sampleName || '—'}`,
+    `Lot\t${lot || '—'}`,
+  ].join('\n');
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function exportSampleExcel(sample: OrderSample) {
+  const { limsId, sampleName, lot } = sampleExportFields(sample);
+  const stem = (limsId || sampleName || sample.id).replace(/[^A-Za-z0-9_-]+/g, '_');
+  downloadCsv(
+    `${stem}-sample.csv`,
+    ['LIMS ID', 'Sample name', 'Lot'],
+    [[limsId, sampleName, lot]],
+  );
+}
+
 export default function TestingQueuePanel({
   items, loading, onIssueCoa, onUpdateStatus,
   chemists, currentUserId, onClaim, onAssign, onRelease, onAssignTest, onSetSamplePriority,
@@ -64,6 +99,7 @@ export default function TestingQueuePanel({
 }: Props) {
   /** Explicit expand/collapse overrides. Missing key = auto (open if 1 sample). */
   const [expandedByOrder, setExpandedByOrder] = useState<Record<string, boolean>>({});
+  const [copiedSampleId, setCopiedSampleId] = useState<string | null>(null);
 
   const groups = useMemo((): OrderGroup[] => {
     const byOrder = new Map<string, OrderGroup>();
@@ -228,7 +264,40 @@ export default function TestingQueuePanel({
                 </div>
 
                 <div>
-                  <p className="font-bold text-base text-black">{sample.display_name || sample.sample_name}</p>
+                  <div className="flex flex-wrap items-start gap-2">
+                    <p className="font-bold text-base text-black min-w-0 flex-1">
+                      {sample.display_name || sample.sample_name}
+                    </p>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const ok = await copySampleFields(sample);
+                          if (ok) {
+                            setCopiedSampleId(sample.id);
+                            window.setTimeout(() => {
+                              setCopiedSampleId(prev => (prev === sample.id ? null : prev));
+                            }, 1500);
+                          } else {
+                            window.alert('Could not copy. Allow clipboard access and try again.');
+                          }
+                        }}
+                        className="btn-outline text-[11px] py-1 px-2 gap-1"
+                        title="Copy LIMS ID, sample name, and lot"
+                      >
+                        {copiedSampleId === sample.id ? <Check size={11} /> : <Copy size={11} />}
+                        {copiedSampleId === sample.id ? 'Copied' : 'Copy'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => exportSampleExcel(sample)}
+                        className="btn-outline text-[11px] py-1 px-2 gap-1"
+                        title="Export LIMS ID, sample name, and lot to Excel (CSV)"
+                      >
+                        <Download size={11} /> Excel
+                      </button>
+                    </div>
+                  </div>
                   <p className="text-xs text-neutral-600 mt-1">
                     <span className="font-semibold text-neutral-800">Lot</span>
                     {': '}
