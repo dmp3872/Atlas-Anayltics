@@ -12,7 +12,7 @@ import { hydrateCoaImages, prepareVialImage, readCoaPdfStats, resolveCoaHeaderLo
 import { matrixTypeFromSampleMetadata } from '../lib/coaPanels';
 import { partitionCoaPanels, panelStatusLabel, panelStatusToneClass, resolvePanelPass, formatCoaResultDisplay, isEndotoxinPanelName, endotoxinConformityLabel } from '../lib/coaDisplayPanels';
 import { fetchCoaByCode, fetchImagesByCode } from '../lib/publicCoa';
-import { formatCoaDecimal, parseAssayMethod, ASSAY_METHOD_LABELS, assayMethodFromPanels, hydrateMultiVialPanelResults, resolveCasNumber, applyQuantityUnit, coaShowsChromatogram, coaIsPhOnly } from '../lib/labCoaForm';
+import { formatCoaDecimal, parseAssayMethod, ASSAY_METHOD_LABELS, assayMethodFromPanels, hydrateMultiVialPanelResults, resolveCasNumber, applyQuantityUnit, coaShowsChromatogram, coaIsPhOnly, appendSterilityResultDate, sterilityResultEnteredAtFromSummary } from '../lib/labCoaForm';
 import { labelClaimFromSummary, netContentSpecificationDisplay } from '../lib/orderCatalog';
 import { compressImageDataUrl } from '../lib/imageCompress';
 import { coaDigitalPdfFilename, downloadCoaPdfFromElement } from '../lib/coaPdf';
@@ -660,7 +660,11 @@ export default function COADetail() {
                     : (r.specification || '—');
                   const isBlendContent = /^blend content\b/i.test(r.panel_name);
                   const isPh = /^\s*ph\b/i.test(r.panel_name);
-                  const resultShown = isPh
+                  const isSterility = /sterility/i.test(r.panel_name);
+                  const sterilityEnteredAt = isSterility && pass !== null
+                    ? sterilityResultEnteredAtFromSummary(summary)
+                    : '';
+                  const rawResult = isPh
                     ? (r.result?.trim() || (pass === null ? 'Pending' : '—'))
                     : (isNetContent || isBlendContent)
                       ? applyQuantityUnit(
@@ -668,6 +672,9 @@ export default function COADetail() {
                         claimUnit,
                       )
                       : formatCoaResultDisplay(r.result || (pass === null ? 'Pending' : '—'));
+                  const resultShown = isSterility
+                    ? appendSterilityResultDate(rawResult, sterilityEnteredAt)
+                    : rawResult;
                   return (
                     <tr key={`main-${i}`} className={i % 2 === 0 ? 'bg-white' : 'bg-neutral-50'}>
                       <td className="px-3 py-1 font-medium border-t border-atlas-border">{r.panel_name}</td>
