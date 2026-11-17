@@ -23,6 +23,7 @@ import {
   PH_SPEC_LABEL, formatPhResult, phPassFromResult,
   formatBenzylPurity, benzylPqPassFromResult, isBacWaterCoaContext,
   BENZYL_PQ_SPEC_LABEL,
+  resolveSterilityResultEnteredAt,
 } from '../lib/labCoaForm';
 import { COA_WORKFLOW_LABELS, canPrepareCoa, coaWorkflowStage, buildWorkflowStagePatch, CoaWorkflowStage } from '../lib/coaWorkflow';
 import {
@@ -1162,10 +1163,17 @@ export default function Lab() {
               || defaultCultureProjectedCompletion(intakeForProjection))
             : '',
       };
+      const existingForSterility = editingCoaId ? coas.find(c => c.id === editingCoaId) : undefined;
+      const sterilityResultAt = (resultsForPanels.includeSterility || !!orderedIncludes?.includeSterility)
+        ? resolveSterilityResultEnteredAt(
+          existingForSterility?.result_summary as Record<string, unknown> | undefined,
+          resultsForPanels.sterilityPass,
+        )
+        : '';
       const cleanPanels = labResultsToPanelResults(resultsForPanels, {
         labeledContent: form.labeledContent.trim() || linkedMeta?.labeled_content || '',
         labelClaimUnit: form.labelClaimUnit.trim() || linkedMeta?.label_claim_unit || 'mg',
-      }, { bacWater: isBacCoa });
+      }, { bacWater: isBacCoa, sterilityResultAt });
 
       const purityNum = parsePurityPercent(labResults.netPurity);
       const includeMw = labResults.includeMolecularWeight && !!labResults.molecularWeight.trim();
@@ -1317,6 +1325,7 @@ export default function Lab() {
               resultsForPanels.sterilityMethod === 'culture_14_day' && resultsForPanels.sterilityPass === null
                 ? resultsForPanels.sterilityProjectedCompletion.trim()
                 : '',
+            sterility_result_at: sterilityResultAt,
             assay_method: labResults.assayMethod,
             assay_method_label: ASSAY_METHOD_LABELS[labResults.assayMethod],
             endotoxin_eu_ml: labResults.endotoxinEuMl.trim(),

@@ -279,6 +279,83 @@ export function formatSterilityPendingResult(projectedYmd?: string): string {
   return `Pending (projected ${formatLocalYmd(ymd)})`;
 }
 
+/** Local calendar day as YYYY-MM-DD. */
+export function todayLocalYmd(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${mo}-${day}`;
+}
+
+/** Final sterility result text with optional entered-on date. */
+export function formatSterilityFinalResult(
+  pass: boolean,
+  method: SterilityMethod,
+  resultAtYmd?: string,
+): string {
+  const methodLabel = STERILITY_METHOD_LABELS[method];
+  const base = pass
+    ? `Not Detected (${methodLabel})`
+    : `Detected (${methodLabel})`;
+  return appendSterilityResultDate(base, resultAtYmd);
+}
+
+/** Append "· Mon D, YYYY" when a result-entered date is known and not already shown. */
+export function appendSterilityResultDate(result: string, resultAtYmd?: string): string {
+  const raw = (result || '').trim();
+  const ymd = intakeYmdFromValue(resultAtYmd || '');
+  if (!raw || !ymd || /^pending\b/i.test(raw)) return raw;
+  if (/·\s*[A-Za-z]{3,9}\s+\d{1,2},\s+\d{4}\s*$/.test(raw)) return raw;
+  return `${raw} · ${formatLocalYmd(ymd)}`;
+}
+
+/**
+ * Resolve which day sterility was entered as Pass/Fail.
+ * Prefers an existing `sterility_result_at`, then update_log, then today when newly finalized.
+ */
+export function resolveSterilityResultEnteredAt(
+  priorSummary: Record<string, unknown> | null | undefined,
+  nextPass: AssayPassState,
+): string {
+  if (nextPass === null) return '';
+  const prior = priorSummary && typeof priorSummary === 'object' ? priorSummary : {};
+  const priorPass = prior.sterility_pass;
+  const existing = typeof prior.sterility_result_at === 'string'
+    ? intakeYmdFromValue(prior.sterility_result_at)
+    : '';
+  const fromLog = sterilityResultEnteredAtFromSummary(prior);
+
+  if ((priorPass === true || priorPass === false) && nextPass === priorPass) {
+    return existing || fromLog || todayLocalYmd();
+  }
+  // Pending → final, or Pass ↔ Fail re-entry — stamp today.
+  return todayLocalYmd();
+}
+
+/** Read stored sterility entered date, or recover it from the certificate update log. */
+export function sterilityResultEnteredAtFromSummary(
+  summary: Record<string, unknown> | null | undefined,
+): string {
+  if (!summary || typeof summary !== 'object') return '';
+  const direct = typeof summary.sterility_result_at === 'string'
+    ? intakeYmdFromValue(summary.sterility_result_at)
+    : '';
+  if (direct) return direct;
+  const log = Array.isArray(summary.update_log) ? summary.update_log : [];
+  for (let i = log.length - 1; i >= 0; i -= 1) {
+    const item = log[i];
+    if (!item || typeof item !== 'object') continue;
+    const row = item as Record<string, unknown>;
+    const note = typeof row.note === 'string' ? row.note : '';
+    const at = typeof row.at === 'string' ? row.at : '';
+    if (/sterility/i.test(note) && /→\s*(PASS|FAIL)\b/i.test(note) && at) {
+      return intakeYmdFromValue(at);
+    }
+  }
+  return '';
+}
+
 export function parseSterilityMethod(
   value: unknown,
   panel?: { panel_name?: string; specification?: string; result?: string } | null,
@@ -1250,8 +1327,9 @@ export function coaIsPhOnly(summary: unknown): boolean {
 export function labResultsToPanelResults(
   results: LabCoaResults,
   claim?: { labeledContent?: string; labelClaimUnit?: string },
-  opts?: { bacWater?: boolean },
+  opts?: { bacWater?: boolean; sterilityResultAt?: string },
 ): PanelResult[] {
+  const sterilityResultAt = (opts?.sterilityResultAt || '').trim();
   const isBlend = results.blendPeptides.some(r => r.name.trim());
   const claimUnit = normalizeClaimUnit(claim?.labelClaimUnit);
   const claimLabel = formatLabelClaim(
@@ -1295,7 +1373,6 @@ export function labResultsToPanelResults(
     });
 
     if (results.includeSterility) {
-      const sterilityMethodLabel = STERILITY_METHOD_LABELS[results.sterilityMethod];
       const projected = results.sterilityMethod === 'culture_14_day'
         ? (results.sterilityProjectedCompletion || '').trim()
         : '';
@@ -1310,9 +1387,11 @@ export function labResultsToPanelResults(
         bacRows.push({
           panel_name: sterilityPanelName(results.sterilityMethod),
           specification: 'Not Detected',
-          result: results.sterilityPass
-            ? `Not Detected (${sterilityMethodLabel})`
-            : `Detected (${sterilityMethodLabel})`,
+          result: formatSterilityFinalResult(
+            results.sterilityPass,
+            results.sterilityMethod,
+            sterilityResultAt,
+          ),
           pass: results.sterilityPass,
         });
       }
@@ -1420,7 +1499,6 @@ export function labResultsToPanelResults(
   }
 
   if (results.includeSterility) {
-    const sterilityMethodLabel = STERILITY_METHOD_LABELS[results.sterilityMethod];
     const projected = results.sterilityMethod === 'culture_14_day'
       ? (results.sterilityProjectedCompletion || '').trim()
       : '';
@@ -1435,9 +1513,11 @@ export function labResultsToPanelResults(
       rows.push({
         panel_name: sterilityPanelName(results.sterilityMethod),
         specification: 'Not Detected',
-        result: results.sterilityPass
-          ? `Not Detected (${sterilityMethodLabel})`
-          : `Detected (${sterilityMethodLabel})`,
+        result: formatSterilityFinalResult(
+          results.sterilityPass,
+          results.sterilityMethod,
+          sterilityResultAt,
+        ),
         pass: results.sterilityPass,
       });
     }
