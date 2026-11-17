@@ -65,10 +65,10 @@ export const ADMIN_NEXT_STATUS: Partial<Record<SubmissionStatus, SubmissionStatu
 
 export const SHIPPING_ADDRESS = {
   name: 'Atlas Analytics — Sample Receiving',
-  line1: '207 Pickens St, Suite 215',
+  line1: '207 Pickens St, Suite 217',
   city: 'Columbia',
   state: 'SC',
-  zip: '29209',
+  zip: '29205',
   country: 'US',
 };
 
