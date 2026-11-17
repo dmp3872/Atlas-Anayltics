@@ -73,14 +73,14 @@ export const SHIPPING_ADDRESS = {
 };
 
 export const ATLAS_SAFETY_PRO_INCLUDES = [
-  'HPLC Purity',
-  'Net Content',
-  'Identity (ID)',
-  'Heavy Metals',
-  'Endotoxin (LAL)',
-  'Sterility (PCR)',
-  'Fentanyl Detection',
-  'Conformity Vials',
+  'Identity Testing',
+  'Purity Testing',
+  'Quantity Testing',
+  'Heavy Metals Testing',
+  'Endotoxin Testing',
+  '14-Day Sterility Culture',
+  '3-Vial Conformity Testing (2 Comparison Vials Included)',
 ] as const;
 
-export const ATLAS_SAFETY_PRO_PRICE = 850;
+/** Founding-member Atlas Pro Package price. */
+export const ATLAS_SAFETY_PRO_PRICE = 650;

@@ -50,11 +50,11 @@ export default function StepSelectTesting({
   catalogLoading,
   catalogError,
 }: Props) {
-  // Prefer Full QC then Safety Pro for left→right hierarchy (core → recommended).
+  // Atlas Pro first; hide inactive legacy packages (e.g. Full QC).
   const packages = [
-    ...catalog.filter(t => t.id === 'full_qc'),
-    ...catalog.filter(t => t.id === 'atlas_pro'),
-    ...catalog.filter(t => t.kind === 'package' && t.id !== 'full_qc' && t.id !== 'atlas_pro'),
+    ...catalog.filter(t => t.id === 'atlas_pro' && t.available),
+    ...catalog.filter(t => t.id === 'full_qc' && t.available),
+    ...catalog.filter(t => t.kind === 'package' && t.available && t.id !== 'full_qc' && t.id !== 'atlas_pro'),
   ];
   const assays = catalog.filter(t => t.kind !== 'package' && t.canBePrimary && t.available);
   const onPackage = isPackageMode(sample.test_mode);
@@ -257,7 +257,7 @@ export default function StepSelectTesting({
                           Also included in Atlas Pro
                         </p>
                         <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs text-neutral-700">
-                          {['Heavy metals screen', 'Endotoxin (LAL)', 'Sterility (PCR)', 'Digital verified COA'].map(item => (
+                          {['Heavy Metals Testing', 'Endotoxin Testing', '14-Day Sterility Culture', 'Digital verified COA'].map(item => (
                             <span key={item} className="inline-flex items-start gap-1.5">
                               <Check size={12} className="mt-0.5 shrink-0 text-atlas-success" />
                               {item}
@@ -325,7 +325,7 @@ export default function StepSelectTesting({
                         Include {FENTANYL_OPTION_LABEL}
                       </span>
                       <span className="block text-xs text-neutral-500 mt-0.5">
-                        Optional add-on for Atlas Safety Pro — no additional charge.
+                        Optional add-on · {formatCurrency(findTestService('fentanyl_detection', catalog)?.price ?? 59)}
                       </span>
                     </span>
                   </label>
