@@ -112,9 +112,9 @@ export function hashContent(content: string): string {
   return Math.abs(hash).toString(16).padStart(8, '0').toUpperCase();
 }
 
-export const BASE_PRICE_PER_SAMPLE = 149;
+export const BASE_PRICE_PER_SAMPLE = 249;
 export const BLEND_SURCHARGE_PER_COMPOUND = 50;
-export const CONFORMITY_VIAL_PRICE = 50;
+export const CONFORMITY_VIAL_PRICE = 65;
 export const RUSH_FEE_PER_SAMPLE = 200;
 export const FIRST_ORDER_DISCOUNT = 0.5;
 

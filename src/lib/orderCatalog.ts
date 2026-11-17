@@ -78,12 +78,12 @@ export interface LabTestService {
 export const LAB_TEST_SERVICES: LabTestService[] = [
   {
     id: 'atlas_pro',
-    name: 'Atlas Safety Pro',
-    description: ATLAS_SAFETY_PRO_INCLUDES.filter(i => i !== 'Fentanyl Detection').join(', '),
+    name: 'Atlas Pro Package',
+    description: ATLAS_SAFETY_PRO_INCLUDES.join(', '),
     price: ATLAS_SAFETY_PRO_PRICE,
     turnaroundDays: 5,
     turnaroundLabel: '3–5 business days',
-    vialsRequired: 5,
+    vialsRequired: 3,
     available: true,
     canBePrimary: true,
     kind: 'package',
@@ -96,15 +96,37 @@ export const LAB_TEST_SERVICES: LabTestService[] = [
     turnaroundDays: 5,
     turnaroundLabel: '3–5 business days',
     vialsRequired: 3,
-    available: true,
-    canBePrimary: true,
+    available: false,
+    canBePrimary: false,
     kind: 'package',
   },
   {
     id: 'identity_purity_quantity',
-    name: 'Identity, Purity & Quantity',
+    name: 'Identity + Purity + Quantity',
     description: 'HPLC identity confirmation, purity analysis (%), and net content quantitation',
-    price: 450,
+    price: 249,
+    turnaroundDays: 3,
+    vialsRequired: 1,
+    available: true,
+    canBePrimary: true,
+    kind: 'assay',
+  },
+  {
+    id: 'identity_purity',
+    name: 'Identity + Purity',
+    description: 'HPLC identity confirmation and purity analysis (%)',
+    price: 225,
+    turnaroundDays: 3,
+    vialsRequired: 1,
+    available: true,
+    canBePrimary: true,
+    kind: 'assay',
+  },
+  {
+    id: 'quantity_addon',
+    name: 'Quantity Add-On',
+    description: 'Net content quantitation added to an existing identity/purity order',
+    price: 49,
     turnaroundDays: 3,
     vialsRequired: 1,
     available: true,
@@ -116,7 +138,7 @@ export const LAB_TEST_SERVICES: LabTestService[] = [
     id: 'purity_hplc',
     name: 'Purity',
     description: 'HPLC purity assay for the primary analyte',
-    price: 150,
+    price: 225,
     turnaroundDays: 3,
     vialsRequired: 1,
     available: true,
@@ -124,21 +146,21 @@ export const LAB_TEST_SERVICES: LabTestService[] = [
     kind: 'assay',
   },
   {
-    id: 'endotoxin_usp85',
-    name: 'Endotoxin',
-    description: 'LAL endotoxin screen (USP <85>)',
-    price: 150,
-    turnaroundDays: 3,
+    id: 'heavy_metals_icpms',
+    name: 'Heavy Metals',
+    description: 'ICP-MS elemental impurities screen',
+    price: 139,
+    turnaroundDays: 5,
     vialsRequired: 1,
     available: true,
     canBePrimary: true,
     kind: 'assay',
   },
   {
-    id: 'sterility_pcr',
-    name: 'Sterility (PCR)',
-    description: 'Rapid sterility screen by PCR',
-    price: 150,
+    id: 'endotoxin_usp85',
+    name: 'Endotoxin',
+    description: 'LAL endotoxin screen (USP <85>)',
+    price: 179,
     turnaroundDays: 3,
     vialsRequired: 1,
     available: true,
@@ -147,9 +169,9 @@ export const LAB_TEST_SERVICES: LabTestService[] = [
   },
   {
     id: 'sterility_culture',
-    name: 'Sterility by Culture (14-day)',
-    description: 'Full sterility verification by culture method',
-    price: 350,
+    name: '14-Day Sterility Culture',
+    description: 'Full sterility verification by 14-day culture method',
+    price: 249,
     turnaroundDays: 14,
     turnaroundLabel: '14 business days',
     vialsRequired: 1,
@@ -158,11 +180,11 @@ export const LAB_TEST_SERVICES: LabTestService[] = [
     kind: 'assay',
   },
   {
-    id: 'heavy_metals_icpms',
-    name: 'Heavy Metals',
-    description: 'ICP-MS elemental impurities screen',
-    price: 150,
-    turnaroundDays: 5,
+    id: 'sterility_pcr',
+    name: 'PCR Screening',
+    description: 'Rapid microbial / sterility screen by PCR',
+    price: 165,
+    turnaroundDays: 3,
     vialsRequired: 1,
     available: true,
     canBePrimary: true,
@@ -170,9 +192,9 @@ export const LAB_TEST_SERVICES: LabTestService[] = [
   },
   {
     id: 'fentanyl_detection',
-    name: 'Fentanyl Detection',
+    name: 'Fentanyl Testing',
     description: 'Screen for fentanyl contamination',
-    price: 150,
+    price: 59,
     turnaroundDays: 3,
     vialsRequired: 1,
     available: true,
@@ -183,7 +205,7 @@ export const LAB_TEST_SERVICES: LabTestService[] = [
     id: 'ph',
     name: 'pH Testing',
     description: 'pH measurement. When this is the only test on the sample, the certificate uses the pH-only format.',
-    price: 200,
+    price: 49,
     turnaroundDays: 3,
     vialsRequired: 1,
     available: true,
@@ -191,16 +213,48 @@ export const LAB_TEST_SERVICES: LabTestService[] = [
     kind: 'assay',
   },
   {
-    id: 'residual_solvents',
-    name: 'Residual Solvents',
-    description: 'Organic residual solvent profile',
-    price: 250,
-    turnaroundDays: null,
+    id: 'closure_integrity',
+    name: 'Closure Integrity',
+    description: 'Container closure integrity assessment',
+    price: 59,
+    turnaroundDays: 3,
     vialsRequired: 1,
-    available: false,
-    canBePrimary: false,
+    available: true,
+    canBePrimary: true,
     kind: 'assay',
-    comingSoonLabel: 'Coming soon',
+  },
+  {
+    id: 'solubility',
+    name: 'Solubility Testing',
+    description: 'Solubility / reconstitution behavior assessment',
+    price: 59,
+    turnaroundDays: 3,
+    vialsRequired: 1,
+    available: true,
+    canBePrimary: true,
+    kind: 'assay',
+  },
+  {
+    id: 'tfa',
+    name: 'TFA Testing',
+    description: 'Trifluoroacetic acid residual / content testing',
+    price: 149,
+    turnaroundDays: 5,
+    vialsRequired: 1,
+    available: true,
+    canBePrimary: true,
+    kind: 'assay',
+  },
+  {
+    id: 'residual_solvents',
+    name: 'Residual Solvents Panel',
+    description: 'Organic residual solvent profile (USP <467>)',
+    price: 169,
+    turnaroundDays: 5,
+    vialsRequired: 1,
+    available: true,
+    canBePrimary: true,
+    kind: 'assay',
   },
   {
     id: 'residual_moisture',
@@ -223,7 +277,7 @@ export const INDIVIDUAL_TESTS: LabTestService[] = LAB_TEST_SERVICES.filter(
 );
 
 export const FENTANYL_TEST_ID = 'fentanyl_detection';
-export const FENTANYL_OPTION_LABEL = 'Fentanyl Detection';
+export const FENTANYL_OPTION_LABEL = 'Fentanyl Testing';
 /** Atlas Pro runs the primary vial plus two included comparison vials. */
 export const ATLAS_PRO_INCLUDED_CONFORMITY_VIALS = 3;
 export const ATLAS_PRO_INCLUDED_EXTRA_CONFORMITY_VIALS = 2;
@@ -236,26 +290,26 @@ export const ATLAS_PRO_BUNDLED_TEST_IDS = [
   'purity_hplc',
   'heavy_metals_icpms',
   'endotoxin_usp85',
-  'sterility_pcr',
+  'sterility_culture',
 ] as const;
 
 export const ATLAS_PRO_PANEL = {
   id: 'atlas_pro' as const,
-  name: 'Atlas Safety Pro',
-  tagline: 'Full QC + biosafety & conformity',
-  description: ATLAS_SAFETY_PRO_INCLUDES.filter(i => i !== 'Fentanyl Detection').join(', '),
+  name: 'Atlas Pro Package',
+  tagline: 'Founding members · full QC + biosafety & conformity',
+  description: ATLAS_SAFETY_PRO_INCLUDES.join(', '),
   price: ATLAS_SAFETY_PRO_PRICE,
-  vialsRequired: 5,
+  vialsRequired: 3,
   bundledTestIds: [...ATLAS_PRO_BUNDLED_TEST_IDS],
   includesConformity: true,
   features: [
-    'Identity confirmation',
-    'Purity analysis (%)',
-    'Quantity verification',
-    'Heavy metals screen',
-    '+ Endotoxin (LAL)',
-    '+ Sterility (PCR)',
-    '+ 3-vial conformity testing (2 comparison vials included)',
+    'Identity Testing',
+    'Purity Testing',
+    'Quantity Testing',
+    'Heavy Metals Testing',
+    'Endotoxin Testing',
+    '14-Day Sterility Culture',
+    '3-Vial Conformity Testing (2 Comparison Vials Included)',
   ],
   emphasized: true as const,
 };
@@ -289,7 +343,7 @@ export function packageCardMeta(id: string) {
   return null;
 }
 
-export const CONFORMITY_PRICE = 50;
+export const CONFORMITY_PRICE = 65;
 export const MULTI_BRAND_PRICE = 100;
 /** Post-issue branded COA copy (client portal / COA detail). */
 export const POST_ISSUE_BRAND_FEE = 50;
@@ -660,11 +714,20 @@ export function sampleTestPrice(sample: WizardSample, catalog: LabTestService[] 
   return selectedServiceIds(sample).reduce((sum, id) => sum + (findTestService(id, catalog)?.price ?? 0), 0);
 }
 
-export function sampleAddOnPrice(sample: WizardSample, primaryBrand = ''): number {
+export function sampleAddOnPrice(
+  sample: WizardSample,
+  primaryBrand = '',
+  catalog: LabTestService[] = LAB_TEST_SERVICES,
+): number {
   const conformity = sample.conformity_extra * CONFORMITY_PRICE;
   const brands = billableBrandCount(sample, primaryBrand) * MULTI_BRAND_PRICE;
   const rush = sample.rush ? RUSH_PRICE_PER_SAMPLE : 0;
-  return conformity + brands + rush;
+  // Atlas Pro fentanyl is optional and billed separately (not included in the package).
+  const fentanyl =
+    sample.test_mode === 'atlas_pro' && sample.include_fentanyl
+      ? (findTestService(FENTANYL_TEST_ID, catalog)?.price ?? 59)
+      : 0;
+  return conformity + brands + rush + fentanyl;
 }
 
 export function sampleLineTotal(
@@ -672,7 +735,7 @@ export function sampleLineTotal(
   primaryBrand = '',
   catalog: LabTestService[] = LAB_TEST_SERVICES,
 ): number {
-  return sampleTestPrice(sample, catalog) + sampleAddOnPrice(sample, primaryBrand);
+  return sampleTestPrice(sample, catalog) + sampleAddOnPrice(sample, primaryBrand, catalog);
 }
 
 export function orderTotals(
@@ -686,7 +749,7 @@ export function orderTotals(
     0,
   );
   const addOnSubtotal = samples.reduce(
-    (s, sample) => s + sampleAddOnPrice(sample, primaryBrand),
+    (s, sample) => s + sampleAddOnPrice(sample, primaryBrand, catalog),
     0,
   );
   const sampleCount = samples.length;
@@ -894,6 +957,10 @@ export function describePricing(
   const brands = billableBrandCount(sample, primaryBrand);
   if (brands) extras.push(`${brands} extra brand(s) (+${formatCurrency(brands * MULTI_BRAND_PRICE)})`);
   if (sample.rush) extras.push(`rush (+${formatCurrency(RUSH_PRICE_PER_SAMPLE)})`);
+  if (sample.test_mode === 'atlas_pro' && sample.include_fentanyl) {
+    const fenPrice = findTestService(FENTANYL_TEST_ID, catalog)?.price ?? 59;
+    extras.push(`${FENTANYL_OPTION_LABEL} (+${formatCurrency(fenPrice)})`);
+  }
   if (!extras.length) return formatCurrency(base);
   return `${formatCurrency(base)} + ${extras.join(', ')}`;
 }
@@ -971,8 +1038,25 @@ export function mergeCatalogWithDbPanels(
 ): LabTestService[] {
   if (!dbPanels.length) return base;
   return base.map(service => {
-    // pH stays $200 from the catalog. A short name match must not pull another panel's price.
-    if (service.id === 'ph') return service;
+    // Keep catalog list prices authoritative so the published price sheet stays in sync.
+    if (
+      service.id === 'atlas_pro'
+      || service.id === 'ph'
+      || service.id === 'identity_purity_quantity'
+      || service.id === 'identity_purity'
+      || service.id === 'quantity_addon'
+      || service.id === 'heavy_metals_icpms'
+      || service.id === 'endotoxin_usp85'
+      || service.id === 'sterility_culture'
+      || service.id === 'sterility_pcr'
+      || service.id === 'fentanyl_detection'
+      || service.id === 'closure_integrity'
+      || service.id === 'solubility'
+      || service.id === 'tfa'
+      || service.id === 'residual_solvents'
+    ) {
+      return service;
+    }
     const hit = dbPanels.find(p => {
       const n = (p.name || '').toLowerCase();
       return (
@@ -987,10 +1071,7 @@ export function mergeCatalogWithDbPanels(
       : typeof hit.price === 'number'
         ? hit.price
         : null;
-    // Safety Pro price is owned by ATLAS_SAFETY_PRO_PRICE — ignore stale DB amounts.
-    const price = service.id === 'atlas_pro'
-      ? service.price
-      : (typeof dbPrice === 'number' && dbPrice > 0 ? dbPrice : service.price);
+    const price = typeof dbPrice === 'number' && dbPrice > 0 ? dbPrice : service.price;
     return {
       ...service,
       description: (hit.description || service.description).trim() || service.description,
