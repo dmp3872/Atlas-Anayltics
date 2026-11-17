@@ -183,7 +183,7 @@ function assayFromSummary(
 function orderedLabel(meta: ReturnType<typeof parseSampleMetadata>): string {
   const label = meta.tests_label;
   if (typeof label === 'string' && label.trim()) return label.trim();
-  if (meta.test_mode === 'atlas_pro') return 'Atlas Safety Pro';
+  if (meta.test_mode === 'atlas_pro') return 'Atlas Pro Package';
   if (meta.test_mode === 'full_qc') return 'Full QC';
   if (Array.isArray(meta.individual_tests) && meta.individual_tests.length) {
     return meta.individual_tests.join(', ');

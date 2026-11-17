@@ -79,7 +79,7 @@ export default function OrderSummarySidebar({ samples, step, total, primaryBrand
       {step === 1 && (
         <p className="text-[10px] text-neutral-400 mt-4 leading-relaxed border-t border-atlas-border pt-3">
           {ATLAS_PRO_PANEL.name}: {ATLAS_PRO_PANEL.vialsRequired} vials with conformity included.
-          {FULL_QC_PANEL.name}: {FULL_QC_PANEL.vialsRequired} vials (no conformity). Extra conformity vials {formatCurrency(CONFORMITY_PRICE)} each.
+          Extra conformity vials {formatCurrency(CONFORMITY_PRICE)} each.
         </p>
       )}
     </div>

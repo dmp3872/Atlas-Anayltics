@@ -1,4 +1,4 @@
-import { SubmissionStatus } from './types.js';
+import { SubmissionStatus } from './types';
 
 export const SUBMISSION_STATUS_LABELS: Record<SubmissionStatus, string> = {
   draft: 'Draft',
@@ -65,22 +65,22 @@ export const ADMIN_NEXT_STATUS: Partial<Record<SubmissionStatus, SubmissionStatu
 
 export const SHIPPING_ADDRESS = {
   name: 'Atlas Analytics — Sample Receiving',
-  line1: '207 Pickens St, Suite 217',
+  line1: '207 Pickens St, Suite 215',
   city: 'Columbia',
   state: 'SC',
-  zip: '29205',
+  zip: '29209',
   country: 'US',
 };
 
 export const ATLAS_SAFETY_PRO_INCLUDES = [
-  'HPLC Purity',
-  'Net Content',
-  'Identity (ID)',
-  'Heavy Metals',
-  'Endotoxin (LAL)',
-  'Sterility (14-day culture)',
-  'Fentanyl Detection',
-  'Conformity Vials',
+  'Identity Testing',
+  'Purity Testing',
+  'Quantity Testing',
+  'Heavy Metals Testing',
+  'Endotoxin Testing',
+  '14-Day Sterility Culture',
+  '3-Vial Conformity Testing (2 Comparison Vials Included)',
 ] as const;
 
-export const ATLAS_SAFETY_PRO_PRICE = 700;
+/** Founding-member Atlas Pro Package price. */
+export const ATLAS_SAFETY_PRO_PRICE = 650;

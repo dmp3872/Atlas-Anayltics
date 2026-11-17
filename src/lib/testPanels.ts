@@ -6,9 +6,9 @@ export const ATLAS_SAFETY_PRO_PANEL_ID = 'a0000000-0000-4000-8000-000000000001';
 
 export const ATLAS_SAFETY_PRO_PANEL: TestPanel = {
   id: ATLAS_SAFETY_PRO_PANEL_ID,
-  name: 'Atlas Safety Pro Package',
+  name: 'Atlas Pro Package',
   description:
-    'Complete safety bundle per sample: HPLC Purity, Net Content, Identity (ID), Heavy Metals, Endotoxin (LAL), Sterility (14-day culture), and Conformity Vials included. Fentanyl Detection available as an optional add-on.',
+    'Founding members package: Identity, Purity, Quantity, Heavy Metals, Endotoxin, 14-Day Sterility Culture, and 3-Vial Conformity Testing (2 comparison vials included).',
   price_per_sample: ATLAS_SAFETY_PRO_PRICE,
   turnaround_days: 5,
   category: 'package',
@@ -28,14 +28,14 @@ export function withAtlasSafetyProPanel(panels: TestPanel[]): TestPanel[] {
     ) {
       next = { ...next, turnaround_days: 5 };
     }
-    if (/safety\s*pro/i.test(p.name)) {
-      next = { ...next, price_per_sample: ATLAS_SAFETY_PRO_PRICE };
+    if (/safety\s*pro|atlas\s*pro/i.test(p.name)) {
+      next = { ...next, name: 'Atlas Pro Package', price_per_sample: ATLAS_SAFETY_PRO_PRICE };
     }
     return next;
   });
 
   const hasPackage = normalized.some(
-    (p) => p.category === 'package' && p.name.includes('Safety Pro'),
+    (p) => p.category === 'package' && (/Safety Pro|Atlas Pro/i.test(p.name)),
   );
   if (hasPackage) return normalized;
   return [ATLAS_SAFETY_PRO_PANEL, ...normalized];

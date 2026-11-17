@@ -259,7 +259,7 @@ export default function SubmissionNew() {
     email: user?.email,
     companyName: profile?.company_name || companyName,
   });
-  const safetyProRaw = packages.find((p) => p.name.includes('Safety Pro'));
+  const safetyProRaw = packages.find((p) => /Safety Pro|Atlas Pro/i.test(p.name));
   const safetyPro = safetyProRaw
     ? { ...safetyProRaw, price_per_sample: clientAtlasProPrice }
     : undefined;
