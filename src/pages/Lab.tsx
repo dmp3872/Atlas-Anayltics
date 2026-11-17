@@ -43,6 +43,7 @@ import ChemistLiveChatPanel from '../components/lab/ChemistLiveChatPanel';
 import { buildQueueItems, filterQueueItems, getTestAssignments, normalizeLabPriority } from '../lib/labQueue';
 import { sampleIntakeAt, sampleReceivedBy, setSampleStatus } from '../lib/services/orderWorkflow';
 import { allocateUniqueSampleCode, isValidSampleCode } from '../lib/sampleCode';
+import { deleteCoaRecord, deleteSampleAndCoas } from '../lib/labDelete';
 import { formatDate } from '../lib/utils';
 import ReceivingDesk from '../components/lab/ReceivingDesk';
 import MyBenchPanel from '../components/lab/MyBenchPanel';
@@ -168,6 +169,8 @@ export default function Lab() {
   const [queueReturnOrderId, setQueueReturnOrderId] = useState<string | null>(null);
 
   const [movingCoaId, setMovingCoaId] = useState<string | null>(null);
+  const [deletingSampleId, setDeletingSampleId] = useState<string | null>(null);
+  const [deletingCoaId, setDeletingCoaId] = useState<string | null>(null);
   const [workflowCompanyFilter, setWorkflowCompanyFilter] = useState('');
   const [form, setForm] = useState({ ...BLANK });
   const [editingCoaId, setEditingCoaId] = useState<string | null>(null);
@@ -886,6 +889,71 @@ export default function Lab() {
 
   async function releaseSample(sampleId: string) {
     await assignSample(sampleId, null);
+  }
+
+  async function handleDeleteSample(sample: OrderSample) {
+    const name = sample.display_name || sample.sample_name || 'this sample';
+    const lims = (sample.accession_number || '').trim();
+    const linked = coas.filter(c => c.sample_id === sample.id);
+    const coaNote = linked.length
+      ? `\n\nThis will also permanently delete ${linked.length} certificate${linked.length === 1 ? '' : 's'}${linked.some(c => c.is_public || coaWorkflowStage(c) === 'published') ? ' (including published)' : ''}.`
+      : '';
+    const ok = window.confirm(
+      `Delete ${name}${lims ? ` (${lims})` : ''}?${coaNote}\n\nThis cannot be undone.`,
+    );
+    if (!ok) return;
+
+    setDeletingSampleId(sample.id);
+    setMsg(null);
+    try {
+      const result = await deleteSampleAndCoas(sample.id);
+      setSamples(prev => prev.filter(s => s.id !== sample.id));
+      setCoas(prev => prev.filter(c => c.sample_id !== sample.id));
+      if (form.sampleId === sample.id) {
+        setForm({ ...BLANK });
+        setEditingCoaId(null);
+        setLabResults({ ...EMPTY_LAB_RESULTS });
+      }
+      if (editingCoaId && linked.some(c => c.id === editingCoaId)) {
+        setEditingCoaId(null);
+      }
+      setMsg({
+        type: 'success',
+        text: `Deleted ${name}${lims ? ` · ${lims}` : ''}${result.coasDeleted ? ` and ${result.coasDeleted} COA${result.coasDeleted === 1 ? '' : 's'}` : ''}.`,
+      });
+    } catch (err) {
+      setMsg({ type: 'error', text: err instanceof Error ? err.message : 'Could not delete sample.' });
+      loadAll();
+    } finally {
+      setDeletingSampleId(null);
+    }
+  }
+
+  async function handleDeleteCoa(coa: COA) {
+    const label = coa.slug || coa.sample_name || 'this certificate';
+    const published = coa.is_public || coaWorkflowStage(coa) === 'published';
+    const ok = window.confirm(
+      `Delete certificate ${label}?${published ? '\n\nThis certificate is published / public.' : ''}\n\nThis cannot be undone.`,
+    );
+    if (!ok) return;
+
+    setDeletingCoaId(coa.id);
+    setMsg(null);
+    try {
+      await deleteCoaRecord(coa.id);
+      setCoas(prev => prev.filter(c => c.id !== coa.id));
+      if (editingCoaId === coa.id) {
+        setEditingCoaId(null);
+        setForm({ ...BLANK });
+        setLabResults({ ...EMPTY_LAB_RESULTS });
+      }
+      setMsg({ type: 'success', text: `Deleted certificate ${label}.` });
+    } catch (err) {
+      setMsg({ type: 'error', text: err instanceof Error ? err.message : 'Could not delete certificate.' });
+      loadAll();
+    } finally {
+      setDeletingCoaId(null);
+    }
   }
 
   async function setSamplePriority(sampleId: string, priority: LabPriority | null) {
@@ -1717,6 +1785,8 @@ export default function Lab() {
               onAssignTest={assignSampleTest}
               onSetSamplePriority={isAdmin ? setSamplePriority : undefined}
               onOpenOrderBrief={setBriefOrderId}
+              onDeleteSample={handleDeleteSample}
+              deletingSampleId={deletingSampleId}
             />
           </div>
         )}
@@ -3022,6 +3092,10 @@ export default function Lab() {
               pendingSamples={filteredPendingQueueItems}
               onIssueCoa={prefillFromSample}
               onRestartCoa={restartCoa}
+              onDeleteCoa={handleDeleteCoa}
+              deletingCoaId={deletingCoaId}
+              onDeleteSample={handleDeleteSample}
+              deletingSampleId={deletingSampleId}
               onSaveOrderEta={saveOrderEta}
               etaSavingOrderId={etaSavingOrderId}
               chemists={chemistOptions}
