@@ -1,7 +1,7 @@
 import { COA, PanelResult } from './types';
 import { formatDate } from './utils';
 import { readCoaPdfStats } from './coaImages';
-import { ENDOTOXIN_SPEC_EU_ML, STERILITY_METHOD_LABELS, formatCoaDecimal, parseAssayMethod, withAssayMethodSpec, withSterilityMethodSpec, ASSAY_METHOD_LABELS, assayMethodFromPanels, hydrateMultiVialPanelResults, formatPurityResultWithUncertainty, formatSterilityPendingResult, applyQuantityUnit, benzylSpecificationLabel } from './labCoaForm';
+import { ENDOTOXIN_SPEC_EU_ML, formatCoaDecimal, parseAssayMethod, withAssayMethodSpec, withSterilityMethodSpec, ASSAY_METHOD_LABELS, assayMethodFromPanels, hydrateMultiVialPanelResults, formatPurityResultWithUncertainty, formatSterilityPendingResult, formatSterilityFinalResult, applyQuantityUnit, benzylSpecificationLabel } from './labCoaForm';
 import { collapseConformityPanels, endotoxinConformityLabel } from './coaDisplayPanels';
 import { labelClaimFromSummary, netContentSpecificationDisplay } from './orderCatalog';
 
@@ -69,7 +69,6 @@ function usedPanelNames(panels: PanelResult[]): Set<PanelResult> {
 function resolveSterility(coa: COA, panels: PanelResult[]) {
   const stats = readCoaPdfStats(coa);
   const panel = findPanel(panels, 'steril');
-  const methodLabel = STERILITY_METHOD_LABELS[stats.sterility_method];
   const pass = stats.sterility_pass;
   const specification = withSterilityMethodSpec('Not Detected', stats.sterility_method);
   if (pass === null) {
@@ -86,9 +85,11 @@ function resolveSterility(coa: COA, panels: PanelResult[]) {
   }
   return {
     specification,
-    result: pass
-      ? `Not Detected (${methodLabel})`
-      : `Detected (${methodLabel})`,
+    result: formatSterilityFinalResult(
+      pass,
+      stats.sterility_method,
+      stats.sterility_result_at,
+    ),
     conformity: pass ? 'PASS' : 'FAIL',
     panel,
   };

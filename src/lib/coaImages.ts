@@ -18,7 +18,10 @@ import {
   sterilitySpecLabel,
   sterilityPanelName,
   formatSterilityPendingResult,
+  formatSterilityFinalResult,
   parseSterilityProjectedCompletion,
+  resolveSterilityResultEnteredAt,
+  sterilityResultEnteredAtFromSummary,
   formatCoaDecimal,
   resolveCasNumber,
   looksLikeCasNumber,
@@ -64,6 +67,8 @@ export interface CoaPdfStats {
   sterility_pass: AssayPassState;
   /** YYYY-MM-DD when 14-day culture is pending. */
   sterility_projected_completion: string;
+  /** YYYY-MM-DD when sterility Pass/Fail was entered. */
+  sterility_result_at: string;
   endotoxin_eu_ml: string;
   /** null = Pending. */
   endotoxin_pass: AssayPassState;
@@ -226,6 +231,9 @@ export function readCoaPdfStats(coa: COA): CoaPdfStats {
         sterilityPanel?.result,
       )
       : '';
+  const sterility_result_at = sterility_pass === null
+    ? ''
+    : sterilityResultEnteredAtFromSummary(summary);
 
   const endotoxinFromSummary =
     typeof summary.endotoxin_eu_ml === 'string' ? summary.endotoxin_eu_ml : '';
@@ -252,6 +260,7 @@ export function readCoaPdfStats(coa: COA): CoaPdfStats {
     sterility_method,
     sterility_pass,
     sterility_projected_completion,
+    sterility_result_at,
     endotoxin_eu_ml,
     endotoxin_pass,
     heavy_metals_pass: metals.heavy_metals_pass,
@@ -499,6 +508,8 @@ export type CoaPdfPrepPayload = {
   sterility_pass: AssayPassState;
   /** YYYY-MM-DD projected completion for pending 14-day culture. */
   sterility_projected_completion?: string;
+  /** YYYY-MM-DD when sterility Pass/Fail was entered. */
+  sterility_result_at?: string;
   endotoxin_eu_ml: string;
   endotoxin_pass: AssayPassState;
   heavy_metals_pass: AssayPassState;
@@ -596,9 +607,11 @@ export function applyPrepToCoaPanels(coa: COA, prep: CoaPdfPrepPayload): {
       return {
         panel_name: sterilityPanelName(prep.sterility_method),
         specification: 'Not Detected',
-        result: prep.sterility_pass
-          ? `Not Detected (${STERILITY_METHOD_LABELS[prep.sterility_method]})`
-          : `Detected (${STERILITY_METHOD_LABELS[prep.sterility_method]})`,
+        result: formatSterilityFinalResult(
+          prep.sterility_pass,
+          prep.sterility_method,
+          prep.sterility_result_at,
+        ),
         pass: prep.sterility_pass,
       };
     })(),
@@ -734,23 +747,6 @@ export async function saveCoaPdfPrep(
 ): Promise<{ coa: COA; error: string | null }> {
   // Prefer images from prep, but never blank out vial / chromatogram / watermark already on the COA.
   const hydrated = hydrateCoaImages(coa);
-  const { panel_results, molecular_weight } = applyPrepToCoaPanels(coa, prep);
-  const prepVial = (prep.vial_image || '').trim() || (hydrated.vial_image || '');
-  const prepHplc = (
-    (prep.hplc_image !== undefined ? prep.hplc_image : '') || hydrated.hplc_image || ''
-  ).trim();
-  const prepWatermark = (prep.chromatogram_image || '').trim() || (hydrated.chromatogram_image || '');
-  const prepLogo = (prep.company_logo || '').trim() || (hydrated.company_logo || '');
-  const preparedVial = prepVial ? await prepareVialImage(prepVial) : '';
-  const [vialCompressed, companyLogoCompressed, watermarkCompressed, hplcCompressed] = await Promise.all([
-    compressImageDataUrl(preparedVial),
-    compressImageDataUrl(prepLogo),
-    compressImageDataUrl(prepWatermark),
-    compressImageDataUrl(prepHplc),
-  ]);
-  // Compression can return '' on failure — fall back to the pre-compress src so attachments survive.
-  const vialImage = vialCompressed || preparedVial || hydrated.vial_image || '';
-  const companyLogo = companyLogoCompressed || prepLogo || hydrated.company_logo || '';
 
   // Kanban / list rows omit result_summary — load it so Prepare doesn't wipe prior keys / update_log.
   let priorSummary: Record<string, unknown> =
@@ -767,6 +763,31 @@ export async function saveCoaPdfPrep(
       priorSummary = summaryRow.result_summary as Record<string, unknown>;
     }
   }
+
+  const sterilityResultAt = prep.include_sterility === false
+    ? ''
+    : resolveSterilityResultEnteredAt(priorSummary, prep.sterility_pass);
+  const prepWithSterilityDate: CoaPdfPrepPayload = {
+    ...prep,
+    sterility_result_at: sterilityResultAt,
+  };
+  const { panel_results, molecular_weight } = applyPrepToCoaPanels(coa, prepWithSterilityDate);
+  const prepVial = (prep.vial_image || '').trim() || (hydrated.vial_image || '');
+  const prepHplc = (
+    (prep.hplc_image !== undefined ? prep.hplc_image : '') || hydrated.hplc_image || ''
+  ).trim();
+  const prepWatermark = (prep.chromatogram_image || '').trim() || (hydrated.chromatogram_image || '');
+  const prepLogo = (prep.company_logo || '').trim() || (hydrated.company_logo || '');
+  const preparedVial = prepVial ? await prepareVialImage(prepVial) : '';
+  const [vialCompressed, companyLogoCompressed, watermarkCompressed, hplcCompressed] = await Promise.all([
+    compressImageDataUrl(preparedVial),
+    compressImageDataUrl(prepLogo),
+    compressImageDataUrl(prepWatermark),
+    compressImageDataUrl(prepHplc),
+  ]);
+  // Compression can return '' on failure — fall back to the pre-compress src so attachments survive.
+  const vialImage = vialCompressed || preparedVial || hydrated.vial_image || '';
+  const companyLogo = companyLogoCompressed || prepLogo || hydrated.company_logo || '';
 
   const includeChromatogram = prep.include_chromatogram !== false && priorSummary.ph_only !== true;
   const watermark = includeChromatogram
@@ -793,6 +814,7 @@ export async function saveCoaPdfPrep(
       prep.sterility_method === 'culture_14_day' && prep.sterility_pass === null
         ? (prep.sterility_projected_completion || '').trim()
         : '',
+    sterility_result_at: sterilityResultAt,
     endotoxin_eu_ml: prep.endotoxin_eu_ml.trim(),
     endotoxin_pass: prep.endotoxin_pass,
     ...(typeof prep.include_sterility === 'boolean' ? { include_sterility: prep.include_sterility } : {}),
