@@ -418,14 +418,20 @@ export default function AdminOrderDetail() {
               {order.shipping_label_id ? ` (${order.shipping_label_id})` : ''}
             </button>
             {samples.map(sample => (
-              <PrintPackButton
-                key={sample.id}
-                order={order}
-                sample={sample}
-                accession={sample.accession_number}
-                receivedBy={sampleReceivedBy(sample) || undefined}
-                className="btn-outline text-sm py-1.5"
-              />
+              <span key={sample.id} className="inline-flex flex-col gap-0.5">
+                <PrintPackButton
+                  order={order}
+                  sample={sample}
+                  accession={sample.accession_number}
+                  receivedBy={sampleReceivedBy(sample) || undefined}
+                  className="btn-outline text-sm py-1.5"
+                />
+                <span className="text-[10px] text-neutral-500 px-1">
+                  {(sample.display_name || sample.sample_name)}
+                  {sample.accession_number ? ` · ${sample.accession_number}` : ' · no LIMS ID yet'}
+                  {` · ${Math.max(1, sample.vial_count || 1)} vial label${(sample.vial_count || 1) === 1 ? '' : 's'}`}
+                </span>
+              </span>
             ))}
           </div>
         </div>
