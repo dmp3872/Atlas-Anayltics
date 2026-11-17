@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
   ArrowRight, Check, ChevronDown, ChevronRight, Clock, Copy, Download,
-  FlaskConical, FileText, UserPlus, UserMinus, UserCircle2, AlertTriangle,
+  FlaskConical, FileText, Trash2, UserPlus, UserMinus, UserCircle2, AlertTriangle,
 } from 'lucide-react';
 import { LabPriority, Order, OrderSample, SampleStatus } from '../../lib/types';
 import { SAMPLE_STATUS_LABELS } from '../../lib/utils';
@@ -42,6 +42,9 @@ interface Props {
   onOpenOrderBrief?: (orderId: string) => void;
   /** Order to leave open after returning from Issue COA. */
   focusOrderId?: string | null;
+  /** Permanently delete this sample and any linked COAs. */
+  onDeleteSample?: (sample: OrderSample) => void | Promise<void>;
+  deletingSampleId?: string | null;
 }
 
 type OrderGroup = {
@@ -95,7 +98,7 @@ function exportSampleExcel(sample: OrderSample) {
 export default function TestingQueuePanel({
   items, loading, onIssueCoa, onUpdateStatus,
   chemists, currentUserId, onClaim, onAssign, onRelease, onAssignTest, onSetSamplePriority,
-  onOpenOrderBrief, focusOrderId,
+  onOpenOrderBrief, focusOrderId, onDeleteSample, deletingSampleId,
 }: Props) {
   /** Explicit expand/collapse overrides. Missing key = auto (open if 1 sample). */
   const [expandedByOrder, setExpandedByOrder] = useState<Record<string, boolean>>({});
@@ -488,6 +491,18 @@ export default function TestingQueuePanel({
               >
                 Issue COA <ArrowRight size={12} />
               </button>
+              {onDeleteSample && (
+                <button
+                  type="button"
+                  onClick={() => void onDeleteSample(sample)}
+                  disabled={deletingSampleId === sample.id}
+                  className="btn-outline text-xs py-1.5 gap-1 justify-center text-red-700 border-red-200 hover:bg-red-50 disabled:opacity-50"
+                  title="Permanently delete this sample and any linked certificates"
+                >
+                  <Trash2 size={12} />
+                  {deletingSampleId === sample.id ? 'Deleting…' : 'Delete sample'}
+                </button>
+              )}
             </div>
           </div>
         </div>
