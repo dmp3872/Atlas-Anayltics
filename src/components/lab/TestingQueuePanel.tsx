@@ -15,6 +15,8 @@ import {
   OrderContextBadges, QueueSampleNotesActions, useOrderContextMeta,
 } from './QueueOrderContext';
 import PriorityBanner from './PriorityBanner';
+import PrintPackButton from './PrintPackButton';
+import { sampleReceivedBy } from '../../lib/services/orderWorkflow';
 
 export interface ChemistOption {
   id: string;
@@ -343,6 +345,13 @@ export default function TestingQueuePanel({
             </div>
 
             <div className="flex flex-wrap lg:flex-col gap-2 lg:items-stretch lg:min-w-[170px]">
+              <PrintPackButton
+                order={order}
+                sample={sample}
+                accession={sample.accession_number}
+                receivedBy={sampleReceivedBy(sample) || undefined}
+                className="justify-center w-full"
+              />
               {!assignedTo && onClaim && (
                 <button
                   type="button"
