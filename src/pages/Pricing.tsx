@@ -125,7 +125,7 @@ export default function Pricing() {
               <div key={pkg.id} className="card p-5 sm:p-6 border-brand-200 bg-gradient-to-br from-brand-50/80 to-white shadow-sm">
                 <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
                   <div className="flex-1">
-                    <p className="text-xs font-bold text-brand-700 uppercase tracking-wider mb-1">All-in-one testing</p>
+                    <p className="text-xs font-bold text-brand-700 uppercase tracking-wider mb-1">Founding members</p>
                     <h2 className="text-2xl font-bold text-black">{pkg.name}</h2>
                     <p className="text-sm text-neutral-600 mt-2 max-w-2xl">{pkg.description}</p>
                     <div className="mt-4 grid sm:grid-cols-2 lg:grid-cols-4 gap-2">

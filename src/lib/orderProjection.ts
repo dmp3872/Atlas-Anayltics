@@ -200,7 +200,7 @@ export function packageCapabilities(id: 'full_qc' | 'atlas_pro'): PackageCapabil
         'conformity',
         'heavy_metals_icpms',
         'endotoxin_usp85',
-        'sterility_pcr',
+        'sterility_culture',
       ],
     };
   }
@@ -239,7 +239,12 @@ export function methodKeysForSample(sample: WizardSample | null | undefined): Me
     const ids = selectedServiceIds(sample);
     for (const id of ids) {
       if (id === 'identity_purity_quantity' || id === 'purity_hplc') addHplcTrio();
-      else if (id in METHOD_LIBRARY) keys.add(id as MethodKey);
+      else if (id === 'identity_purity') {
+        keys.add('identity');
+        keys.add('purity');
+      } else if (id === 'quantity_addon') {
+        keys.add('quantity');
+      } else if (id in METHOD_LIBRARY) keys.add(id as MethodKey);
     }
   }
 
