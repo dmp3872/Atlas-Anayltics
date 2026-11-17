@@ -114,7 +114,7 @@ export const LIVE_CHAT_FAQS: ChatFaq[] = [
       /contact/i,
     ],
     answer:
-      'Reach us at labs@atlasanalytics.io or (803) 609-9382, Mon–Fri 9am–5pm EST. For order-specific questions, messaging here is fastest — include your order number.',
+      'Reach us at admin@atlasanalyticlab.com or (803) 609-9382, Mon–Fri 9am–5pm EST. For order-specific questions, messaging here is fastest — include your order number.',
   },
   {
     id: 'rush',

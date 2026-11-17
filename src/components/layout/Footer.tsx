@@ -22,11 +22,15 @@ export default function Footer() {
               </div>
               <div className="flex items-center gap-2">
                 <Mail size={14} className="text-brand-500 flex-shrink-0" />
-                <span>labs@atlasanalytics.io</span>
+                <a href="mailto:admin@atlasanalyticlab.com" className="hover:text-brand-400 transition-colors">
+                  admin@atlasanalyticlab.com
+                </a>
               </div>
               <div className="flex items-center gap-2">
                 <Phone size={14} className="text-brand-500 flex-shrink-0" />
-                <a href="tel:+18036099382" className="hover:text-brand-400 transition-colors">(803) 609-9382</a>
+                <a href="tel:+18036099382" className="hover:text-brand-400 transition-colors">
+                  (803) 609-9382
+                </a>
               </div>
             </div>
           </div>
@@ -47,7 +51,7 @@ export default function Footer() {
               <li><Link to="/trust" className="hover:text-brand-400 transition-colors">Why Atlas Analytics</Link></li>
               <li><Link to="/roadmap" className="hover:text-brand-400 transition-colors">Roadmap</Link></li>
               <li><Link to="/auth" state={{ from: '/dashboard' }} className="hover:text-brand-400 transition-colors">Client Portal</Link></li>
-              <li><a href="mailto:labs@atlasanalytics.io" className="hover:text-brand-400 transition-colors">Contact Us</a></li>
+              <li><a href="mailto:admin@atlasanalyticlab.com" className="hover:text-brand-400 transition-colors">Contact Us</a></li>
             </ul>
           </div>
 
