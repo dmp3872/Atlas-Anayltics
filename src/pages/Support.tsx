@@ -9,8 +9,8 @@ export default function Support() {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mb-8">
           {[
-            { icon: Mail, title: 'Email Support', desc: 'labs@accumark.io', sub: 'Mon–Fri, 9am–5pm CST', href: 'mailto:labs@accumark.io', label: 'Send Email' },
-            { icon: Phone, title: 'Phone', desc: '(512) 555-0199', sub: 'Business hours only', href: 'tel:+15125550199', label: 'Call Now' },
+            { icon: Mail, title: 'Email Support', desc: 'admin@atlasanalyticlab.com', sub: 'Mon–Fri, 9am–5pm CST', href: 'mailto:admin@atlasanalyticlab.com', label: 'Send Email' },
+            { icon: Phone, title: 'Phone', desc: '(803) 609-9382', sub: 'Business hours only', href: 'tel:+18036099382', label: 'Call Now' },
           ].map((item) => (
             <div key={item.title} className="card p-5">
               <div className="w-10 h-10 bg-brand-50 rounded-xl flex items-center justify-center mb-4">
