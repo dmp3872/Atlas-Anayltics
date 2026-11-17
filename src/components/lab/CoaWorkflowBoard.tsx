@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import {
   ArrowLeft, ArrowRight, Building2, CalendarClock, CheckCircle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp,
   Clock, Download, ExternalLink, Fingerprint, FlaskConical, Globe, GripVertical, Hash, Loader, MessageCircle, Phone,
-  Save, Shield, UserCircle2, XCircle,
+  Save, Shield, Trash2, UserCircle2, XCircle,
 } from 'lucide-react';
 import { COA, Order, OrderSample, UserProfile } from '../../lib/types';
 import { formatDate } from '../../lib/utils';
@@ -35,6 +35,12 @@ interface Props {
   onIssueCoa?: (sample: OrderSample) => void;
   /** Open Issue COA with this certificate's values for a restart / re-issue. */
   onRestartCoa?: (coa: COA) => void;
+  /** Permanently delete this certificate. */
+  onDeleteCoa?: (coa: COA) => void | Promise<void>;
+  deletingCoaId?: string | null;
+  /** Permanently delete a pending sample (and linked COAs, if any). */
+  onDeleteSample?: (sample: OrderSample) => void | Promise<void>;
+  deletingSampleId?: string | null;
   /** Save client-visible ETA from a workflow card. */
   onSaveOrderEta?: (order: Order, iso: string | null) => void | Promise<void>;
   etaSavingOrderId?: string | null;
@@ -492,6 +498,7 @@ function WorkflowOrderTools({
 
 export default function CoaWorkflowBoard({
   coas, onMoveCoa, movingId, onCoaImagesSaved, pendingSamples = [], onIssueCoa, onRestartCoa,
+  onDeleteCoa, deletingCoaId = null, onDeleteSample, deletingSampleId = null,
   onSaveOrderEta, etaSavingOrderId = null,
   chemists = [], reviewers = [], clients = [], orders = [], samples = [], currentUserId = null,
   isAdmin = false,
@@ -1265,6 +1272,18 @@ export default function CoaWorkflowBoard({
                               Issue COA <ArrowRight size={11} />
                             </button>
                           )}
+                          {onDeleteSample && (
+                            <button
+                              type="button"
+                              onClick={() => void onDeleteSample(sample)}
+                              disabled={deletingSampleId === sample.id}
+                              className="btn-outline text-xs py-1.5 gap-1 justify-center w-full mt-1.5 text-red-700 border-red-200 hover:bg-red-50 disabled:opacity-50"
+                              title="Permanently delete this sample and any linked certificates"
+                            >
+                              <Trash2 size={11} />
+                              {deletingSampleId === sample.id ? 'Deleting…' : 'Delete sample'}
+                            </button>
+                          )}
                           {showOrderToolsOnCards ? (
                             <WorkflowOrderTools
                               order={order}
@@ -1600,6 +1619,22 @@ export default function CoaWorkflowBoard({
                               title="Move back to Testing in Progress to rework or restart this COA"
                             >
                               <ArrowLeft size={11} /> Back to testing
+                            </button>
+                          )}
+
+                          {onDeleteCoa && (
+                            <button
+                              type="button"
+                              onClick={e => {
+                                e.stopPropagation();
+                                void onDeleteCoa(coa);
+                              }}
+                              disabled={deletingCoaId === coa.id || !!movingId}
+                              className="btn-outline text-xs py-1 px-2 gap-1 text-red-700 border-red-200 hover:bg-red-50 disabled:opacity-50"
+                              title="Permanently delete this certificate"
+                            >
+                              <Trash2 size={11} />
+                              {deletingCoaId === coa.id ? 'Deleting…' : 'Delete COA'}
                             </button>
                           )}
 
